@@ -2,6 +2,13 @@
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 > 最後更新：2026-04-26
+>
+> **部署狀態**：Steps 1–11 ✅ 後端全部完成；Bot AI ✅；測試 & CI/CD ✅；前端 React ✅ — 已上線
+> **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
+> **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
+> `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
+>
+> **安全提醒**：GitHub Fine-grained PAT 請存入 Windows 認證管理員（`git config --global credential.helper manager`），勿明文寫入任何檔案。
 
 ---
 
@@ -12,23 +19,68 @@ src/
 ├── types/
 │   └── game.ts                        ✅ 全域型別合約
 ├── game/
-│   └── BigTwoStateMachine.ts          ✅ 純邏輯狀態機（零 IO）
+│   ├── BigTwoStateMachine.ts          ✅ 純邏輯狀態機（零 IO）
+│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI
 ├── do/
-│   └── GameRoomDO.ts                  ✅ Durable Object — 房間生命週期 + WS 管理
+│   └── GameRoomDO.ts                  ✅ Durable Object — 房間生命週期 + WS 管理 + Bot 回合
 ├── api/
-│   └── lobby.ts                       ✅ 配對大廳邏輯 (LobbyDO + handleMatch)
+│   └── lobby.ts                       ✅ 配對大廳邏輯 (LobbyDO + handleMatch，10s Bot 補位)
 ├── utils/
-│   └── auth.ts                        ✅ JWT 驗證工具 (HS256 / Web Crypto)
+│   └── auth.ts                        ✅ JWT 工具 (verifyJWT + signJWT / HS256 / Web Crypto)
 ├── client/
 │   └── GameSocket.ts                  ✅ 前端 SDK（斷線重連 + 指數退避）
 ├── workers/
-│   └── gateway.ts                     ⬜ HTTP Worker — 路由 / WS 升級入口
-│   └── settlementConsumer.ts          ⬜ Queue Consumer — 寫入 D1
+│   ├── gateway.ts                     ✅ HTTP Worker — 路由 / CORS / WS 升級入口 / POST /auth/token
+│   └── settlementConsumer.ts          ✅ Queue Consumer — 冪等寫入 D1
 ├── db/
-│   └── schema.sql                     ⬜ D1 建表 DDL
-└── index.ts                           ⬜ Worker 主入口（路由綁定）
-wrangler.toml                          ⬜ CF 資源綁定宣告
+│   └── schema.sql                     ✅ D1 建表 DDL
+└── index.ts                           ✅ Worker 主入口（路由綁定）
+
+frontend/                              ✅ React 18 + Vite 5 + Tailwind 3 (PWA)
+├── src/
+│   ├── main.tsx                       ✅ ReactDOM 入口
+│   ├── App.tsx                        ✅ 畫面狀態機 (login → lobby → game → result)
+│   ├── index.css                      ✅ Tailwind 指令 + hand-scroll 隱藏捲軸
+│   ├── api/
+│   │   └── http.ts                    ✅ getToken() / findMatch() fetch 封裝
+│   ├── shared/
+│   │   ├── types.ts                   ✅ 遊戲型別（瀏覽器安全副本）
+│   │   └── GameSocket.ts              ✅ WS 客戶端（同 src/client，import 路徑已調整）
+│   └── components/
+│       ├── LoginScreen.tsx            ✅ 暱稱輸入
+│       ├── LobbyScreen.tsx            ✅ 等待配對動畫
+│       ├── GameScreen.tsx             ✅ 主遊戲畫面（CardView/HandView/TableDisplay/ActionBar）
+│       └── ResultScreen.tsx          ✅ 排名 + 分數結算
+└── .env.example                       VITE_WORKER_URL 環境變數範例
+
+test/
+└── BigTwoStateMachine.test.ts         ✅ 11 個單元測試案例
+
+wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.production] 完整重複）
 ```
+
+### 完成進度摘要
+
+| Step | 檔案 | 狀態 | 重點 |
+|------|------|------|------|
+| 1 | `types/game.ts` | ✅ | `PlayerAction`、`GameStateView`（視角隔離）、`SettlementResult` |
+| 2 | `game/BigTwoStateMachine.ts` | ✅ | 洗牌無 modulo bias、牌型驗證、`snapshot()`/`restore()`、`forceSettle()` |
+| 3 | `do/GameRoomDO.ts` | ✅ | WS Hibernation API、多工虛擬計時器、60s 斷線緩衝、`deleteAll()` 防幽靈計費 |
+| 4 | `utils/auth.ts` | ✅ | HS256 / Web Crypto、`verifyJWT` + `signJWT`、`JWTError` 獨立型別 |
+| 5 | `api/lobby.ts` | ✅ | 單一 LobbyDO 序列化、Long-poll、D1 失敗還原、MATCH_KV 防重複配對、10s Bot 補位 |
+| 6 | `client/GameSocket.ts` | ✅ | 指數退避 + jitter、重連後自動 SYNC、`seq` 跨重連遞增、unsubscribe fn |
+| 7 | `workers/gateway.ts` | ✅ | HTTP 路由、CORS 標頭、`POST /auth/token` 發 JWT、WS 升級轉發 |
+| 8 | `db/schema.sql` | ✅ | D1 DDL：GameRooms / games / player_settlements + index |
+| 9 | `workers/settlementConsumer.ts` | ✅ | INSERT OR IGNORE 冪等寫入、batch 原子、message.retry() |
+| 10 | `src/index.ts` | ✅ | Worker 主入口、export DO、fetch + queue handler |
+| 11 | `wrangler.toml` | ✅ | DO migrations (`new_sqlite_classes`)、Queue、KV、D1、JWT_SECRET、`[env.production]` |
+| Bot | `game/BotAI.ts` | ✅ | `getBotAction(view, hand)`，O(N) greedy；5 張牌組合永遠 PASS |
+| 12 | `frontend/` | ✅ | React 18 + Vite 5 + Tailwind 3，手機 / 桌機響應式，PWA manifest |
+
+| 工程支援 | 檔案 | 狀態 | 重點 |
+|----------|------|------|------|
+| 單元測試 | `test/BigTwoStateMachine.test.ts` | ✅ | 11 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
+| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push main 觸發、tsc + vitest 通過後 wrangler deploy |
 
 ---
 
@@ -36,182 +88,47 @@ wrangler.toml                          ⬜ CF 資源綁定宣告
 
 | 層 | 檔案 | 職責 | IO |
 |---|---|---|---|
+| L0 SDK | `client/GameSocket.ts` | 前端連線管理、指數退避重連 | WebSocket |
 | L1 型別 | `types/game.ts` | 全域合約，TS interface | 無 |
 | L2 邏輯 | `game/BigTwoStateMachine.ts` | 純狀態機，含牌型驗證 | 僅 `crypto.getRandomValues` |
+| L2 Bot | `game/BotAI.ts` | 純函式 AI，無副作用 | 無 |
 | L3 房間 | `do/GameRoomDO.ts` | WS session 管理、呼叫 L2、推 Queue | WebSocket, Queue |
-| L4 配對 | `api/lobby.ts` | 等候室、配對、防 Race Condition | KV, D1, DO stub |
-| L4 閘道 | `workers/gateway.ts` | HTTP 建房、升級 WS、轉發至 DO | fetch, DO stub |
+| L4 配對 | `api/lobby.ts` | 等候室、配對、Bot 補位、防 Race Condition | KV, D1, DO stub |
+| L4 閘道 | `workers/gateway.ts` | HTTP 建房、JWT 發放、升級 WS、CORS | fetch, DO stub |
 | L5 結算 | `workers/settlementConsumer.ts` | 消費 Queue 訊息、寫 D1 | Queue, D1 |
-| L0 SDK | `client/GameSocket.ts` | 前端連線管理、指數退避重連 | WebSocket |
+| L6 前端 | `frontend/` | React UI，手機 / 桌機，與後端 WS 通訊 | fetch, WebSocket |
 
 ---
 
-## 實作步驟
+## 前端架構
 
-### Step 1 — 型別合約 ✅
-**檔案：** `src/types/game.ts`
-
-- `PlayerAction` — 出牌 / Pass 聯合型別，含 `ActionFrame`（序號防重送）
-- `GameStateView` — 視角隔離快照（`SelfView` 含完整手牌；`OpponentView` 只含張數）
-- `SettlementResult` — 結算格式，對接 D1 Queue
-- `SettlementQueueMessage` — Queue 訊息包裝
-
----
-
-### Step 2 — 純邏輯狀態機 ✅
-**檔案：** `src/game/BigTwoStateMachine.ts`
-
-- 安全洗牌：`crypto.getRandomValues` + rejection sampling（無 modulo bias）
-- 發牌：52 張全部派出，3♣ 持有者先手
-- 牌型偵測：single / pair / triple / straight / flush / fullHouse / fourOfAKind / straightFlush
-- 比牌：同類別才能壓（5 張只能壓 5 張）；分數由 `score` 欄位決定
-- 防禦：不在手牌的牌、非法牌型、非本人回合、Phase 錯誤，全部 throw
-- 首輪強制含 3♣；全 Pass 後桌面重置
-- `snapshot()` / `static restore()` — DO hibernation 序列化支援
-- `forceSettle(reason)` — 供 DO 在逾時 / 斷線時呼叫
-
----
-
-### Step 3 — Durable Object 房間 ✅
-**檔案：** `src/do/GameRoomDO.ts`
-
-- WebSocket Hibernation API（`webSocketMessage` / `webSocketClose` / `webSocketError`）
-- `blockConcurrencyWhile(hydrate)` — 休眠喚醒後重建狀態
-- `state.storage.setAlarm()` — 多工虛擬計時器（`AlarmEntry[]`）；禁用 setTimeout
-- 斷線緩衝：60 秒重連視窗；逾期呼叫 `forceSettle("disconnect")`
-- SYNC 訊息：收到 `{ type:"sync" }` 立即回傳 `getView(playerId)`
-- 結算後 `SETTLEMENT_QUEUE.send()` → `state.storage.deleteAll()`（防幽靈計費）
-
----
-
-### Step 4 — JWT 工具 ✅
-**檔案：** `src/utils/auth.ts`
-
-- `verifyJWT(token, secret)` — HS256 / Web Crypto API，驗簽名 + exp
-- `JWTError` — 獨立錯誤型別，caller 可 `instanceof` 區分 401 vs 500
-
----
-
-### Step 5 — 配對大廳 ✅
-**檔案：** `src/api/lobby.ts`
-
-- `LobbyDO` — 全域單一實例（`idFromName("main")`）序列化入口，天然防 Race Condition
-- 長輪詢（Long-poll）：HTTP 連線掛起直到湊齊 4 人或 30 秒逾時
-- `deadlines.set()` 在第一個 await 之前 — 關閉 re-entrancy 視窗
-- 先 evict pending 再 await D1 — 防雙重配對
-- 失敗還原：D1 insert 失敗時玩家回隊，不靜默丟失
-- `MATCH_KV`：配對成功後寫入 `room:${playerId}` (TTL 1h)，閘道層快速擋重複請求
-- `handleMatch(request, env)` — 供 `src/index.ts` 的 `/api/match` 路由呼叫
-
----
-
-### Step 6 — 前端 SDK ✅
-**檔案：** `src/client/GameSocket.ts`
-
-- 指數退避重連：`delay = clamp(base × 2^attempt, max) × (1 ± jitter)`
-- 重連後自動發送 `{ type:"sync" }` 取得最新 `GameStateView`
-- `seq` 跨重連持續遞增（不重置），符合伺服器 anti-replay 驗證
-- `disconnect()` 完整清理：clearTimeout → `ws.on* = null` → `ws.close()` → `registry.clear()`
-- `on(event, handler)` 回傳 unsubscribe fn（React `useEffect` / Vue `onUnmounted` 友善）
-- 型別安全：`send()` 接受 `PlayerAction`；`ServerMessage` exhaustive switch
-
----
-
-### Step 7 — Gateway Worker ⬜
-**檔案：** `src/workers/gateway.ts`
-
-待實作項目：
-- `POST /rooms` — 建立新房間（呼叫 GameRoomDO `/init`），回傳 `gameId`
-- `POST /api/match` — 轉發至 `handleMatch(request, env)`
-- `GET /rooms/:gameId/join` — 驗證 JWT → 升級 WebSocket → 轉發至對應 GameRoomDO
-- 錯誤回應：房間不存在 / 滿員 / 未授權
-
----
-
-### Step 8 — D1 Schema ⬜
-**檔案：** `src/db/schema.sql`
-
-```sql
-CREATE TABLE IF NOT EXISTS GameRooms (
-  room_id       TEXT    PRIMARY KEY,
-  player_ids    TEXT    NOT NULL,   -- JSON array
-  status        TEXT    NOT NULL DEFAULT 'waiting',
-  created_at    INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS games (
-  game_id       TEXT    PRIMARY KEY,
-  round_id      TEXT    NOT NULL,
-  finished_at   INTEGER NOT NULL,
-  reason        TEXT    NOT NULL,
-  winner_id     TEXT    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS player_settlements (
-  game_id        TEXT    NOT NULL,
-  player_id      TEXT    NOT NULL,
-  final_rank     INTEGER NOT NULL,
-  score_delta    INTEGER NOT NULL,
-  remaining_json TEXT    NOT NULL,
-  PRIMARY KEY (game_id, player_id),
-  FOREIGN KEY (game_id) REFERENCES games(game_id)
-);
+### 畫面狀態機
+```
+LoginScreen  ──(getToken)──►  LobbyScreen  ──(findMatch)──►  GameScreen  ──(settlement)──►  ResultScreen
+  輸入暱稱                      等待配對                         主遊戲                          結算排名
+                                                                    │
+                                                             GameSocket (WS)
+                                                             斷線自動重連
 ```
 
----
+### 本地開發
+```bash
+cp frontend/.env.example frontend/.env.local
+# 編輯 VITE_WORKER_URL=https://big-two-game-production.a30100a0072.workers.dev
+cd frontend && npm install && npm run dev
+```
 
-### Step 9 — Queue Consumer ⬜
-**檔案：** `src/workers/settlementConsumer.ts`
+### 部署到 Cloudflare Pages
+```bash
+cd frontend && npm run build
+# 方案 A：GitHub 整合（推薦）
+#   Cloudflare Dashboard → Pages → Connect to Git → 選 repo
+#   Build command: cd frontend && npm run build
+#   Output directory: frontend/dist
+#   Environment variable: VITE_WORKER_URL=https://...workers.dev
 
-待實作項目：
-- 實作 `queue()` handler，消費 `SettlementQueueMessage`
-- 將 `SettlementResult` 寫入 D1（`games` + `player_settlements`）
-- 失敗時 `message.retry()`，避免資料遺失
-
----
-
-### Step 10 — Worker 主入口 ⬜
-**檔案：** `src/index.ts`
-
-待實作項目：
-- 路由表：`POST /api/match` → `handleMatch`、`GET /rooms/:id/join` → GameRoomDO
-- Export `GameRoomDO`、`LobbyDO` 供 wrangler 識別
-- Export `queue()` handler 供 Queue Consumer 綁定
-
----
-
-### Step 11 — wrangler.toml ⬜
-**檔案：** `wrangler.toml`
-
-```toml
-name = "big-two-game"
-main = "src/index.ts"
-compatibility_date = "2024-09-23"
-
-[[durable_objects.bindings]]
-name       = "GAME_ROOM"
-class_name = "GameRoomDO"
-
-[[durable_objects.bindings]]
-name       = "LOBBY_DO"
-class_name = "LobbyDO"
-
-[[queues.producers]]
-binding = "SETTLEMENT_QUEUE"
-queue   = "big-two-settlement"
-
-[[queues.consumers]]
-queue         = "big-two-settlement"
-max_batch_size = 10
-
-[[kv_namespaces]]
-binding = "MATCH_KV"
-id      = "<your-kv-id>"
-
-[[d1_databases]]
-binding       = "DB"
-database_name = "big-two-db"
-database_id   = "<your-d1-id>"
+# 方案 B：手動推
+wrangler pages deploy frontend/dist --project-name big-two-frontend
 ```
 
 ---
@@ -219,20 +136,22 @@ database_id   = "<your-d1-id>"
 ## 資料流總覽
 
 ```
-Client (Browser / RN / Flutter)
+Browser / Mobile (React PWA)
   │
-  │  POST /api/match (JWT)
+  │  POST /auth/token  → { token, playerId }
+  │  POST /lobby/match → { roomId, wsUrl, players }
   ▼
 src/index.ts ──► handleMatch() ──► LobbyDO (idFromName "main")
-                                        │  long-poll，湊齊 4 人
+                                        │  long-poll，湊齊 4 人（不足 10s 後 Bot 補位）
                                         ├─ INSERT GameRooms (D1)
-                                        └─ Response { roomId, players }
+                                        └─ Response { roomId, wsUrl, players }
   │
-  │  WebSocket GET /rooms/:gameId/join
+  │  WebSocket wss://...workers.dev/rooms/:gameId/join?token=xxx
   ▼
-gateway.ts ──upgrade──► GameRoomDO
+gateway.ts ──verifyJWT──► GameRoomDO
                               │
                               ├─ BigTwoStateMachine.processAction()
+                              ├─ BotAI.getBotAction()（Bot 回合，1.5s 延遲）
                               ├─ broadcast viewFor(pid) → 各 Client
                               └─ settlement ──► Queue ──► settlementConsumer ──► D1
 ```
@@ -247,3 +166,8 @@ gateway.ts ──upgrade──► GameRoomDO
 - **無狀態 Worker**：gateway / index.ts 不持有任何對局狀態，全部在 DO 內。
 - **SYNC 協定**：Client 重連後發 `{ type:"sync" }`，DO 回 `{ type:"state", payload }`。
 - **Race Condition**：LobbyDO `idFromName("main")` 強制單一 JS 執行緒序列化配對邏輯。
+- **CORS**：gateway.ts 所有 HTTP 回應均加 `Access-Control-Allow-Origin: *`，支援跨來源 Cloudflare Pages。
+- **Token 傳遞**：瀏覽器 WebSocket 無法設自訂 header，token 附於 `?token=` query string。
+- **Bot 補位**：大廳等候 10 秒後自動填入 Bot，Bot 以 `bot-1` ~ `bot-3` 命名，1.5s 思考延遲。
+- **免費方案 DO Migration**：必須使用 `new_sqlite_classes`（非 `new_classes`），否則 CF 回傳錯誤 10097。
+- **wrangler 環境繼承**：`[env.production]` 不會繼承頂層 bindings，所有綁定須在 `[env.production]` 下完整重複宣告。

@@ -1,0 +1,75 @@
+# /wrangler.toml
+
+name               = "big-two-game"
+main               = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# ── Migrations (free plan requires new_sqlite_classes) ────────────────── # L3_架構含防禦觀測
+[[migrations]]
+tag                 = "v1"
+new_sqlite_classes  = ["GameRoomDO", "LobbyDO"]
+
+# ── Durable Objects ───────────────────────────────────────────────────── # L3_架構含防禦觀測
+[[durable_objects.bindings]]
+name       = "GAME_ROOM"
+class_name = "GameRoomDO"
+
+[[durable_objects.bindings]]
+name       = "LOBBY_DO"
+class_name = "LobbyDO"
+
+# ── Queues ────────────────────────────────────────────────────────────── # L3_架構含防禦觀測
+[[queues.producers]]
+binding = "SETTLEMENT_QUEUE"
+queue   = "big-two-settlement"
+
+[[queues.consumers]]
+queue          = "big-two-settlement"
+max_batch_size = 10
+max_retries    = 3
+
+# ── KV Namespaces ─────────────────────────────────────────────────────── # L2_隔離
+[[kv_namespaces]]
+binding = "MATCH_KV"
+id      = "f39f8ece59464ec782a3c7ddc4be8488"
+
+# ── D1 Database ───────────────────────────────────────────────────────── # L3_架構含防禦觀測
+[[d1_databases]]
+binding       = "DB"
+database_name = "big-two-db"
+database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+
+# ── Production environment ────────────────────────────────────────────── # L2_隔離
+# Bindings must be repeated under [env.production] — wrangler does not
+# inherit top-level bindings into named environments.
+[env.production]
+name = "big-two-game-production"
+
+[[env.production.durable_objects.bindings]]
+name       = "GAME_ROOM"
+class_name = "GameRoomDO"
+
+[[env.production.durable_objects.bindings]]
+name       = "LOBBY_DO"
+class_name = "LobbyDO"
+
+[[env.production.queues.producers]]
+binding = "SETTLEMENT_QUEUE"
+queue   = "big-two-settlement"
+
+[[env.production.queues.consumers]]
+queue          = "big-two-settlement"
+max_batch_size = 10
+max_retries    = 3
+
+[[env.production.kv_namespaces]]
+binding = "MATCH_KV"
+id      = "f39f8ece59464ec782a3c7ddc4be8488"
+
+[[env.production.d1_databases]]
+binding       = "DB"
+database_name = "big-two-db"
+database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+
+# ── Secrets ───────────────────────────────────────────────────────────── # L2_隔離
+# wrangler secret put JWT_SECRET --env production

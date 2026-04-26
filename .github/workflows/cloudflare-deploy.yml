@@ -1,0 +1,61 @@
+# /.github/workflows/cloudflare-deploy.yml
+# Trigger: push to main only — never on PRs or other branches.          # L2_隔離
+
+name: Test → Deploy
+
+on:
+  push:
+    branches: [main]          # environment isolation: no staging bleed  # L2_隔離
+
+# Cancel any in-flight run for the same ref so stale deploys never win. # L3_架構含防禦觀測
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-deploy:
+    name: Test → Deploy (production)
+    runs-on: ubuntu-latest
+
+    # Required GitHub Secrets (set in repo → Settings → Secrets → Actions):
+    #   CLOUDFLARE_API_TOKEN  — CF API token with Workers:Edit + D1:Edit scope
+    #   CLOUDFLARE_ACCOUNT_ID — CF account ID (shown in dashboard URL)  # L2_隔離
+
+    env:
+      CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node setup with npm cache ─────────────────────────────────
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # ── 3. Install dependencies ──────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci                  # ci = reproducible, no lockfile mutation
+
+      # ── 4. Type-check (src + test) ───────────────────────────────────
+      # Two passes: src uses CF Workers types; tests use the extended    # L3_架構含防禦觀測
+      # tsconfig that includes test/ so errors there are also caught.
+      - name: TypeScript type-check (src)
+        run: npx tsc --noEmit
+
+      - name: TypeScript type-check (test)
+        run: npm run typecheck:test
+
+      # ── 5. Unit tests ────────────────────────────────────────────────
+      # Gate: deploy step is skipped entirely if tests fail.             # L2_隔離
+      - name: Run unit tests
+        run: npm test
+
+      # ── 6. Deploy to Cloudflare (production) ─────────────────────────
+      # Runs ONLY when the previous test step succeeds.                  # L2_隔離
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy --env production

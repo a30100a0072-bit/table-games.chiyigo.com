@@ -1,0 +1,9 @@
+{
+  "name": "大老二",
+  "short_name": "大老二",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#14532d",
+  "theme_color": "#14532d",
+  "description": "四人制大老二線上對戰"
+}

@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent iOS bounce scroll on the game table */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Card hand horizontal scroll — hide scrollbar but keep scroll behaviour */
+.hand-scroll::-webkit-scrollbar { display: none; }
+.hand-scroll { -ms-overflow-style: none; scrollbar-width: none; }

@@ -1,49 +1,50 @@
 // /src/api/lobby.ts
-// Matchmaking lobby — race-condition-safe via single LobbyDO instance. // L2_鎖定
+// Matchmaking lobby — race-condition-safe via single LobbyDO instance.  // L2_鎖定
 
 import { verifyJWT, JWTError } from "../utils/auth";
 
 // ── Environment ──────────────────────────────────────────────────────── L2_隔離
 export interface LobbyEnv {
   LOBBY_DO:   DurableObjectNamespace;
-  MATCH_KV:   KVNamespace;   // player→room visibility layer         // L2_隔離
+  GAME_ROOM:  DurableObjectNamespace;   // needed to init DO when bots fill a room // L2_實作
+  MATCH_KV:   KVNamespace;
   DB:         D1Database;
   JWT_SECRET: string;
 }
 
-const ROOM_SIZE     = 4;
-const WAIT_MS       = 30_000;   // max queue wait before timeout
-const KV_ROOM_TTL_S = 3_600;    // 1 h — prevents re-queuing during active game
+const ROOM_SIZE      = 4;
+const WAIT_MS        = 30_000;   // max queue wait before timeout
+const BOT_FILL_MS    = 10_000;   // fill remaining seats with bots after this delay // L2_實作
+const KV_ROOM_TTL_S  = 3_600;    // 1 h
+
+// ── Bot ID prefix ─────────────────────────────────────────────────────── L2_隔離
+// Any playerId starting with this prefix is treated as a bot seat.
+// Real players are JWT-verified and will never receive this prefix.      // L2_隔離
+const BOT_PREFIX = "BOT_";
+const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LobbyDO — named "main", single global instance.                     // L2_鎖定
-//
-// Race-condition rationale:
-//   All POST /join requests funnel to ONE DO whose JS is single-threaded.
-//   In-memory queue mutations are therefore sequential — no external lock needed.
-//
-// Risk: if idFromName("main") is replaced with idFromRequest() the serialisation
-//   guarantee breaks and a distributed lock (e.g. DO per shard + KV CAS) would
-//   be required.                                                       // L3_糾錯風險表
+// LobbyDO — named "main", single global instance.                        // L2_鎖定
 
 export class LobbyDO implements DurableObject {
 
   private readonly state: DurableObjectState;
   private readonly env:   LobbyEnv;
 
-  // Callbacks held in memory.  CF DO stays warm while ≥1 HTTP request is open,
-  // so these pointers are safe for the lifetime of the long-poll.     // L3_糾錯風險表
   private pending   = new Map<string, (r: Response) => void>();
-  // Deadlines are persisted so alarm() can clean up after hibernation.
   private deadlines = new Map<string, number>();
+  private botFillAt: number | null = null;  // epoch ms when bots should fill remainder // L2_實作
 
   constructor(state: DurableObjectState, env: LobbyEnv) {
     this.state = state;
     this.env   = env;
-    // Hydrate deadline table before any request is served.
     this.state.blockConcurrencyWhile(async () => {
-      const saved = await this.state.storage.get<[string, number][]>("deadlines");
-      if (saved) this.deadlines = new Map(saved);
+      const [saved, savedBotFill] = await Promise.all([
+        this.state.storage.get<[string, number][]>("deadlines"),
+        this.state.storage.get<number>("botFillAt"),
+      ]);
+      if (saved)        this.deadlines = new Map(saved);
+      if (savedBotFill) this.botFillAt = savedBotFill;
     });
   }
 
@@ -54,54 +55,51 @@ export class LobbyDO implements DurableObject {
     return new Response("not found", { status: 404 });
   }
 
-  // ── Join queue ──────────────────────────────────────────────────── L2_鎖定
+  // ── Join queue ──────────────────────────────────────────────────────── L2_鎖定
 
   private async join(request: Request): Promise<Response> {
     const { playerId } = await request.json<{ playerId: string }>();
 
-    // Dedup check: sequential execution makes this atomic.            // L2_鎖定
     if (this.deadlines.has(playerId))
       return Response.json({ error: "already queued" }, { status: 409 });
 
-    // Mutate in-memory state BEFORE the first await to close any
-    // re-entrancy window that opens during async storage writes.      // L3_糾錯風險表
     this.deadlines.set(playerId, Date.now() + WAIT_MS);
+
+    // Arm bot-fill timer on the very first real player entering the queue. // L2_實作
+    if (this.botFillAt === null) {
+      this.botFillAt = Date.now() + BOT_FILL_MS;
+      await this.state.storage.put("botFillAt", this.botFillAt);
+    }
 
     await Promise.all([
       this.state.storage.put("deadlines", [...this.deadlines.entries()]),
-      this.state.storage.setAlarm(Math.min(...this.deadlines.values())),
+      this.state.storage.setAlarm(this.nextAlarm()),
     ]);
 
-    // Return a long-poll Promise.  The unresolved Promise keeps the HTTP
-    // connection open, which prevents CF from hibernating this DO.
     return new Promise<Response>(resolve => {
       this.pending.set(playerId, resolve);
-      if (this.pending.size >= ROOM_SIZE) {
-        // Fire without await: tryMatch() resolves the pending callbacks
-        // asynchronously after the D1 write completes.
-        this.tryMatch();
-      }
+      if (this.pending.size >= ROOM_SIZE) this.tryMatch();
     });
   }
 
-  // ── Match 4 players → write D1 → resolve callbacks ─────────────── L2_鎖定
+  // ── Match 4 players → write D1 → resolve callbacks ─────────────────── L2_鎖定
 
   private async tryMatch(): Promise<void> {
     if (this.pending.size < ROOM_SIZE) return;
 
-    // Evict from pending IMMEDIATELY before any await.               // L2_鎖定
-    // A second tryMatch() fired mid-flight will see pending.size < 4 and bail.
     const batch     = [...this.pending.entries()].slice(0, ROOM_SIZE);
     const playerIds = batch.map(([id]) => id);
+    const botIds    = playerIds.filter(isBot);                           // L2_實作
+    const humanIds  = playerIds.filter(id => !isBot(id));
     const roomId    = crypto.randomUUID();
 
+    // Evict from pending BEFORE any await.                              // L2_鎖定
     for (const [id] of batch) {
       this.pending.delete(id);
       this.deadlines.delete(id);
     }
 
     try {
-      // Atomic D1 insert — failure rolls back logical match.         // L2_鎖定
       await this.env.DB
         .prepare(
           "INSERT INTO GameRooms (room_id, player_ids, status, created_at)" +
@@ -110,41 +108,87 @@ export class LobbyDO implements DurableObject {
         .bind(roomId, JSON.stringify(playerIds), Date.now())
         .run();
     } catch (err) {
-      // D1 write failed: restore players so they remain in queue.    // L3_糾錯風險表
-      console.error("[LobbyDO] D1 insert failed — restoring players:", err);
+      console.error("[LobbyDO] D1 insert failed — restoring human players:", err);
       const restored = Date.now() + WAIT_MS;
+      // Only real players are restored; bots are ephemeral.             // L2_隔離
       for (const [id, resolve] of batch) {
-        this.pending.set(id, resolve);
-        this.deadlines.set(id, restored);
+        if (!isBot(id)) {
+          this.pending.set(id, resolve);
+          this.deadlines.set(id, restored);
+        }
       }
       await this.state.storage.put("deadlines", [...this.deadlines.entries()]);
       return;
     }
 
-    // Resolve all 4 long-poll responses in one tick.
-    const body = Response.json({ matched: true, roomId, players: playerIds });
-    for (const [, resolve] of batch) resolve(body.clone());
+    // Always init GameRoomDO before resolving long-polls — prevents the
+    // race where clients reach the DO before /init completes.           // L3_架構含防禦觀測
+    try {
+      const stub = this.env.GAME_ROOM.get(this.env.GAME_ROOM.idFromName(roomId));
+      await stub.fetch(new Request("https://gameroom.internal/init", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          gameId:   roomId,
+          roundId:  crypto.randomUUID(),
+          capacity: ROOM_SIZE,
+          botIds,
+        }),
+      }));
+    } catch (err) {
+      console.error("[LobbyDO] GameRoomDO init error:", err);
+      // GameSocket reconnect handles retry; not fatal for the match response.
+    }
 
-    // KV: mark each player as "in room" — gateway reads this to block
-    // duplicate match requests for the duration of the game.         // L2_隔離
+    // Resolve only human long-poll connections (bots have no-op resolvers).
+    const body = Response.json({ matched: true, roomId, players: playerIds });
+    for (const [id, resolve] of batch) {
+      if (!isBot(id)) resolve(body.clone());
+    }
+
+    // KV visibility flag — bots never make match requests, no KV needed. // L2_隔離
     await Promise.all([
       this.state.storage.put("deadlines", [...this.deadlines.entries()]),
-      ...playerIds.map(id =>
+      ...humanIds.map(id =>
         this.env.MATCH_KV.put(`room:${id}`, roomId, { expirationTtl: KV_ROOM_TTL_S }),
       ),
     ]);
   }
 
-  // ── Alarm: expire stale waiters ─────────────────────────────────── L2_鎖定
-  // setTimeout is FORBIDDEN; all timeouts are enforced here.         // L2_鎖定
+  // ── Bot-fill: called when BOT_FILL_MS elapses ────────────────────── L2_實作
+  // Fills remaining seats with virtual bot IDs and forces a match.
+  // Bot resolvers are no-ops — bots have no HTTP connection to reply to. // L2_隔離
+
+  private async fillWithBots(): Promise<void> {
+    if (this.pending.size === 0) return;   // no real players — nothing to fill for // L2_實作
+
+    let botIdx = 1;
+    while (this.pending.size < ROOM_SIZE) {
+      this.pending.set(`${BOT_PREFIX}${botIdx++}`, () => {}); // no-op resolver // L2_隔離
+    }
+
+    await this.tryMatch();
+  }
+
+  // ── Alarm: expire stale waiters + trigger bot-fill ─────────────────── L2_鎖定
+  // setTimeout is FORBIDDEN; all timeouts are enforced here.            // L2_鎖定
 
   async alarm(): Promise<void> {
     const now = Date.now();
 
+    // ① Bot-fill deadline                                               // L2_實作
+    if (this.botFillAt !== null && this.botFillAt <= now) {
+      this.botFillAt = null;
+      await this.state.storage.delete("botFillAt");
+      await this.fillWithBots();
+      // If fillWithBots matched everyone, pending/deadlines are empty
+      // and the re-arm below will call deleteAlarm(). ✓
+    }
+
+    // ② Expire real-player wait deadlines
     for (const [id, dl] of this.deadlines) {
       if (dl > now) continue;
       this.deadlines.delete(id);
-      // pending callback may be absent if player disconnected mid-wait — safe.
       this.pending.get(id)?.(
         Response.json({ matched: false, reason: "timeout" }, { status: 408 }),
       );
@@ -153,22 +197,31 @@ export class LobbyDO implements DurableObject {
 
     await this.state.storage.put("deadlines", [...this.deadlines.entries()]);
 
-    if (this.deadlines.size > 0) {
-      await this.state.storage.setAlarm(Math.min(...this.deadlines.values()));
+    // ③ Re-arm clock for remaining events
+    const next = this.nextAlarm();
+    if (next !== null) {
+      await this.state.storage.setAlarm(next);
     } else {
       await this.state.storage.deleteAlarm();
     }
   }
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+
+  private nextAlarm(): number | null {
+    const times: number[] = [...this.deadlines.values()];
+    if (this.botFillAt !== null) times.push(this.botFillAt);
+    return times.length > 0 ? Math.min(...times) : null;
+  }
 }
 
-// ── Gateway handler — called by /api/match in src/index.ts ──────────── L2_隔離
+// ── Gateway handler ──────────────────────────────────────────────────── L2_隔離
 
 export async function handleMatch(
   request: Request,
   env: LobbyEnv,
 ): Promise<Response> {
 
-  // ① Authenticate — extract playerId from Bearer JWT.
   const auth  = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
 
@@ -182,8 +235,6 @@ export async function handleMatch(
     );
   }
 
-  // ② KV guard: block player already assigned to an active room.     // L2_隔離
-  // This is a fast-path rejection before hitting the DO.
   const existingRoom = await env.MATCH_KV.get(`room:${playerId}`);
   if (existingRoom) {
     return Response.json(
@@ -192,8 +243,6 @@ export async function handleMatch(
     );
   }
 
-  // ③ Delegate to single LobbyDO — the idFromName("main") guarantee means
-  //   all in-flight /api/match requests serialise through one JS context.  // L2_鎖定
   const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName("main"));
   return stub.fetch(
     new Request("https://lobby.internal/join", {

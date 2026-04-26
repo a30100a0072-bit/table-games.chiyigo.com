@@ -1,5 +1,33 @@
 // /src/utils/auth.ts
 
+// ── Encode helper (sign path) ─────────────────────────────────────────
+function b64urlEncode(input: ArrayBuffer | string): string {
+  const bytes = typeof input === "string"
+    ? new TextEncoder().encode(input)
+    : new Uint8Array(input);
+  let bin = "";
+  bytes.forEach(b => (bin += String.fromCharCode(b)));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+/** Issue an HS256 JWT signed with the Worker's JWT_SECRET. */
+export async function signJWT(
+  sub:        string,
+  secret:     string,
+  ttlSeconds: number = 86_400,
+): Promise<string> {
+  const header  = b64urlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const now     = Math.floor(Date.now() / 1000);
+  const payload = b64urlEncode(JSON.stringify({ sub, iat: now, exp: now + ttlSeconds }));
+  const msg     = `${header}.${payload}`;
+  const key     = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return `${msg}.${b64urlEncode(sig)}`;
+}
+
 export class JWTError extends Error {
   constructor(msg: string) { super(msg); this.name = "JWTError"; }
 }
