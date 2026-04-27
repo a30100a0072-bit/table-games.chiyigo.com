@@ -77,7 +77,12 @@ jobs:
           VITE_WORKER_URL: ${{ secrets.VITE_WORKER_URL }}
         run: npx vite build
 
-      # ── 8. Deploy frontend to Cloudflare Pages ───────────────────────
-      # Pages project is created on first run (idempotent thereafter).   # L2_隔離
+      # ── 8. Ensure Pages project exists (idempotent) ──────────────────
+      # `pages project create` errors if it already exists; `|| true`    # L2_隔離
+      # makes the step a no-op on subsequent runs.
+      - name: Create Pages project if missing
+        run: npx wrangler pages project create big-two-frontend --production-branch=master || true
+
+      # ── 9. Deploy frontend to Cloudflare Pages ───────────────────────
       - name: Deploy to Cloudflare Pages
         run: npx wrangler pages deploy frontend/dist --project-name=big-two-frontend --branch=master --commit-dirty=true
