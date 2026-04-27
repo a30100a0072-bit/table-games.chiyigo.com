@@ -20,6 +20,7 @@ import { isGameType } from "../types/game";
 export interface Env {
   GAME_ROOM:        DurableObjectNamespace;
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
+  MATCH_KV:         KVNamespace;       // cleared on cleanup so players can rejoin // L2_隔離
 }
 
 // ── Storage key registry ─────────────────────────────────────────────── L2_模組
@@ -541,6 +542,11 @@ export class GameRoomDO implements DurableObject {
   }
 
   private async cleanup(): Promise<void> {
+    // Clear MATCH_KV `room:{pid}` for every human player so they can rejoin a new lobby. // L2_隔離
+    // Bots never make match requests so they have no KV entries.
+    const humanIds = (this.room?.playerIds ?? []).filter(id => !isBot(id));
+    await Promise.all(humanIds.map(id => this.env.MATCH_KV.delete(`room:${id}`).catch(() => {})));
+
     for (const ws of this.state.getWebSockets()) {
       try { ws.close(1000, "room closed"); } catch {}
     }

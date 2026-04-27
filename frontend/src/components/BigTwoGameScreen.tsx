@@ -128,16 +128,19 @@ function TableDisplay({ lastPlay, currentTurn, playerId, opponents, passCount, d
 
       <div className="flex min-h-24 items-center justify-center gap-1.5">
         {lastPlay
-          ? lastPlay.cards.map(c => (
-              <div
-                key={cardKey(c)}
-                className="flex h-16 w-11 flex-col rounded-lg border-2 border-gray-300 bg-white shadow"
-              >
-                <span className={`m-auto text-lg leading-none ${SUIT_COLOR[c.suit] ?? "text-gray-900"}`}>
-                  {SUIT_SYMBOL[c.suit]}
-                </span>
-              </div>
-            ))
+          ? lastPlay.cards.map(c => {
+              const color = SUIT_COLOR[c.suit] ?? "text-gray-900";
+              return (
+                <div
+                  key={cardKey(c)}
+                  className="relative flex h-16 w-11 flex-col rounded-lg border-2 border-gray-300 bg-white shadow"
+                >
+                  <span className={`absolute left-1 top-0.5 text-xs font-bold leading-none ${color}`}>{c.rank}</span>
+                  <span className={`absolute right-1 bottom-0.5 rotate-180 text-xs font-bold leading-none ${color}`}>{c.rank}</span>
+                  <span className={`m-auto text-lg leading-none ${color}`}>{SUIT_SYMBOL[c.suit]}</span>
+                </div>
+              );
+            })
           : <span className="text-green-500 text-sm">尚無出牌</span>
         }
       </div>

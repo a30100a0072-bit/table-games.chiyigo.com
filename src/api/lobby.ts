@@ -267,10 +267,22 @@ export async function handleMatch(
 
   const existingRoom = await env.MATCH_KV.get(`room:${playerId}`);
   if (existingRoom) {
-    return Response.json(
-      { error: "already in a room", roomId: existingRoom },
-      { status: 409 },
-    );
+    // Belt-and-suspenders: if the KV pointer survived a cleanup race, check D1
+    // for the room's status and clear the stale entry so the player isn't locked
+    // out for the full TTL after a game has actually ended.                   // L3_架構含防禦觀測
+    const row = await env.DB
+      .prepare("SELECT status FROM GameRooms WHERE room_id = ?")
+      .bind(existingRoom)
+      .first<{ status: string }>();
+    const stale = !row || row.status === "settled";
+    if (stale) {
+      await env.MATCH_KV.delete(`room:${playerId}`);
+    } else {
+      return Response.json(
+        { error: "already in a room", roomId: existingRoom },
+        { status: 409 },
+      );
+    }
   }
 
   // 每個 gameType 擁有獨立 LobbyDO 實例。                                // L2_隔離
