@@ -3,8 +3,8 @@
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 > 最後更新：2026-04-27
 >
-> **部署狀態**：Big Two 全棧 ✅；Mahjong 純邏輯 + 測試 ✅；Texas Hold'em 純邏輯 + 測試 ✅；CI/CD ✅
-> **單元測試**：3 檔 / 43 案例（Big Two 13、Mahjong 14、Texas Hold'em 16），全綠
+> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；CI/CD ✅
+> **單元測試**：4 檔 / 58 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15），全綠
 > **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
 > **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
 > `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
@@ -23,9 +23,10 @@ src/
 │   ├── BigTwoStateMachine.ts          ✅ 大老二純邏輯狀態機（零 IO）
 │   ├── MahjongStateMachine.ts         ✅ 台灣 16 張麻將純邏輯（PENDING_REACTIONS）
 │   ├── TexasHoldemStateMachine.ts     ✅ 德州撲克純邏輯（Side Pot Split）
-│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI（Big Two）
+│   ├── GameEngineAdapter.ts           ✅ IGameEngine 統一介面 + 三引擎工廠 / restore
+│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI（Big Two；其它遊戲暫無）
 ├── do/
-│   └── GameRoomDO.ts                  ✅ Durable Object — 房間生命週期 + WS 管理 + Bot 回合
+│   └── GameRoomDO.ts                  ✅ Durable Object — 多遊戲房間（透過 IGameEngine 派遣）
 ├── api/
 │   └── lobby.ts                       ✅ 配對大廳邏輯 (LobbyDO + handleMatch，10s Bot 補位)
 ├── utils/
@@ -57,9 +58,10 @@ frontend/                              ✅ React 18 + Vite 5 + Tailwind 3 (PWA)
 └── .env.example                       VITE_WORKER_URL 環境變數範例
 
 test/
-├── BigTwoStateMachine.test.ts         ✅ 13 個案例（合法出牌/非法阻擋/結算觸發）
-├── MahjongStateMachine.test.ts        ✅ 14 個案例（canWin 純函式 / 動作分派 / 反應視窗）
-└── TexasHoldemStateMachine.test.ts    ✅ 16 個案例（牌型階序 / 7 取 5 / 邊池 / 動作驗證）
+├── BigTwoStateMachine.test.ts         ✅ 13 案例（合法出牌/非法阻擋/結算觸發）
+├── MahjongStateMachine.test.ts        ✅ 14 案例（canWin 純函式 / 動作分派 / 反應視窗）
+├── TexasHoldemStateMachine.test.ts    ✅ 16 案例（牌型階序 / 7 取 5 / 邊池 / 動作驗證）
+└── GameEngineAdapter.test.ts          ✅ 15 案例（工廠 / snapshot 往返 / forceSettle / 動作防呆）
 
 wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.production] 完整重複）
 ```
@@ -100,11 +102,12 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | L0 SDK | `client/GameSocket.ts` | 前端連線管理、指數退避重連 | WebSocket |
 | L1 型別 | `types/game.ts` | 全域合約，TS interface | 無 |
 | L2 邏輯 | `game/BigTwoStateMachine.ts` | 大老二純狀態機，含牌型驗證 | 僅 `crypto.getRandomValues` |
-| L2 邏輯 | `game/MahjongStateMachine.ts` | 麻將純狀態機，PENDING_REACTIONS + 胡牌回溯 | 僅 `Math.random` 注入 |
-| L2 邏輯 | `game/TexasHoldemStateMachine.ts` | 德州撲克純狀態機，Side Pot 分割 + 7 取 5 評分 | 僅 `crypto.getRandomValues` |
-| L2 Bot | `game/BotAI.ts` | 純函式 AI，無副作用 | 無 |
-| L3 房間 | `do/GameRoomDO.ts` | WS session 管理、呼叫 L2、推 Queue | WebSocket, Queue |
-| L4 配對 | `api/lobby.ts` | 等候室、配對、Bot 補位、防 Race Condition | KV, D1, DO stub |
+| L2 邏輯 | `game/MahjongStateMachine.ts` | 麻將純狀態機，PENDING_REACTIONS + 胡牌回溯，含 snapshot/restore/forceSettle | 僅 `Math.random` 注入 |
+| L2 邏輯 | `game/TexasHoldemStateMachine.ts` | 德州撲克純狀態機，Side Pot + 7 取 5，含 snapshot/restore/forceSettle | 僅 `crypto.getRandomValues` |
+| L2 適配 | `game/GameEngineAdapter.ts` | `IGameEngine` 統一介面 + 三引擎 createEngine/restoreEngine 工廠 | 無 |
+| L2 Bot | `game/BotAI.ts` | 純函式 AI，無副作用（Big Two only） | 無 |
+| L3 房間 | `do/GameRoomDO.ts` | WS session、依 `gameType` 派遣 IGameEngine、推 Queue | WebSocket, Queue |
+| L4 配對 | `api/lobby.ts` | **每 gameType 一個 LobbyDO**、Bot 補位（僅 bigTwo） | KV, D1, DO stub |
 | L4 閘道 | `workers/gateway.ts` | HTTP 建房、JWT 發放、升級 WS、CORS | fetch, DO stub |
 | L5 結算 | `workers/settlementConsumer.ts` | 消費 Queue 訊息、寫 D1 | Queue, D1 |
 | L6 前端 | `frontend/` | React UI，手機 / 桌機，與後端 WS 通訊 | fetch, WebSocket |
@@ -179,6 +182,8 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **Race Condition**：LobbyDO `idFromName("main")` 強制單一 JS 執行緒序列化配對邏輯。
 - **CORS**：gateway.ts 所有 HTTP 回應均加 `Access-Control-Allow-Origin: *`，支援跨來源 Cloudflare Pages。
 - **Token 傳遞**：瀏覽器 WebSocket 無法設自訂 header，token 附於 `?token=` query string。
-- **Bot 補位**：大廳等候 10 秒後自動填入 Bot，Bot 以 `bot-1` ~ `bot-3` 命名，1.5s 思考延遲。
+- **Bot 補位**：大廳等候 10 秒後自動填入 Bot，Bot 以 `BOT_1` ~ `BOT_3` 命名，1.5s 思考延遲；**僅 bigTwo 啟用**，mahjong/texas 不會塞 Bot（沒有對應 AI）。
+- **多遊戲派遣**：客戶端打 `POST /api/match { gameType }` 或 `POST /rooms { gameType, capacity }`。LobbyDO `idFromName(gameType)` 確保各遊戲互不干擾的等候佇列。GameRoomDO 收 `gameType` 後委派 `createEngine` 建出 `IGameEngine`，後續所有 WS 訊息經 adapter 轉到對應狀態機。
+- **forceSettle 語義**：mahjong / texas 在 timeout/disconnect 時採「中止退池」 — 所有玩家 `scoreDelta=0`、`reason` 在結算事件中區分；前端依 reason 顯示中止訊息。
 - **免費方案 DO Migration**：必須使用 `new_sqlite_classes`（非 `new_classes`），否則 CF 回傳錯誤 10097。
 - **wrangler 環境繼承**：`[env.production]` 不會繼承頂層 bindings，所有綁定須在 `[env.production]` 下完整重複宣告。

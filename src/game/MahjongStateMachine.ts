@@ -181,8 +181,19 @@ export type ProcessResult =
   | { ok: true; settlement?: SettlementResult }
   | { ok: false; error: string };
 
+/** 持久化快照型別 — 對應 InternalState 結構，給 DO Hibernation 用。       // L3_架構含防禦觀測 */
+export type MahjongSnapshot = InternalState;
+
 export class MahjongStateMachine {
   private s: InternalState;
+
+  /** DO Hibernation 還原入口；不重新洗牌，直接接續既有狀態。              // L3_架構含防禦觀測 */
+  static restore(snap: MahjongSnapshot): MahjongStateMachine {
+    const m = Object.create(MahjongStateMachine.prototype) as MahjongStateMachine;
+    // 深複製避免外部 mutation 污染                                          // L2_隔離
+    (m as unknown as { s: InternalState }).s = JSON.parse(JSON.stringify(snap)) as InternalState;
+    return m;
+  }
 
   constructor(gameId: string, roundId: string, players: PlayerId[], rng: () => number = Math.random) {
     if (players.length !== 4) throw new Error("MJ_REQUIRES_4_PLAYERS");
@@ -405,6 +416,43 @@ export class MahjongStateMachine {
   private resolveReactions(): ProcessResult {
     if (this.s.pendingReactions.some(r => !r.declared)) return { ok: true }; // 還在等
     return this.commitHighestPriority();
+  }
+
+  /** 取出深拷貝快照 — 給 DO Hibernation persist 使用。                    // L3_架構含防禦觀測 */
+  snapshot(): MahjongSnapshot {
+    return JSON.parse(JSON.stringify(this.s)) as MahjongSnapshot;
+  }
+
+  /** 當前回合者 — 給 Bot/超時邏輯查詢，避免重組整個 view。                // L2_模組 */
+  currentTurn(): PlayerId {
+    return this.s.players[this.s.turnIdx]!.playerId;
+  }
+
+  /** 列出所有玩家 ID（座位順序）。                                         // L2_模組 */
+  playerIds(): PlayerId[] {
+    return this.s.players.map(p => p.playerId);
+  }
+
+  /**
+   * 強制結算 — DO timeout/disconnect 觸發；MVP 採「流局」處理：
+   * 所有玩家 scoreDelta=0，winnerId 取首位（前端依 reason 顯示中止訊息）。 // L3_架構含防禦觀測
+   */
+  forceSettle(reason: "timeout" | "disconnect"): SettlementResult {
+    if (this.s.phase === "settled") throw new Error("already settled");
+    this.s.phase = "settled";
+    return {
+      gameId: this.s.gameId,
+      roundId: this.s.roundId,
+      finishedAt: Date.now(),
+      reason,
+      winnerId: this.s.players[0]!.playerId,
+      players: this.s.players.map((p, i) => ({
+        playerId: p.playerId,
+        finalRank: i + 1,
+        remainingCards: [],                                                  // L2_隔離
+        scoreDelta: 0,
+      })),
+    };
   }
 
   /** 由外部 alarm 在 reactionDeadlineMs 觸發；對未回應者視為 pass */    // L3_架構

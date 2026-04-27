@@ -213,8 +213,18 @@ export type ProcessResult =
   | { ok: true; settlement?: SettlementResult }
   | { ok: false; error: string };
 
+/** 持久化快照型別 — 對應 InternalState；DO Hibernation 用。              // L3_架構含防禦觀測 */
+export type TexasSnapshot = InternalState;
+
 export class TexasHoldemStateMachine {
   private s: InternalState;
+
+  /** DO Hibernation 還原入口；不重洗牌，直接接續既有狀態。               // L3_架構含防禦觀測 */
+  static restore(snap: TexasSnapshot): TexasHoldemStateMachine {
+    const m = Object.create(TexasHoldemStateMachine.prototype) as TexasHoldemStateMachine;
+    (m as unknown as { s: InternalState }).s = JSON.parse(JSON.stringify(snap)) as InternalState;
+    return m;
+  }
 
   constructor(
     gameId: string,
@@ -549,6 +559,44 @@ export class TexasHoldemStateMachine {
         finalRank: idx + 1,
         remainingCards: [],
         scoreDelta: scoreDeltas.get(s.playerId) ?? 0,
+      })),
+    };
+  }
+
+  /** 取出深拷貝快照 — 給 DO Hibernation persist 使用。                     // L3_架構含防禦觀測 */
+  snapshot(): TexasSnapshot {
+    return JSON.parse(JSON.stringify(this.s)) as TexasSnapshot;
+  }
+
+  /** 當前回合者。                                                            // L2_模組 */
+  currentTurn(): PlayerId {
+    return this.s.seats[this.s.turnIdx]!.playerId;
+  }
+
+  /** 玩家 ID 座位順序。                                                      // L2_模組 */
+  playerIds(): PlayerId[] {
+    return this.s.seats.map(s => s.playerId);
+  }
+
+  /**
+   * 強制結算 — DO timeout/disconnect 觸發。
+   * 採「退池」：每位玩家 scoreDelta=0（退還全部 totalCommitted），標 settled。
+   * 前端依 reason 顯示「對局中止」。                                         // L3_架構含防禦觀測
+   */
+  forceSettle(reason: "timeout" | "disconnect"): SettlementResult {
+    if (this.s.street === "settled") throw new Error("already settled");
+    this.s.street = "settled";
+    return {
+      gameId: this.s.gameId,
+      roundId: this.s.roundId,
+      finishedAt: Date.now(),
+      reason,
+      winnerId: this.s.seats[0]!.playerId,
+      players: this.s.seats.map((s, i) => ({
+        playerId: s.playerId,
+        finalRank: i + 1,
+        remainingCards: [],                                                  // L2_隔離
+        scoreDelta: 0,
       })),
     };
   }

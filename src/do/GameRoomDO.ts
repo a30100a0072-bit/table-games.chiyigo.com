@@ -2,14 +2,18 @@
 // Cloudflare Durable Object — room lifecycle, WebSocket sessions, alarm multiplexing.
 // ZERO direct D1 writes; all settlement flows through SETTLEMENT_QUEUE.           // L3_架構含防禦觀測
 // setTimeout is FORBIDDEN; every timeout uses state.storage.setAlarm().           // L3_架構含防禦觀測
+//
+// 多遊戲版本：透過 IGameEngine 適配層支援 bigTwo / mahjong / texas。              // L2_模組
+// 機器人補位目前僅支援 bigTwo（其它遊戲 Lobby 不會塞 BOT_）。                     // L2_實作
 
-import { BigTwoStateMachine } from "../game/BigTwoStateMachine";
-import type { MachineSnapshot } from "../game/BigTwoStateMachine";
+import { createEngine, restoreEngine } from "../game/GameEngineAdapter";
+import type { IGameEngine } from "../game/GameEngineAdapter";
 import { getBotAction } from "../game/BotAI";
 import type {
-  PlayerId, ActionFrame, GameStateView,
+  PlayerId, ActionFrame, GameType, GameStateView,
   SettlementResult, SettlementQueueMessage,
 } from "../types/game";
+import { isGameType } from "../types/game";
 
 // ── Environment bindings ──────────────────────────────────────────────── L2_模組
 export interface Env {
@@ -43,6 +47,7 @@ interface AlarmEntry {
 interface RoomMeta {
   gameId:    string;
   roundId:   string;
+  gameType:  GameType;                           // L2_模組
   phase:     "waiting" | "playing" | "settled";
   playerIds: PlayerId[];
   capacity:  number;
@@ -58,8 +63,8 @@ export class GameRoomDO implements DurableObject {
   private readonly state: DurableObjectState;
   private readonly env:   Env;
 
-  private machine:      BigTwoStateMachine | null = null;
-  private room:         RoomMeta | null           = null;
+  private engine:       IGameEngine | null = null;
+  private room:         RoomMeta | null    = null;
   private seqs:         Record<PlayerId, number>  = {};
   private disconnected: Record<PlayerId, number>  = {};
   private alarms:       AlarmEntry[]              = [];
@@ -73,7 +78,7 @@ export class GameRoomDO implements DurableObject {
   private async hydrate(): Promise<void> {
     const [room, snap, seqs, disc, alarms] = await Promise.all([
       this.state.storage.get<RoomMeta>(SK.ROOM),
-      this.state.storage.get<MachineSnapshot>(SK.MACHINE),
+      this.state.storage.get<unknown>(SK.MACHINE),
       this.state.storage.get<Record<PlayerId, number>>(SK.SEQS),
       this.state.storage.get<Record<PlayerId, number>>(SK.DISC),
       this.state.storage.get<AlarmEntry[]>(SK.ALARMS),
@@ -82,7 +87,7 @@ export class GameRoomDO implements DurableObject {
     this.seqs         = seqs   ?? {};
     this.disconnected = disc   ?? {};
     this.alarms       = alarms ?? [];
-    if (snap) this.machine = BigTwoStateMachine.restore(snap);
+    if (snap && this.room) this.engine = restoreEngine(this.room.gameType, snap);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -94,25 +99,35 @@ export class GameRoomDO implements DurableObject {
     return new Response("not found", { status: 404 });
   }
 
-  // POST /init  body: { gameId, roundId, capacity, botIds?: string[] }
+  // POST /init  body: { gameId, roundId, gameType, capacity, botIds?: string[] }
   // botIds pre-populates bot seats so the game starts as soon as human
   // players fill the remaining slots via WebSocket.                      // L2_實作
   private async handleInit(request: Request): Promise<Response> {
     if (this.room) return new Response("already initialised", { status: 409 });
-    const { gameId, roundId, capacity, botIds = [] } = await request.json<{
-      gameId: string; roundId: string; capacity: number; botIds?: string[];
+    const { gameId, roundId, gameType, capacity, botIds = [] } = await request.json<{
+      gameId: string; roundId: string; gameType?: string; capacity: number; botIds?: string[];
     }>();
     if (capacity < 2 || capacity > 4)
       return new Response("capacity must be 2–4", { status: 400 });
 
-    // Bot seats are pre-joined; humans still need WS connections.       // L2_實作
-    this.room = { gameId, roundId, phase: "waiting", playerIds: [...botIds], capacity };
+    // 預設保留 bigTwo 以維持既有 /rooms 端點向下相容。                     // L2_隔離
+    const gt: GameType = isGameType(gameType) ? gameType : "bigTwo";
+    if (gt === "mahjong" && capacity !== 4)
+      return new Response("mahjong requires capacity=4", { status: 400 });
+    // Mahjong / Texas 不接受 botIds（沒有對應 BotAI）。                    // L2_實作
+    if (gt !== "bigTwo" && botIds.length > 0)
+      return new Response("bots not supported for this game type", { status: 400 });
+
+    this.room = {
+      gameId, roundId, gameType: gt, phase: "waiting",
+      playerIds: [...botIds], capacity,
+    };
     await this.state.storage.put(SK.ROOM, this.room);
 
     // Edge case: all-bot room (tests / future use).
     if (this.room.playerIds.length === capacity) await this.startGame();
 
-    return Response.json({ ok: true, gameId });
+    return Response.json({ ok: true, gameId, gameType: gt });
   }
 
   private async handleJoin(request: Request): Promise<Response> {
@@ -146,8 +161,8 @@ export class GameRoomDO implements DurableObject {
       await this.cancelAlarm("reconnect", playerId);
       delete this.disconnected[playerId];
       await this.state.storage.put(SK.DISC, this.disconnected);
-      if (this.machine)
-        server.send(JSON.stringify({ type: "state", payload: this.machine.getView(playerId) }));
+      if (this.engine)
+        server.send(JSON.stringify({ type: "state", payload: this.engine.getView(playerId) }));
       this.broadcastSystemMsg(`${playerId} 已重連`);
     } else {
       this.room.playerIds.push(playerId);
@@ -164,17 +179,21 @@ export class GameRoomDO implements DurableObject {
   private async startGame(): Promise<void> {
     if (!this.room) return;
     this.room.phase = "playing";
-    this.machine = new BigTwoStateMachine(
-      this.room.gameId, this.room.roundId, this.room.playerIds,
-    );
+    this.engine = createEngine({
+      gameType:  this.room.gameType,
+      gameId:    this.room.gameId,
+      roundId:   this.room.roundId,
+      playerIds: this.room.playerIds,
+    });
     await Promise.all([
       this.state.storage.put(SK.ROOM, this.room),
       this.persistMachine(),
     ]);
     this.broadcastViews();
-    const deadline = this.machine.getView(this.room.playerIds[0]).turnDeadlineMs;
-    await this.scheduleTurnAlarm(deadline);
-    // If the 3♣ holder is a bot, schedule bot action immediately.      // L2_實作
+    // Turn deadline 由各遊戲 view 自帶 turnDeadlineMs。                    // L2_鎖定
+    const deadline = this.firstTurnDeadline();
+    if (deadline) await this.scheduleTurnAlarm(deadline);
+    // If the leading seat is a bot (Big Two only), schedule bot action.   // L2_實作
     await this.checkBotTurn();
   }
 
@@ -194,8 +213,8 @@ export class GameRoomDO implements DurableObject {
     }
 
     if ((parsed as { type: string }).type === "sync") {
-      if (this.machine)
-        ws.send(JSON.stringify({ type: "state", payload: this.machine.getView(playerId) }));
+      if (this.engine)
+        ws.send(JSON.stringify({ type: "state", payload: this.engine.getView(playerId) }));
       return;
     }
 
@@ -206,14 +225,14 @@ export class GameRoomDO implements DurableObject {
       return;
     }
 
-    if (!this.machine || this.room?.phase !== "playing") {
+    if (!this.engine || this.room?.phase !== "playing") {
       ws.send(JSON.stringify({ error: "game not active" }));
       return;
     }
 
-    let result: ReturnType<BigTwoStateMachine["processAction"]>;
+    let outcome: ReturnType<IGameEngine["processAction"]>;
     try {
-      result = this.machine.processAction(playerId, frame.action);
+      outcome = this.engine.processAction(playerId, frame.action);
     } catch (err) {
       ws.send(JSON.stringify({ error: (err as Error).message }));
       return;
@@ -225,13 +244,13 @@ export class GameRoomDO implements DurableObject {
       this.state.storage.put(SK.SEQS, this.seqs),
     ]);
 
-    this.broadcastViews(result.viewFor);
+    this.broadcastViews();
 
-    if (result.settlement) {
-      await this.handleSettlement(result.settlement);
+    if (outcome.settlement) {
+      await this.handleSettlement(outcome.settlement);
     } else {
-      const deadline = result.viewFor(this.room!.playerIds[0]).turnDeadlineMs;
-      await this.scheduleTurnAlarm(deadline);
+      const deadline = this.firstTurnDeadline();
+      if (deadline) await this.scheduleTurnAlarm(deadline);
       // Schedule bot action if the next seat is a bot.                  // L2_實作
       await this.checkBotTurn();
     }
@@ -286,8 +305,8 @@ export class GameRoomDO implements DurableObject {
   }
 
   private async onTurnTimeout(): Promise<void> {
-    if (!this.machine || this.room?.phase !== "playing") return;
-    const settlement = this.machine.forceSettle("timeout");
+    if (!this.engine || this.room?.phase !== "playing") return;
+    const settlement = this.engine.forceSettle("timeout");
     this.broadcastViews();
     await this.handleSettlement(settlement);
   }
@@ -300,8 +319,8 @@ export class GameRoomDO implements DurableObject {
     }
     if (this.disconnected[playerId] === undefined) return;
 
-    if (this.room.phase === "playing" && this.machine) {
-      const settlement = this.machine.forceSettle("disconnect");
+    if (this.room.phase === "playing" && this.engine) {
+      const settlement = this.engine.forceSettle("disconnect");
       this.broadcastViews();
       await this.handleSettlement(settlement);
     } else {
@@ -317,38 +336,39 @@ export class GameRoomDO implements DurableObject {
   }
 
   // ── Bot turn execution ────────────────────────────────────────────────── L2_實作
-  // Runs inside alarm() context — safe to await storage ops.
+  // Big Two only — Mahjong/Texas don't have a bot AI implementation.
 
   private async onBotTurn(botId: PlayerId): Promise<void> {
-    if (!this.machine || this.room?.phase !== "playing") return;
+    if (!this.engine || this.room?.phase !== "playing") return;
+    if (this.room.gameType !== "bigTwo") return;        // L2_實作
 
-    const view = this.machine.getView(botId);
+    const view = this.engine.getView(botId) as GameStateView;
 
     // Guard: turn may have changed since alarm was scheduled (e.g. human reconnected). // L3_架構含防禦觀測
     if (view.currentTurn !== botId) return;
 
     const action = getBotAction(view, view.self.hand);
 
-    let result: ReturnType<BigTwoStateMachine["processAction"]>;
+    let outcome: ReturnType<IGameEngine["processAction"]>;
     try {
-      result = this.machine.processAction(botId, action);
+      outcome = this.engine.processAction(botId, action);
     } catch (err) {
       // BotAI produced an invalid action — force-settle to prevent deadlock. // L3_架構含防禦觀測
       console.error(`[BotAI] invalid action for ${botId}:`, err);
-      const settlement = this.machine.forceSettle("disconnect");
+      const settlement = this.engine.forceSettle("disconnect");
       this.broadcastViews();
       await this.handleSettlement(settlement);
       return;
     }
 
-    await Promise.all([this.persistMachine()]);
-    this.broadcastViews(result.viewFor);
+    await this.persistMachine();
+    this.broadcastViews();
 
-    if (result.settlement) {
-      await this.handleSettlement(result.settlement);
+    if (outcome.settlement) {
+      await this.handleSettlement(outcome.settlement);
     } else {
-      const deadline = result.viewFor(this.room!.playerIds[0]).turnDeadlineMs;
-      await this.scheduleTurnAlarm(deadline);
+      const deadline = this.firstTurnDeadline();
+      if (deadline) await this.scheduleTurnAlarm(deadline);
       // Chain: if next player is also a bot, schedule another bot alarm. // L2_實作
       await this.checkBotTurn();
     }
@@ -356,13 +376,13 @@ export class GameRoomDO implements DurableObject {
 
   // ── Bot-turn check ────────────────────────────────────────────────────── L2_實作
   // Called after every turn transition (human action or game start).
-  // Cancels the 30s turn alarm and re-arms at BOT_THINK_MS so the bot
-  // acts long before the timeout would fire.                             // L3_架構含防禦觀測
+  // Only fires for Big Two; Mahjong/Texas have no bot AI implementation.
 
   private async checkBotTurn(): Promise<void> {
-    if (!this.machine || this.room?.phase !== "playing") return;
+    if (!this.engine || this.room?.phase !== "playing") return;
+    if (this.room.gameType !== "bigTwo") return;        // L2_實作
 
-    const { currentTurn } = this.machine.getView(this.room.playerIds[0]);
+    const currentTurn = this.engine.currentTurn();
     if (!isBot(currentTurn)) return;
 
     // Replace the 30s turn alarm with a short bot-think alarm.          // L2_實作
@@ -385,12 +405,12 @@ export class GameRoomDO implements DurableObject {
 
   // ── Broadcast helpers ─────────────────────────────────────────────────── L2_模組
 
-  private broadcastViews(viewFor?: (pid: PlayerId) => GameStateView): void {
-    const fn = viewFor ?? ((pid: PlayerId) => this.machine?.getView(pid));
+  private broadcastViews(): void {
+    if (!this.engine) return;
     for (const ws of this.state.getWebSockets()) {
       const att  = ws.deserializeAttachment() as WsAttachment | null;
       if (!att) continue;
-      const view = fn(att.playerId);
+      const view = this.engine.getView(att.playerId);
       if (!view) continue;
       try { ws.send(JSON.stringify({ type: "state", payload: view })); } catch {}
     }
@@ -401,6 +421,13 @@ export class GameRoomDO implements DurableObject {
     for (const ws of this.state.getWebSockets()) {
       try { ws.send(payload); } catch {}
     }
+  }
+
+  /** 從當前玩家視角讀 turnDeadlineMs；三款遊戲視角結構皆含此欄位。      // L2_鎖定 */
+  private firstTurnDeadline(): number | null {
+    if (!this.engine || !this.room) return null;
+    const view = this.engine.getView(this.room.playerIds[0]!) as { turnDeadlineMs?: number };
+    return typeof view.turnDeadlineMs === "number" ? view.turnDeadlineMs : null;
   }
 
   // ── Alarm plumbing ────────────────────────────────────────────────────── L3_架構含防禦觀測
@@ -437,7 +464,7 @@ export class GameRoomDO implements DurableObject {
   }
 
   private async persistMachine(): Promise<void> {
-    if (this.machine) await this.state.storage.put(SK.MACHINE, this.machine.snapshot());
+    if (this.engine) await this.state.storage.put(SK.MACHINE, this.engine.snapshot());
   }
 
   private async cleanup(): Promise<void> {
@@ -446,7 +473,7 @@ export class GameRoomDO implements DurableObject {
     }
     await this.state.storage.deleteAlarm();
     await this.state.storage.deleteAll();
-    this.machine      = null;
+    this.engine       = null;
     this.room         = null;
     this.seqs         = {};
     this.disconnected = {};

@@ -1,7 +1,8 @@
 // /src/workers/gateway.ts
 import { verifyJWT, signJWT, JWTError } from "../utils/auth";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
-import type { SettlementQueueMessage }  from "../types/game";
+import type { SettlementQueueMessage, GameType }  from "../types/game";
+import { isGameType } from "../types/game";
 
 export interface GatewayEnv extends LobbyEnv {
   GAME_ROOM:        DurableObjectNamespace;
@@ -62,9 +63,11 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
 
 async function createRoom(request: Request, env: GatewayEnv): Promise<Response> {
   let capacity = 4;
+  let gameType: GameType = "bigTwo";
   try {
-    const body = await request.json<{ capacity?: number }>();
+    const body = await request.json<{ capacity?: number; gameType?: string }>();
     if (typeof body.capacity === "number") capacity = body.capacity;
+    if (isGameType(body.gameType)) gameType = body.gameType;
   } catch { /* default */ }
 
   const gameId  = crypto.randomUUID();
@@ -73,11 +76,11 @@ async function createRoom(request: Request, env: GatewayEnv): Promise<Response> 
 
   const init = await stub.fetch(new Request("https://gameroom.internal/init", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ gameId, roundId, capacity }),
+    body: JSON.stringify({ gameId, roundId, gameType, capacity }),
   }));
 
   if (!init.ok) return new Response(await init.text(), { status: init.status });
-  return Response.json({ gameId, roundId }, { status: 201 });
+  return Response.json({ gameId, roundId, gameType }, { status: 201 });
 }
 
 // ── GET /rooms/:gameId/join — verify JWT, upgrade WebSocket ──────────────

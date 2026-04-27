@@ -1,7 +1,12 @@
 // /src/api/lobby.ts
-// Matchmaking lobby — race-condition-safe via single LobbyDO instance.  // L2_鎖定
+// Matchmaking lobby — race-condition-safe via single LobbyDO instance per gameType. // L2_鎖定
+//
+// 每個遊戲類型擁有自己的 LobbyDO（idFromName(gameType)），互不干擾。            // L2_隔離
+// 機器人補位（BOT_FILL）僅對 bigTwo 啟用，因為僅 bigTwo 有對應 BotAI。           // L2_實作
 
 import { verifyJWT, JWTError } from "../utils/auth";
+import type { GameType } from "../types/game";
+import { isGameType } from "../types/game";
 
 // ── Environment ──────────────────────────────────────────────────────── L2_隔離
 export interface LobbyEnv {
@@ -24,7 +29,12 @@ const BOT_PREFIX = "BOT_";
 const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LobbyDO — named "main", single global instance.                        // L2_鎖定
+// LobbyDO — one named instance per GameType.                              // L2_鎖定
+
+interface LobbyJoinBody {
+  playerId: string;
+  gameType: GameType;
+}
 
 export class LobbyDO implements DurableObject {
 
@@ -33,18 +43,21 @@ export class LobbyDO implements DurableObject {
 
   private pending   = new Map<string, (r: Response) => void>();
   private deadlines = new Map<string, number>();
-  private botFillAt: number | null = null;  // epoch ms when bots should fill remainder // L2_實作
+  private botFillAt: number | null = null;        // epoch ms when bots should fill remainder // L2_實作
+  private gameType:  GameType | null = null;      // bound on first join, immutable thereafter // L2_隔離
 
   constructor(state: DurableObjectState, env: LobbyEnv) {
     this.state = state;
     this.env   = env;
     this.state.blockConcurrencyWhile(async () => {
-      const [saved, savedBotFill] = await Promise.all([
+      const [saved, savedBotFill, savedType] = await Promise.all([
         this.state.storage.get<[string, number][]>("deadlines"),
         this.state.storage.get<number>("botFillAt"),
+        this.state.storage.get<GameType>("gameType"),
       ]);
       if (saved)        this.deadlines = new Map(saved);
       if (savedBotFill) this.botFillAt = savedBotFill;
+      if (savedType)    this.gameType  = savedType;
     });
   }
 
@@ -58,22 +71,34 @@ export class LobbyDO implements DurableObject {
   // ── Join queue ──────────────────────────────────────────────────────── L2_鎖定
 
   private async join(request: Request): Promise<Response> {
-    const { playerId } = await request.json<{ playerId: string }>();
+    const body = await request.json<LobbyJoinBody>();
+    const { playerId, gameType } = body;
+    if (!isGameType(gameType))
+      return Response.json({ error: "invalid gameType" }, { status: 400 });
+
+    // 同一 LobbyDO 實例只能服務單一 gameType。                              // L2_隔離
+    if (this.gameType === null) {
+      this.gameType = gameType;
+      await this.state.storage.put("gameType", this.gameType);
+    } else if (this.gameType !== gameType) {
+      return Response.json({ error: "gameType mismatch for this lobby" }, { status: 400 });
+    }
 
     if (this.deadlines.has(playerId))
       return Response.json({ error: "already queued" }, { status: 409 });
 
     this.deadlines.set(playerId, Date.now() + WAIT_MS);
 
-    // Arm bot-fill timer on the very first real player entering the queue. // L2_實作
-    if (this.botFillAt === null) {
+    // Arm bot-fill timer on the very first real player (bigTwo only).      // L2_實作
+    if (this.gameType === "bigTwo" && this.botFillAt === null) {
       this.botFillAt = Date.now() + BOT_FILL_MS;
       await this.state.storage.put("botFillAt", this.botFillAt);
     }
 
+    const next = this.nextAlarm();
     await Promise.all([
       this.state.storage.put("deadlines", [...this.deadlines.entries()]),
-      this.state.storage.setAlarm(this.nextAlarm()),
+      next !== null ? this.state.storage.setAlarm(next) : Promise.resolve(),
     ]);
 
     return new Promise<Response>(resolve => {
@@ -86,6 +111,7 @@ export class LobbyDO implements DurableObject {
 
   private async tryMatch(): Promise<void> {
     if (this.pending.size < ROOM_SIZE) return;
+    if (this.gameType === null) return;
 
     const batch     = [...this.pending.entries()].slice(0, ROOM_SIZE);
     const playerIds = batch.map(([id]) => id);
@@ -131,6 +157,7 @@ export class LobbyDO implements DurableObject {
         body:    JSON.stringify({
           gameId:   roomId,
           roundId:  crypto.randomUUID(),
+          gameType: this.gameType,
           capacity: ROOM_SIZE,
           botIds,
         }),
@@ -141,7 +168,7 @@ export class LobbyDO implements DurableObject {
     }
 
     // Resolve only human long-poll connections (bots have no-op resolvers).
-    const body = Response.json({ matched: true, roomId, players: playerIds });
+    const body = Response.json({ matched: true, roomId, gameType: this.gameType, players: playerIds });
     for (const [id, resolve] of batch) {
       if (!isBot(id)) resolve(body.clone());
     }
@@ -155,12 +182,11 @@ export class LobbyDO implements DurableObject {
     ]);
   }
 
-  // ── Bot-fill: called when BOT_FILL_MS elapses ────────────────────── L2_實作
-  // Fills remaining seats with virtual bot IDs and forces a match.
-  // Bot resolvers are no-ops — bots have no HTTP connection to reply to. // L2_隔離
+  // ── Bot-fill: called when BOT_FILL_MS elapses (bigTwo only) ────────── L2_實作
 
   private async fillWithBots(): Promise<void> {
     if (this.pending.size === 0) return;   // no real players — nothing to fill for // L2_實作
+    if (this.gameType !== "bigTwo") return;  // 其它遊戲沒有 BotAI       // L2_實作
 
     let botIdx = 1;
     while (this.pending.size < ROOM_SIZE) {
@@ -171,7 +197,6 @@ export class LobbyDO implements DurableObject {
   }
 
   // ── Alarm: expire stale waiters + trigger bot-fill ─────────────────── L2_鎖定
-  // setTimeout is FORBIDDEN; all timeouts are enforced here.            // L2_鎖定
 
   async alarm(): Promise<void> {
     const now = Date.now();
@@ -181,8 +206,6 @@ export class LobbyDO implements DurableObject {
       this.botFillAt = null;
       await this.state.storage.delete("botFillAt");
       await this.fillWithBots();
-      // If fillWithBots matched everyone, pending/deadlines are empty
-      // and the re-arm below will call deleteAlarm(). ✓
     }
 
     // ② Expire real-player wait deadlines
@@ -235,6 +258,13 @@ export async function handleMatch(
     );
   }
 
+  // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離
+  let gameType: GameType = "bigTwo";
+  try {
+    const body = await request.json<{ gameType?: string }>();
+    if (isGameType(body.gameType)) gameType = body.gameType;
+  } catch { /* default */ }
+
   const existingRoom = await env.MATCH_KV.get(`room:${playerId}`);
   if (existingRoom) {
     return Response.json(
@@ -243,12 +273,13 @@ export async function handleMatch(
     );
   }
 
-  const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName("main"));
+  // 每個 gameType 擁有獨立 LobbyDO 實例。                                // L2_隔離
+  const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName(gameType));
   return stub.fetch(
     new Request("https://lobby.internal/join", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ playerId }),
+      body:    JSON.stringify({ playerId, gameType }),
     }),
   );
 }
