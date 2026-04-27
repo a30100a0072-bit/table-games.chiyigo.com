@@ -3,7 +3,8 @@
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 > 最後更新：2026-04-27
 >
-> **部署狀態**：Big Two 全棧 ✅；Mahjong 純邏輯 ✅；Texas Hold'em 純邏輯 ✅；測試 & CI/CD ✅
+> **部署狀態**：Big Two 全棧 ✅；Mahjong 純邏輯 + 測試 ✅；Texas Hold'em 純邏輯 + 測試 ✅；CI/CD ✅
+> **單元測試**：3 檔 / 43 案例（Big Two 13、Mahjong 14、Texas Hold'em 16），全綠
 > **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
 > **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
 > `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
@@ -56,7 +57,9 @@ frontend/                              ✅ React 18 + Vite 5 + Tailwind 3 (PWA)
 └── .env.example                       VITE_WORKER_URL 環境變數範例
 
 test/
-└── BigTwoStateMachine.test.ts         ✅ 11 個單元測試案例
+├── BigTwoStateMachine.test.ts         ✅ 13 個案例（合法出牌/非法阻擋/結算觸發）
+├── MahjongStateMachine.test.ts        ✅ 14 個案例（canWin 純函式 / 動作分派 / 反應視窗）
+└── TexasHoldemStateMachine.test.ts    ✅ 16 個案例（牌型階序 / 7 取 5 / 邊池 / 動作驗證）
 
 wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.production] 完整重複）
 ```
@@ -83,7 +86,9 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 
 | 工程支援 | 檔案 | 狀態 | 重點 |
 |----------|------|------|------|
-| 單元測試 | `test/BigTwoStateMachine.test.ts` | ✅ | 11 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
+| 單元測試 (BT) | `test/BigTwoStateMachine.test.ts` | ✅ | 13 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
+| 單元測試 (MJ) | `test/MahjongStateMachine.test.ts` | ✅ | 14 案例：`canWin` 6 案、初始化 3 案、動作分派 5 案；以 Mulberry32 種子 RNG 確定性 |
+| 單元測試 (TH) | `test/TexasHoldemStateMachine.test.ts` | ✅ | 16 案例：牌型階序、wheel straight、kicker、7 取 5、邊池三層 / 棄牌貢獻、盲注、加注合法性 |
 | CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push main 觸發、tsc + vitest 通過後 wrangler deploy |
 
 ---

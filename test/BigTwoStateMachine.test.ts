@@ -81,6 +81,7 @@ describe("合法出牌校驗", () => {
         ["p1", [
           { rank: "7", suit: "hearts" },
           { rank: "7", suit: "spades" },
+          { rank: "9", suit: "diamonds" },   // 保留一張，避免打完即結算   // L2_測試
         ]],
         ["p2", [{ rank: "K", suit: "clubs" }]],
       ],
