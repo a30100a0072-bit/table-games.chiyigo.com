@@ -2,7 +2,7 @@
 // Matchmaking lobby — race-condition-safe via single LobbyDO instance per gameType. // L2_鎖定
 //
 // 每個遊戲類型擁有自己的 LobbyDO（idFromName(gameType)），互不干擾。            // L2_隔離
-// 機器人補位（BOT_FILL）僅對 bigTwo 啟用，因為僅 bigTwo 有對應 BotAI。           // L2_實作
+// 機器人補位（BOT_FILL）對 bigTwo / mahjong / texas 三款遊戲皆啟用。            // L2_實作
 
 import { verifyJWT, JWTError } from "../utils/auth";
 import type { GameType } from "../types/game";
@@ -89,8 +89,8 @@ export class LobbyDO implements DurableObject {
 
     this.deadlines.set(playerId, Date.now() + WAIT_MS);
 
-    // Arm bot-fill timer on the very first real player (bigTwo only).      // L2_實作
-    if (this.gameType === "bigTwo" && this.botFillAt === null) {
+    // Arm bot-fill timer on the very first real player (all game types).   // L2_實作
+    if (this.botFillAt === null) {
       this.botFillAt = Date.now() + BOT_FILL_MS;
       await this.state.storage.put("botFillAt", this.botFillAt);
     }
@@ -182,11 +182,11 @@ export class LobbyDO implements DurableObject {
     ]);
   }
 
-  // ── Bot-fill: called when BOT_FILL_MS elapses (bigTwo only) ────────── L2_實作
+  // ── Bot-fill: called when BOT_FILL_MS elapses (all game types) ────── L2_實作
 
   private async fillWithBots(): Promise<void> {
     if (this.pending.size === 0) return;   // no real players — nothing to fill for // L2_實作
-    if (this.gameType !== "bigTwo") return;  // 其它遊戲沒有 BotAI       // L2_實作
+    if (this.gameType === null) return;
 
     let botIdx = 1;
     while (this.pending.size < ROOM_SIZE) {

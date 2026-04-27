@@ -8,9 +8,10 @@
 
 import { createEngine, restoreEngine } from "../game/GameEngineAdapter";
 import type { IGameEngine } from "../game/GameEngineAdapter";
-import { getBotAction } from "../game/BotAI";
+import { getBigTwoBotAction, getMahjongBotAction, getTexasBotAction } from "../game/BotAI";
 import type {
-  PlayerId, ActionFrame, GameType, GameStateView,
+  PlayerAction,
+  PlayerId, ActionFrame, GameType, GameStateView, MahjongStateView, PokerStateView,
   SettlementResult, SettlementQueueMessage,
 } from "../types/game";
 import { isGameType } from "../types/game";
@@ -36,10 +37,12 @@ interface WsAttachment {
 }
 
 // ─────────────────────────────────────────────────────────────────────── L3_架構含防禦觀測
-// "bot" kind: fires 1 500 ms after a bot's turn begins, triggering BotAI. // L2_實作
-// One CF alarm slot is multiplexed across turn / reconnect / bot entries.
+// "bot"   — fires after a bot's think delay, triggering its BotAI.        // L2_實作
+// "react" — Mahjong-only; fires when reactionDeadlineMs expires so the
+//           state machine can collapse unresolved reactions to pass.       // L3_架構
+// One CF alarm slot is multiplexed across all alarm kinds.
 interface AlarmEntry {
-  kind:      "turn" | "reconnect" | "bot";
+  kind:      "turn" | "reconnect" | "bot" | "react";
   playerId?: PlayerId;
   deadline:  number;
 }
@@ -54,7 +57,8 @@ interface RoomMeta {
 }
 
 const RECONNECT_MS  = 60_000;
-const BOT_THINK_MS  = 1_500;    // simulated think time for bots         // L2_實作
+const BOT_THINK_MS  = 1_500;    // simulated think time for active turns       // L2_實作
+const BOT_REACT_MS  = 250;      // mahjong reaction snap delay (≪ 3.5s window) // L2_實作
 const BOT_PREFIX    = "BOT_";
 const isBot = (id: PlayerId): boolean => id.startsWith(BOT_PREFIX);
 
@@ -114,9 +118,6 @@ export class GameRoomDO implements DurableObject {
     const gt: GameType = isGameType(gameType) ? gameType : "bigTwo";
     if (gt === "mahjong" && capacity !== 4)
       return new Response("mahjong requires capacity=4", { status: 400 });
-    // Mahjong / Texas 不接受 botIds（沒有對應 BotAI）。                    // L2_實作
-    if (gt !== "bigTwo" && botIds.length > 0)
-      return new Response("bots not supported for this game type", { status: 400 });
 
     this.room = {
       gameId, roundId, gameType: gt, phase: "waiting",
@@ -190,10 +191,9 @@ export class GameRoomDO implements DurableObject {
       this.persistMachine(),
     ]);
     this.broadcastViews();
-    // Turn deadline 由各遊戲 view 自帶 turnDeadlineMs。                    // L2_鎖定
-    const deadline = this.firstTurnDeadline();
-    if (deadline) await this.scheduleTurnAlarm(deadline);
-    // If the leading seat is a bot (Big Two only), schedule bot action.   // L2_實作
+    // Mahjong pending_reactions uses reactionDeadlineMs; others use turnDeadlineMs. // L2_鎖定
+    await this.scheduleNextDeadline();
+    // If the seat that should act is a bot, schedule bot action.          // L2_實作
     await this.checkBotTurn();
   }
 
@@ -249,8 +249,7 @@ export class GameRoomDO implements DurableObject {
     if (outcome.settlement) {
       await this.handleSettlement(outcome.settlement);
     } else {
-      const deadline = this.firstTurnDeadline();
-      if (deadline) await this.scheduleTurnAlarm(deadline);
+      await this.scheduleNextDeadline();
       // Schedule bot action if the next seat is a bot.                  // L2_實作
       await this.checkBotTurn();
     }
@@ -299,6 +298,7 @@ export class GameRoomDO implements DurableObject {
       if (entry.kind === "turn")      await this.onTurnTimeout();
       if (entry.kind === "reconnect") await this.onReconnectExpired(entry.playerId);
       if (entry.kind === "bot")       await this.onBotTurn(entry.playerId!); // L2_實作
+      if (entry.kind === "react")     await this.onReactionTimeout();        // L3_架構
     }
 
     await this.rearmClock();
@@ -336,18 +336,21 @@ export class GameRoomDO implements DurableObject {
   }
 
   // ── Bot turn execution ────────────────────────────────────────────────── L2_實作
-  // Big Two only — Mahjong/Texas don't have a bot AI implementation.
+  // Dispatches to the right BotAI based on gameType + current phase.       // L2_模組
 
   private async onBotTurn(botId: PlayerId): Promise<void> {
     if (!this.engine || this.room?.phase !== "playing") return;
-    if (this.room.gameType !== "bigTwo") return;        // L2_實作
+    const gt = this.room.gameType;
 
-    const view = this.engine.getView(botId) as GameStateView;
-
-    // Guard: turn may have changed since alarm was scheduled (e.g. human reconnected). // L3_架構含防禦觀測
-    if (view.currentTurn !== botId) return;
-
-    const action = getBotAction(view, view.self.hand);
+    // Compute action; null = bot has no current obligation (race condition). // L3_架構含防禦觀測
+    let action: PlayerAction | null;
+    try {
+      action = this.computeBotAction(gt, botId);
+    } catch (err) {
+      console.error(`[BotAI] action computation failed for ${botId}:`, err);
+      action = null;
+    }
+    if (!action) return;     // turn moved on while we were waiting — drop silently // L3_架構含防禦觀測
 
     let outcome: ReturnType<IGameEngine["processAction"]>;
     try {
@@ -367,29 +370,85 @@ export class GameRoomDO implements DurableObject {
     if (outcome.settlement) {
       await this.handleSettlement(outcome.settlement);
     } else {
-      const deadline = this.firstTurnDeadline();
-      if (deadline) await this.scheduleTurnAlarm(deadline);
-      // Chain: if next player is also a bot, schedule another bot alarm. // L2_實作
+      await this.scheduleNextDeadline();
+      // Chain: if the next player (or another reaction-bot) is a bot, schedule it. // L2_實作
       await this.checkBotTurn();
     }
   }
 
+  /** Compute the bot's intended action for the current engine state.        // L2_模組 */
+  private computeBotAction(gt: GameType, botId: PlayerId): PlayerAction | null {
+    if (!this.engine) return null;
+    if (gt === "bigTwo") {
+      const v = this.engine.getView(botId) as GameStateView;
+      if (v.currentTurn !== botId) return null;
+      return getBigTwoBotAction(v, v.self.hand);
+    }
+    if (gt === "texas") {
+      const v = this.engine.getView(botId) as PokerStateView;
+      if (v.currentTurn !== botId) return null;
+      return getTexasBotAction(v);
+    }
+    // mahjong: bot may be the active discarder or one of the 3 reactors.
+    const v = this.engine.getView(botId) as MahjongStateView;
+    const isReactor = v.phase === "pending_reactions" && v.awaitingReactionsFrom.includes(botId);
+    const isOnTurn  = v.phase === "playing" && v.currentTurn === botId;
+    if (!isReactor && !isOnTurn) return null;
+    return getMahjongBotAction(v);
+  }
+
   // ── Bot-turn check ────────────────────────────────────────────────────── L2_實作
-  // Called after every turn transition (human action or game start).
-  // Only fires for Big Two; Mahjong/Texas have no bot AI implementation.
+  // Called after every turn transition (human action, bot action, or game start).
+  // Schedules the next bot alarm for whichever bot owes an action right now.
 
   private async checkBotTurn(): Promise<void> {
     if (!this.engine || this.room?.phase !== "playing") return;
-    if (this.room.gameType !== "bigTwo") return;        // L2_實作
+    const gt = this.room.gameType;
 
-    const currentTurn = this.engine.currentTurn();
-    if (!isBot(currentTurn)) return;
+    if (gt === "bigTwo" || gt === "texas") {
+      const currentTurn = this.engine.currentTurn();
+      if (!isBot(currentTurn)) return;
+      this.alarms = this.alarms.filter(a => a.kind !== "turn");
+      await this.scheduleAlarm({
+        kind: "bot", playerId: currentTurn, deadline: Date.now() + BOT_THINK_MS,
+      });
+      return;
+    }
 
-    // Replace the 30s turn alarm with a short bot-think alarm.          // L2_實作
-    this.alarms = this.alarms.filter(a => a.kind !== "turn");
-    await this.scheduleAlarm({
-      kind: "bot", playerId: currentTurn, deadline: Date.now() + BOT_THINK_MS,
-    });
+    // Mahjong: pending_reactions may have multiple bots owing; schedule one at a time. // L2_實作
+    const view = this.engine.getView(this.room.playerIds[0]!) as MahjongStateView;
+    if (view.phase === "pending_reactions") {
+      const botToReact = view.awaitingReactionsFrom.find(isBot);
+      if (!botToReact) return;
+      await this.scheduleAlarm({
+        kind: "bot", playerId: botToReact, deadline: Date.now() + BOT_REACT_MS,
+      });
+      return;
+    }
+    if (view.phase === "playing" && isBot(view.currentTurn)) {
+      this.alarms = this.alarms.filter(a => a.kind !== "turn");
+      await this.scheduleAlarm({
+        kind: "bot", playerId: view.currentTurn, deadline: Date.now() + BOT_THINK_MS,
+      });
+    }
+  }
+
+  // ── Mahjong reaction-window timeout ──────────────────────────────────── L3_架構
+  // Fires when reactionDeadlineMs elapses and at least one human still owes a reaction.
+  // Engine collapses outstanding reactions to pass and commits highest priority.
+
+  private async onReactionTimeout(): Promise<void> {
+    if (!this.engine || this.room?.phase !== "playing") return;
+    if (this.room.gameType !== "mahjong") return;
+    const outcome = this.engine.tickReactionDeadline();
+    await this.persistMachine();
+    this.broadcastViews();
+    if (outcome.settlement) {
+      await this.handleSettlement(outcome.settlement);
+      return;
+    }
+    await this.scheduleNextDeadline();
+    await this.checkBotTurn();
   }
 
   // ── Settlement → Queue ────────────────────────────────────────────────── L3_架構含防禦觀測
@@ -423,21 +482,35 @@ export class GameRoomDO implements DurableObject {
     }
   }
 
-  /** 從當前玩家視角讀 turnDeadlineMs；三款遊戲視角結構皆含此欄位。      // L2_鎖定 */
-  private firstTurnDeadline(): number | null {
-    if (!this.engine || !this.room) return null;
+  /**
+   * Schedule the next phase-appropriate deadline alarm.
+   *  - mahjong + pending_reactions → "react" alarm at reactionDeadlineMs
+   *  - everything else             → "turn"  alarm at turnDeadlineMs
+   * Replaces any pre-existing turn/react alarm (mutually exclusive).        // L2_鎖定
+   */
+  private async scheduleNextDeadline(): Promise<void> {
+    if (!this.engine || !this.room) return;
+    this.alarms = this.alarms.filter(a => a.kind !== "turn" && a.kind !== "react");
+
+    if (this.room.gameType === "mahjong") {
+      const v = this.engine.getView(this.room.playerIds[0]!) as MahjongStateView;
+      if (v.phase === "pending_reactions" && typeof v.reactionDeadlineMs === "number" && v.reactionDeadlineMs > 0) {
+        this.alarms.push({ kind: "react", deadline: v.reactionDeadlineMs });
+        await this.saveAlarms();
+        await this.rearmClock();
+        return;
+      }
+    }
+
     const view = this.engine.getView(this.room.playerIds[0]!) as { turnDeadlineMs?: number };
-    return typeof view.turnDeadlineMs === "number" ? view.turnDeadlineMs : null;
-  }
-
-  // ── Alarm plumbing ────────────────────────────────────────────────────── L3_架構含防禦觀測
-
-  private async scheduleTurnAlarm(deadline: number): Promise<void> {
-    this.alarms = this.alarms.filter(a => a.kind !== "turn");
-    this.alarms.push({ kind: "turn", deadline });
+    if (typeof view.turnDeadlineMs === "number") {
+      this.alarms.push({ kind: "turn", deadline: view.turnDeadlineMs });
+    }
     await this.saveAlarms();
     await this.rearmClock();
   }
+
+  // ── Alarm plumbing ────────────────────────────────────────────────────── L3_架構含防禦觀測
 
   private async scheduleAlarm(entry: AlarmEntry): Promise<void> {
     this.alarms.push(entry);

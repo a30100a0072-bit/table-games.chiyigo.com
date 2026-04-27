@@ -567,7 +567,13 @@ export class MahjongStateMachine {
     return { ok: true, settlement };
   }
 
-  private settle(winnerIdx: number, selfDrawn: boolean, dealerIdx: number | null): SettlementResult {
+  /**
+   * 結算分數：
+   *  - 自摸 (selfDrawn): 三家各付 score → 贏家 +3*score                       // L2_鎖定
+   *  - 食胡 (放炮 = payerIdx): 只有放炮者付 score → 贏家 +score；其餘 0       // L2_鎖定
+   * payerIdx 在自摸時為 null；食胡時為 lastDiscard.playerIdx。
+   */
+  private settle(winnerIdx: number, selfDrawn: boolean, payerIdx: number | null): SettlementResult {
     this.s.phase = "settled";
     const winner = this.s.players[winnerIdx]!;
     const fan = calcFan({
@@ -583,12 +589,22 @@ export class MahjongStateMachine {
       finishedAt: Date.now(),
       reason: "lastCardPlayed",
       winnerId: winner.playerId,
-      players: this.s.players.map((p, i) => ({
-        playerId: p.playerId,
-        finalRank: i === winnerIdx ? 1 : (i === dealerIdx ? 4 : 2),
-        remainingCards: [],
-        scoreDelta: i === winnerIdx ? score * 3 : (selfDrawn || i === dealerIdx ? -score : -score),
-      })),
+      players: this.s.players.map((p, i) => {
+        let scoreDelta = 0;
+        if (i === winnerIdx) {
+          scoreDelta = selfDrawn ? score * 3 : score;
+        } else if (selfDrawn) {
+          scoreDelta = -score;
+        } else if (i === payerIdx) {
+          scoreDelta = -score;
+        }
+        return {
+          playerId: p.playerId,
+          finalRank: i === winnerIdx ? 1 : (i === payerIdx ? 4 : 2),
+          remainingCards: [],
+          scoreDelta,
+        };
+      }),
     };
   }
 }

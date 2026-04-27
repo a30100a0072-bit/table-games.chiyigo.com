@@ -42,6 +42,12 @@ export interface IGameEngine {
 
   /** 強制結算（timeout / disconnect）。                                       // L3_架構含防禦觀測 */
   forceSettle(reason: SettlementReason): SettlementResult;
+
+  /**
+   * Mahjong-only: when reactionDeadlineMs expires, mark all unresolved reactions
+   * as pass and commit the highest-priority one. No-op for other engines.    // L3_架構含防禦觀測
+   */
+  tickReactionDeadline(): ProcessOutcome;
 }
 
 // ──────────────────────────────────────────────
@@ -71,6 +77,7 @@ class BigTwoEngine implements IGameEngine {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
     return this.m.forceSettle(reason);
   }
+  tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // bigTwo no-op
 }
 
 // ──────────────────────────────────────────────
@@ -96,6 +103,11 @@ class MahjongEngine implements IGameEngine {
   forceSettle(reason: SettlementReason): SettlementResult {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
     return this.m.forceSettle(reason);
+  }
+  tickReactionDeadline(): ProcessOutcome {
+    const r = this.m.forceResolveReactions();
+    if (!r.ok) throw new Error(r.error);                                       // L3_邏輯安防
+    return { settlement: r.settlement ?? null };
   }
 }
 
@@ -123,6 +135,7 @@ class TexasEngine implements IGameEngine {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
     return this.m.forceSettle(reason);
   }
+  tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // texas no-op
 }
 
 // ──────────────────────────────────────────────

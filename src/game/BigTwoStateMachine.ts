@@ -25,7 +25,7 @@ const TURN_TIMEOUT_MS = 30_000;
 
 // ─── Card primitives ──────────────────────────────────────────────── L2_模組
 
-const cardVal   = (c: Card): number => RANK_IDX[c.rank] * 4 + SUIT_IDX[c.suit];
+export const cardVal = (c: Card): number => RANK_IDX[c.rank] * 4 + SUIT_IDX[c.suit];
 const cardKey   = (c: Card): string => `${c.rank}|${c.suit}`;
 const sortByVal = (cards: Card[]): Card[] => [...cards].sort((a, b) => cardVal(a) - cardVal(b));
 
@@ -46,7 +46,7 @@ const FIVE_TIER: Readonly<Record<string, number>> = {
   straight: 0, flush: 1, fullHouse: 2, fourOfAKind: 3, straightFlush: 4,
 } as const;
 
-function detectCombo(raw: Card[]): ComboMeta | null {
+export function detectCombo(raw: Card[]): ComboMeta | null {
   if (raw.length === 0 || raw.length > 5) return null;    // L3_邏輯安防
   const s = sortByVal(raw);
 
