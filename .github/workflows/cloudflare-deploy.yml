@@ -55,7 +55,29 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-      # ── 6. Deploy to Cloudflare (production) ─────────────────────────
+      # ── 6. Deploy Worker (production) ────────────────────────────────
       # Runs ONLY when the previous test step succeeds.                  # L2_隔離
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy --env production
+
+      # ── 7. Frontend: install + typecheck + build ─────────────────────
+      # Tied to the Worker deploy above so frontend always points at a   # L2_隔離
+      # freshly-deployed backend. VITE_WORKER_URL injected at build time.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_WORKER_URL: ${{ secrets.VITE_WORKER_URL }}
+        run: npx vite build
+
+      # ── 8. Deploy frontend to Cloudflare Pages ───────────────────────
+      # Pages project is created on first run (idempotent thereafter).   # L2_隔離
+      - name: Deploy to Cloudflare Pages
+        run: npx wrangler pages deploy frontend/dist --project-name=big-two-frontend --branch=master --commit-dirty=true
