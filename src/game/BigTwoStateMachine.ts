@@ -50,16 +50,16 @@ function detectCombo(raw: Card[]): ComboMeta | null {
   if (raw.length === 0 || raw.length > 5) return null;    // L3_邏輯安防
   const s = sortByVal(raw);
 
-  if (s.length === 1) return { type: "single", score: cardVal(s[0]) };
+  if (s.length === 1) return { type: "single", score: cardVal(s[0]!) };
 
   if (s.length === 2) {
-    if (s[0].rank !== s[1].rank) return null;             // L3_邏輯安防
-    return { type: "pair", score: cardVal(s[1]) };
+    if (s[0]!.rank !== s[1]!.rank) return null;           // L3_邏輯安防
+    return { type: "pair", score: cardVal(s[1]!) };
   }
 
   if (s.length === 3) {
-    if (!s.every(c => c.rank === s[0].rank)) return null; // L3_邏輯安防
-    return { type: "triple", score: cardVal(s[2]) };
+    if (!s.every(c => c.rank === s[0]!.rank)) return null; // L3_邏輯安防
+    return { type: "triple", score: cardVal(s[2]!) };
   }
 
   if (s.length === 4) return null; // 4-card plays illegal in Big Two // L3_邏輯安防
@@ -69,10 +69,10 @@ function detectCombo(raw: Card[]): ComboMeta | null {
 
 function detectFiveCard(s: Card[]): ComboMeta | null {
   const rIdxs    = s.map(c => RANK_IDX[c.rank]);
-  const isFlush  = s.every(c => c.suit === s[0].suit);
+  const isFlush  = s.every(c => c.suit === s[0]!.suit);
   const allDist  = new Set(s.map(c => c.rank)).size === 5;
   // Linear rank table ensures no wrap-around straights (2 is index 12, too far from 3). // L3_邏輯安防
-  const isStraight = allDist && rIdxs[4] - rIdxs[0] === 4;
+  const isStraight = allDist && rIdxs[4]! - rIdxs[0]! === 4;
 
   const groups = new Map<Rank, number>();
   for (const c of s) groups.set(c.rank, (groups.get(c.rank) ?? 0) + 1);
@@ -80,27 +80,27 @@ function detectFiveCard(s: Card[]): ComboMeta | null {
 
   if (isFlush && isStraight) {
     return { type: "straightFlush",
-      score: FIVE_TIER.straightFlush * FIVE_BASE + cardVal(s[4]) };
+      score: FIVE_TIER.straightFlush! * FIVE_BASE + cardVal(s[4]!) };
   }
   if (counts[0] === 4) {
     const r = [...groups.entries()].find(([, n]) => n === 4)![0];
     return { type: "fourOfAKind",
-      score: FIVE_TIER.fourOfAKind * FIVE_BASE + RANK_IDX[r] * 4 };
+      score: FIVE_TIER.fourOfAKind! * FIVE_BASE + RANK_IDX[r] * 4 };
   }
   if (counts[0] === 3 && counts[1] === 2) {
     const r = [...groups.entries()].find(([, n]) => n === 3)![0];
     return { type: "fullHouse",
-      score: FIVE_TIER.fullHouse * FIVE_BASE + RANK_IDX[r] * 4 };
+      score: FIVE_TIER.fullHouse! * FIVE_BASE + RANK_IDX[r] * 4 };
   }
   if (isFlush) {
     // Higher suit wins; tie-break by highest rank. // L3_邏輯安防
-    const suitScore = SUIT_IDX[s[0].suit];
+    const suitScore = SUIT_IDX[s[0]!.suit];
     return { type: "flush",
-      score: FIVE_TIER.flush * FIVE_BASE + suitScore * 100 + rIdxs[4] };
+      score: FIVE_TIER.flush! * FIVE_BASE + suitScore * 100 + rIdxs[4]! };
   }
   if (isStraight) {
     return { type: "straight",
-      score: FIVE_TIER.straight * FIVE_BASE + cardVal(s[4]) };
+      score: FIVE_TIER.straight! * FIVE_BASE + cardVal(s[4]!) };
   }
   return null; // L3_邏輯安防
 }
@@ -129,7 +129,7 @@ function secureBelow(n: number): number {
   let v: number;
   do {
     crypto.getRandomValues(buf); // Math.random is FORBIDDEN here     // L3_邏輯安防
-    v = buf[0];
+    v = buf[0]!;
   } while (v >= limit);
   return v % n;
 }
@@ -138,7 +138,7 @@ function secureShuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = secureBelow(i + 1);  // L3_邏輯安防
-    [a[i], a[j]] = [a[j], a[i]];
+    [a[i], a[j]] = [a[j]!, a[i]!];
   }
   return a;
 }
@@ -252,9 +252,14 @@ export class BigTwoStateMachine {
         `out-of-turn action: expected ${s.playerIds[s.turnIndex]}, got ${actorId}`,
       );                                                               // L3_邏輯安防
 
-    const settlement = action.type === "pass"
-      ? this.applyPass(actorId)
-      : this.applyPlay(actorId, action.cards);
+    let settlement: SettlementResult | null;
+    if (action.type === "pass") {
+      settlement = this.applyPass(actorId);
+    } else if (action.type === "play") {
+      settlement = this.applyPlay(actorId, action.cards);
+    } else {
+      throw new Error(`unsupported action for Big Two: ${action.type}`); // L3_邏輯安防
+    }
 
     return { viewFor: (pid) => this.buildView(pid), settlement };
   }
@@ -383,7 +388,7 @@ export class BigTwoStateMachine {
       finishedAt: Date.now(),
       reason,
       players,
-      winnerId:   orderedAll[0],
+      winnerId:   orderedAll[0]!,                                       // L2_鎖定 至少 1 名玩家
     };
   }
 
@@ -406,7 +411,7 @@ export class BigTwoStateMachine {
         .filter(id => id !== playerId)
         .map(id => ({ playerId: id, cardCount: s.hands.get(id)?.length ?? 0 })),
 
-      currentTurn:    s.playerIds[s.turnIndex],
+      currentTurn:    s.playerIds[s.turnIndex]!,                       // L2_鎖定 turnIndex bounded
       lastPlay:       s.lastPlay,
       passCount:      s.passCount,
       turnDeadlineMs: s.turnDeadlineMs,
@@ -425,7 +430,7 @@ export class BigTwoStateMachine {
     let next = (s.turnIndex + 1) % n;
     // Skip players who have already emptied their hand.
     for (let guard = 0; guard < n; guard++) {
-      if ((s.hands.get(s.playerIds[next])?.length ?? 0) > 0) break;
+      if ((s.hands.get(s.playerIds[next]!)?.length ?? 0) > 0) break;
       next = (next + 1) % n;
     }
     s.turnIndex = next;

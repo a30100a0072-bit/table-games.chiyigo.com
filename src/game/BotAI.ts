@@ -23,7 +23,7 @@ function sortAsc(cards: Card[]): Card[] {
 }
 
 /** Score of the highest card in an already-sorted slice. */
-function topScore(sorted: Card[]): number { return cardVal(sorted[sorted.length - 1]); }
+function topScore(sorted: Card[]): number { return cardVal(sorted[sorted.length - 1]!); }
 
 // ── O(N) combo-beat finders ───────────────────────────────────────────── L3_邏輯安防
 // All finders receive `hand` pre-sorted ascending by cardVal.
@@ -93,7 +93,7 @@ export function getBotAction(view: GameStateView, botHand: Card[]): PlayerAction
   // ── Table is clear: bot controls the trick ────────────────────────── L3_邏輯安防
   if (lastPlay === null) {
     // If 3♣ is present the opening-turn constraint may apply — always lead with it. // L3_邏輯安防
-    const anchor = sorted.find(c => c.rank === "3" && c.suit === "clubs") ?? sorted[0];
+    const anchor = sorted.find(c => c.rank === "3" && c.suit === "clubs") ?? sorted[0]!; // L2_鎖定 botHand 非空
     return { type: "play", cards: [anchor], combo: "single" };
   }
 

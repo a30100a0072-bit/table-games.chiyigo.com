@@ -166,7 +166,8 @@ export class GameSocket {
 
   private emit<K extends keyof GameSocketEventMap>(event: K, ...args: GameSocketEventMap[K]): void {
     this.reg.get(event)?.forEach(fn => {
-      try { fn(...args); } catch (err) { console.error(`[GameSocket] "${event}" threw:`, err); }
+      try { (fn as (...a: GameSocketEventMap[K]) => void)(...args); }
+      catch (err) { console.error(`[GameSocket] "${event}" threw:`, err); }
     });
   }
 }

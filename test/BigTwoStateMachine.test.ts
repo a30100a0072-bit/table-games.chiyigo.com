@@ -61,8 +61,8 @@ describe("合法出牌校驗", () => {
     expect(viewP2.lastPlay?.cards).toHaveLength(1);
 
     // Perspective isolation: p2 sees p1 card count, not hand contents.  // L2_隔離
-    expect(viewP2.opponents[0].cardCount).toBe(1);
-    expect((viewP2.opponents[0] as { hand?: unknown }).hand).toBeUndefined();
+    expect(viewP2.opponents[0]!.cardCount).toBe(1);
+    expect((viewP2.opponents[0]! as { hand?: unknown }).hand).toBeUndefined();
   });
 
   it("非首輪 Pair 能正確壓過桌面較低 Pair", () => {

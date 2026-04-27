@@ -56,7 +56,7 @@ export async function verifyJWT(token: string, secret: string): Promise<string> 
   if (parts.length !== 3)                                              // L3_糾錯風險表
     throw new JWTError("malformed token: expected 3 segments");
 
-  const [hdr, payload, sig] = parts;
+  const [hdr, payload, sig] = parts as [string, string, string];        // L2_鎖定 length===3 已守衛
 
   // ── Signature verification ──────────────────────────────────────── L2_鎖定
   const key = await crypto.subtle.importKey(
@@ -70,7 +70,7 @@ export async function verifyJWT(token: string, secret: string): Promise<string> 
   const valid = await crypto.subtle.verify(
     "HMAC",
     key,
-    b64url(sig),
+    b64url(sig) as BufferSource,
     new TextEncoder().encode(`${hdr}.${payload}`),
   );
   if (!valid) throw new JWTError("invalid signature");                 // L2_鎖定

@@ -31,10 +31,10 @@ export default {
    * Bound to the `big-two-settlement` queue in wrangler.toml.             // L3_架構含防禦觀測
    */
   async queue(
-    batch: MessageBatch<SettlementQueueMessage>,
+    batch: MessageBatch<unknown>,
     env:   Env,
     _ctx:  ExecutionContext,
   ): Promise<void> {
-    await handleQueue(batch, env);
+    await handleQueue(batch as MessageBatch<SettlementQueueMessage>, env); // L2_隔離 wrangler 綁定保證型別
   },
 } satisfies ExportedHandler<Env>;

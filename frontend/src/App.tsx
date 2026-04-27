@@ -1,14 +1,16 @@
-import React, { useState } from "react";
-import type { SettlementResult } from "./shared/types";
-import LoginScreen  from "./components/LoginScreen";
-import LobbyScreen  from "./components/LobbyScreen";
-import GameScreen   from "./components/GameScreen";
-import ResultScreen from "./components/ResultScreen";
+import { useState } from "react";
+import type { GameType, SettlementResult } from "./shared/types";
+import LoginScreen      from "./components/LoginScreen";
+import GameSelectScreen from "./components/GameSelectScreen";
+import LobbyScreen      from "./components/LobbyScreen";
+import GameScreen       from "./components/GameScreen";
+import ResultScreen     from "./components/ResultScreen";
 
 type Screen =
   | { name: "login" }
-  | { name: "lobby";  playerId: string; token: string }
-  | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; players: string[] }
+  | { name: "select"; playerId: string; token: string }
+  | { name: "lobby";  playerId: string; token: string; gameType: GameType }
+  | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType }
   | { name: "result"; playerId: string; settlement: SettlementResult };
 
 export default function App() {
@@ -17,8 +19,16 @@ export default function App() {
   if (screen.name === "login")
     return (
       <LoginScreen
-        onLoggedIn={(playerId, token) =>
-          setScreen({ name: "lobby", playerId, token })
+        onLoggedIn={(playerId, token) => setScreen({ name: "select", playerId, token })}
+      />
+    );
+
+  if (screen.name === "select")
+    return (
+      <GameSelectScreen
+        playerId={screen.playerId}
+        onPick={(gameType) =>
+          setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType })
         }
       />
     );
@@ -28,9 +38,11 @@ export default function App() {
       <LobbyScreen
         playerId={screen.playerId}
         token={screen.token}
-        onMatched={(roomId, wsUrl, players) =>
-          setScreen({ name: "game", playerId: screen.playerId, token: screen.token, roomId, wsUrl, players })
+        gameType={screen.gameType}
+        onMatched={(roomId, wsUrl, _players, gameType) =>
+          setScreen({ name: "game", playerId: screen.playerId, token: screen.token, roomId, wsUrl, gameType })
         }
+        onBack={() => setScreen({ name: "select", playerId: screen.playerId, token: screen.token })}
       />
     );
 
@@ -41,6 +53,7 @@ export default function App() {
         token={screen.token}
         roomId={screen.roomId}
         wsUrl={screen.wsUrl}
+        gameType={screen.gameType}
         onSettled={(result) =>
           setScreen({ name: "result", playerId: screen.playerId, settlement: result })
         }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { getToken } from "../api/http";
 
 interface Props {
@@ -10,7 +10,7 @@ export default function LoginScreen({ onLoggedIn }: Props) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;

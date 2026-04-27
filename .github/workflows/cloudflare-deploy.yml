@@ -5,7 +5,7 @@ name: Test → Deploy
 
 on:
   push:
-    branches: [main]          # environment isolation: no staging bleed  # L2_隔離
+    branches: [master]        # environment isolation: no staging bleed  # L2_隔離
 
 # Cancel any in-flight run for the same ref so stale deploys never win. # L3_架構含防禦觀測
 concurrency:

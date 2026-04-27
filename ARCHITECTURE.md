@@ -3,8 +3,9 @@
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 > 最後更新：2026-04-27
 >
-> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；CI/CD ✅
+> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；前端三遊戲 UI ✅；CI/CD ✅
 > **單元測試**：4 檔 / 58 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15），全綠
+> **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功
 > **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
 > **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
 > `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
@@ -48,12 +49,17 @@ frontend/                              ✅ React 18 + Vite 5 + Tailwind 3 (PWA)
 │   ├── api/
 │   │   └── http.ts                    ✅ getToken() / findMatch() fetch 封裝
 │   ├── shared/
-│   │   ├── types.ts                   ✅ 遊戲型別（瀏覽器安全副本）
+│   │   ├── types.ts                   ✅ 三遊戲型別合約（Big Two / Mahjong / Texas，瀏覽器安全副本）
 │   │   └── GameSocket.ts              ✅ WS 客戶端（同 src/client，import 路徑已調整）
+│   ├── vite-env.d.ts                  ✅ ImportMetaEnv 型別宣告
 │   └── components/
 │       ├── LoginScreen.tsx            ✅ 暱稱輸入
-│       ├── LobbyScreen.tsx            ✅ 等待配對動畫
-│       ├── GameScreen.tsx             ✅ 主遊戲畫面（CardView/HandView/TableDisplay/ActionBar）
+│       ├── GameSelectScreen.tsx       ✅ 三遊戲選單（bigTwo / mahjong / texas）
+│       ├── LobbyScreen.tsx            ✅ 等待配對動畫（攜帶 gameType + 取消返回）
+│       ├── GameScreen.tsx             ✅ 路由器（依 gameType 派遣對應子畫面）
+│       ├── BigTwoGameScreen.tsx       ✅ 大老二畫面（CardView/HandView/TableDisplay/ActionBar）
+│       ├── MahjongGameScreen.tsx     ✅ 麻將畫面（牌面 m/p/s/z、副露、吃碰槓胡/自摸/過按鈕）
+│       ├── TexasHoldemGameScreen.tsx ✅ 德撲畫面（底牌、公牌、底池/邊池、棄/過/跟/加/All-in）
 │       └── ResultScreen.tsx          ✅ 排名 + 分數結算
 └── .env.example                       VITE_WORKER_URL 環境變數範例
 
@@ -91,7 +97,8 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 單元測試 (BT) | `test/BigTwoStateMachine.test.ts` | ✅ | 13 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
 | 單元測試 (MJ) | `test/MahjongStateMachine.test.ts` | ✅ | 14 案例：`canWin` 6 案、初始化 3 案、動作分派 5 案；以 Mulberry32 種子 RNG 確定性 |
 | 單元測試 (TH) | `test/TexasHoldemStateMachine.test.ts` | ✅ | 16 案例：牌型階序、wheel straight、kicker、7 取 5、邊池三層 / 棄牌貢獻、盲注、加注合法性 |
-| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push main 觸發、tsc + vitest 通過後 wrangler deploy |
+| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發、tsc (src + test) + vitest 通過後 wrangler deploy |
+| 前端多遊戲 | `frontend/src/components/{GameSelect,GameScreen,Mahjong,TexasHoldem}*` | ✅ | 三遊戲 UI 完整：選單→大廳→對應遊戲畫面；frontend `tsc` + `vite build` 通過 |
 
 ---
 
@@ -118,12 +125,19 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 
 ### 畫面狀態機
 ```
-LoginScreen  ──(getToken)──►  LobbyScreen  ──(findMatch)──►  GameScreen  ──(settlement)──►  ResultScreen
-  輸入暱稱                      等待配對                         主遊戲                          結算排名
-                                                                    │
-                                                             GameSocket (WS)
-                                                             斷線自動重連
+LoginScreen ─(getToken)─► GameSelectScreen ─(pick gameType)─► LobbyScreen ─(findMatch)─► GameScreen (router)
+  輸入暱稱                  bigTwo / mahjong / texas             等待配對 + 取消               │
+                                                                                           ├─ BigTwoGameScreen
+                                                                                           ├─ MahjongGameScreen
+                                                                                           └─ TexasHoldemGameScreen
+                                                                                                   │
+                                                                                            (settlement)
+                                                                                                   ▼
+                                                                                            ResultScreen
+                                                                              GameSocket (WS) — 斷線自動重連
 ```
+
+各遊戲 GameScreen 子畫面共用 `GameSocket`／`ResultScreen`，但 UI 元件（手牌、副露、底池、加注滑桿等）獨立實作。配對請求 `POST /api/match` body `{ gameType }`；回應 `{ roomId, gameType, players }`，前端以 `wsBase + /rooms/:roomId/join` 拼出 WebSocket URL。
 
 ### 本地開發
 ```bash
@@ -153,7 +167,7 @@ wrangler pages deploy frontend/dist --project-name big-two-frontend
 Browser / Mobile (React PWA)
   │
   │  POST /auth/token  → { token, playerId }
-  │  POST /lobby/match → { roomId, wsUrl, players }
+  │  POST /api/match   → { matched, roomId, gameType, players }   // body: { gameType }
   ▼
 src/index.ts ──► handleMatch() ──► LobbyDO (idFromName "main")
                                         │  long-poll，湊齊 4 人（不足 10s 後 Bot 補位）

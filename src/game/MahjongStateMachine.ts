@@ -58,7 +58,7 @@ function isHonor(i: number): boolean { return i >= 27; }
 
 function tilesToCounts(tiles: MahjongTile[]): Counts {
   const c = new Uint8Array(TILE_INDEX_COUNT);
-  for (const t of tiles) c[tileIndex(t)]++;
+  for (const t of tiles) c[tileIndex(t)]!++;
   return c;
 }
 function tileEq(a: MahjongTile, b: MahjongTile): boolean {
@@ -81,13 +81,13 @@ export function canWin(tiles: MahjongTile[], exposedMelds: number = 0): boolean 
   const meldsLeft = MELDS_NEEDED - exposedMelds;
 
   for (let i = 0; i < TILE_INDEX_COUNT; i++) {
-    if (counts[i] >= 2) {
-      counts[i] -= 2;
+    if (counts[i]! >= 2) {
+      counts[i]! -= 2;
       if (canFormMelds(counts, meldsLeft)) {
-        counts[i] += 2;
+        counts[i]! += 2;
         return true;
       }
-      counts[i] += 2;
+      counts[i]! += 2;
     }
   }
   return false;
@@ -103,18 +103,18 @@ function canFormMelds(counts: Counts, need: number): boolean {
   if (i >= TILE_INDEX_COUNT) return false;
 
   // 嘗試刻子（含字牌唯一可能）
-  if (counts[i] >= 3) {
-    counts[i] -= 3;
-    if (canFormMelds(counts, need - 1)) { counts[i] += 3; return true; }
-    counts[i] += 3;
+  if (counts[i]! >= 3) {
+    counts[i]! -= 3;
+    if (canFormMelds(counts, need - 1)) { counts[i]! += 3; return true; }
+    counts[i]! += 3;
   }
   // 嘗試順子（僅花色牌；rank 1–7）
   if (isSuited(i)) {
     const rank0 = i % 9;
-    if (rank0 <= 6 && counts[i + 1] > 0 && counts[i + 2] > 0) {
-      counts[i]--; counts[i + 1]--; counts[i + 2]--;
-      if (canFormMelds(counts, need - 1)) { counts[i]++; counts[i + 1]++; counts[i + 2]++; return true; }
-      counts[i]++; counts[i + 1]++; counts[i + 2]++;
+    if (rank0 <= 6 && counts[i + 1]! > 0 && counts[i + 2]! > 0) {
+      counts[i]!--; counts[i + 1]!--; counts[i + 2]!--;
+      if (canFormMelds(counts, need - 1)) { counts[i]!++; counts[i + 1]!++; counts[i + 2]!++; return true; }
+      counts[i]!++; counts[i + 1]!++; counts[i + 2]!++;
     }
   }
   return false;
@@ -207,7 +207,7 @@ export class MahjongStateMachine {
     // 莊家補一張
     const banker = 0;
     const drawn = wall.shift()!;
-    playerStates[banker].hand.push(drawn);
+    playerStates[banker]!.hand.push(drawn);
 
     this.s = {
       gameId,
@@ -228,7 +228,7 @@ export class MahjongStateMachine {
   viewFor(playerId: PlayerId): MahjongStateView {
     const meIdx = this.s.players.findIndex(p => p.playerId === playerId);
     if (meIdx < 0) throw new Error("PLAYER_NOT_IN_GAME");
-    const me = this.s.players[meIdx];
+    const me = this.s.players[meIdx]!;
     const self: MahjongSelfView = {
       playerId: me.playerId,
       hand: [...me.hand],
@@ -250,9 +250,9 @@ export class MahjongStateMachine {
       self,
       opponents,
       wall: { remaining: this.s.wall.length },
-      currentTurn: this.s.players[this.s.turnIdx].playerId,
+      currentTurn: this.s.players[this.s.turnIdx]!.playerId,
       lastDiscard: this.s.lastDiscard
-        ? { playerId: this.s.players[this.s.lastDiscard.playerIdx].playerId, tile: this.s.lastDiscard.tile }
+        ? { playerId: this.s.players[this.s.lastDiscard.playerIdx]!.playerId, tile: this.s.lastDiscard.tile }
         : null,
       awaitingReactionsFrom: this.s.pendingReactions
         .filter(r => !r.declared).map(r => r.playerId),
@@ -283,7 +283,7 @@ export class MahjongStateMachine {
   private onDiscard(idx: number, a: MahjongDiscardAction): ProcessResult {
     if (this.s.phase !== "playing") return { ok: false, error: "NOT_PLAYING_PHASE" };
     if (idx !== this.s.turnIdx) return { ok: false, error: "NOT_YOUR_TURN" };
-    const me = this.s.players[idx];
+    const me = this.s.players[idx]!;
     const ti = me.hand.findIndex(t => tileEq(t, a.tile));
     if (ti < 0) return { ok: false, error: "TILE_NOT_IN_HAND" };          // L2_隔離
     const exposedTiles = me.exposed.reduce((n, m) => n + (m.kind === "kong_concealed" || m.kind === "kong_exposed" ? 3 : 3), 0);
@@ -305,7 +305,7 @@ export class MahjongStateMachine {
 
   // ─── 胡（食胡 / 自摸）───────────────────────
   private onHu(idx: number, a: MahjongHuAction): ProcessResult {
-    const me = this.s.players[idx];
+    const me = this.s.players[idx]!;
     if (a.selfDrawn) {
       if (this.s.phase !== "playing" || idx !== this.s.turnIdx) return { ok: false, error: "NOT_YOUR_TURN" };
       if (!canWin(me.hand, me.exposed.length)) return { ok: false, error: "NOT_A_WIN" };  // L3_邏輯安防
@@ -324,7 +324,7 @@ export class MahjongStateMachine {
 
   // ─── 槓 ────────────────────────────────────
   private onKong(idx: number, a: MahjongKongAction): ProcessResult {
-    const me = this.s.players[idx];
+    const me = this.s.players[idx]!;
     if (a.source === "exposed") {
       if (this.s.phase !== "pending_reactions" || !this.s.lastDiscard) return { ok: false, error: "NO_PENDING_DISCARD" };
       if (!tileEq(this.s.lastDiscard.tile, a.tile)) return { ok: false, error: "TILE_MISMATCH" };
@@ -363,7 +363,7 @@ export class MahjongStateMachine {
   private onPong(idx: number, a: MahjongPongAction): ProcessResult {
     if (this.s.phase !== "pending_reactions" || !this.s.lastDiscard) return { ok: false, error: "NO_PENDING_DISCARD" };
     if (!tileEq(this.s.lastDiscard.tile, a.tile)) return { ok: false, error: "TILE_MISMATCH" };
-    const me = this.s.players[idx];
+    const me = this.s.players[idx]!;
     const ownCount = me.hand.filter(t => tileEq(t, a.tile)).length;
     if (ownCount < 2) return { ok: false, error: "INSUFFICIENT_TILES_FOR_PONG" };          // L2_隔離
     const reaction = this.s.pendingReactions.find(r => r.playerId === me.playerId);
@@ -383,13 +383,13 @@ export class MahjongStateMachine {
     const sortedTiles = [...a.tiles].sort((x, y) => x.rank - y.rank);
     if (!sortedTiles.every(t => t.suit === dt.suit))
       return { ok: false, error: "MIXED_SUIT_CHOW" };                                       // L2_隔離
-    if (sortedTiles[1].rank !== sortedTiles[0].rank + 1 || sortedTiles[2].rank !== sortedTiles[1].rank + 1)
+    if (sortedTiles[1]!.rank !== sortedTiles[0]!.rank + 1 || sortedTiles[2]!.rank !== sortedTiles[1]!.rank + 1)
       return { ok: false, error: "NOT_A_SEQUENCE" };                                        // L2_隔離
     if (!sortedTiles.some(t => tileEq(t, dt)))
       return { ok: false, error: "MUST_INCLUDE_DISCARDED_TILE" };                           // L2_隔離
 
     // 校驗手中真實擁有除 dt 外那 2 張                                                       // L2_隔離
-    const me = this.s.players[idx];
+    const me = this.s.players[idx]!;
     const need = sortedTiles.filter(t => !tileEq(t, dt));
     const handCopy = [...me.hand];
     for (const t of need) {
@@ -406,7 +406,7 @@ export class MahjongStateMachine {
   // ─── 過水 ──────────────────────────────────
   private onPass(idx: number): ProcessResult {
     if (this.s.phase !== "pending_reactions") return { ok: false, error: "NOT_PENDING" };
-    const reaction = this.s.pendingReactions.find(r => r.playerId === this.s.players[idx].playerId);
+    const reaction = this.s.pendingReactions.find(r => r.playerId === this.s.players[idx]!.playerId);
     if (!reaction) return { ok: false, error: "NOT_AWAITED" };
     reaction.declared = { kind: "pass" };
     return this.resolveReactions();
@@ -470,7 +470,7 @@ export class MahjongStateMachine {
     const huR = this.s.pendingReactions.find(r => r.declared?.kind === "hu");
     if (huR) {
       const winnerIdx = this.s.players.findIndex(p => p.playerId === huR.playerId);
-      this.s.players[winnerIdx].hand.push(ld.tile);
+      this.s.players[winnerIdx]!.hand.push(ld.tile);
       const settlement = this.settle(winnerIdx, false, ld.playerIdx);
       return { ok: true, settlement };
     }
@@ -479,9 +479,9 @@ export class MahjongStateMachine {
     const kongR = this.s.pendingReactions.find(r => r.declared?.kind === "kong");
     if (kongR) {
       const i = this.s.players.findIndex(p => p.playerId === kongR.playerId);
-      const me = this.s.players[i];
+      const me = this.s.players[i]!;
       removeTilesFromHand(me.hand, ld.tile, 3);
-      me.exposed.push({ kind: "kong_exposed", tiles: [ld.tile, ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx].playerId });
+      me.exposed.push({ kind: "kong_exposed", tiles: [ld.tile, ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
       this.s.lastDiscard = null;
       const replacement = this.s.wall.pop();
       if (!replacement) return this.drawExhaustion();
@@ -498,9 +498,9 @@ export class MahjongStateMachine {
     const pongR = this.s.pendingReactions.find(r => r.declared?.kind === "pong");
     if (pongR) {
       const i = this.s.players.findIndex(p => p.playerId === pongR.playerId);
-      const me = this.s.players[i];
+      const me = this.s.players[i]!;
       removeTilesFromHand(me.hand, ld.tile, 2);
-      me.exposed.push({ kind: "pong", tiles: [ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx].playerId });
+      me.exposed.push({ kind: "pong", tiles: [ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
       this.s.lastDiscard = null;
       this.s.turnIdx = i;
       this.s.phase = "playing";        // 碰後直接打牌，不再摸
@@ -515,14 +515,14 @@ export class MahjongStateMachine {
     const chowR = this.s.pendingReactions.find(r => r.declared?.kind === "chow");
     if (chowR && chowR.declared?.kind === "chow") {
       const i = this.s.players.findIndex(p => p.playerId === chowR.playerId);
-      const me = this.s.players[i];
+      const me = this.s.players[i]!;
       const tiles = chowR.declared.tiles;
       for (const t of tiles) if (!tileEq(t, ld.tile)) {
         const idxH = me.hand.findIndex(x => tileEq(x, t));
         if (idxH < 0) return { ok: false, error: "INVARIANT_CHOW_TILE_MISSING" };           // L2_隔離
         me.hand.splice(idxH, 1);
       }
-      me.exposed.push({ kind: "chow", tiles: [...tiles], fromPlayerId: this.s.players[ld.playerIdx].playerId });
+      me.exposed.push({ kind: "chow", tiles: [...tiles], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
       this.s.lastDiscard = null;
       this.s.turnIdx = i;
       this.s.phase = "playing";
@@ -542,7 +542,7 @@ export class MahjongStateMachine {
     this.s.turnIdx = (this.s.turnIdx + 1) % 4;
     const tile = this.s.wall.pop();
     if (!tile) return this.drawExhaustion();
-    this.s.players[this.s.turnIdx].hand.push(tile);
+    this.s.players[this.s.turnIdx]!.hand.push(tile);
     this.s.drawnThisTurn = tile;
     this.s.phase = "playing";
     this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
@@ -562,14 +562,14 @@ export class MahjongStateMachine {
         remainingCards: [],
         scoreDelta: 0,
       })),
-      winnerId: this.s.players[0].playerId,
+      winnerId: this.s.players[0]!.playerId,
     };
     return { ok: true, settlement };
   }
 
   private settle(winnerIdx: number, selfDrawn: boolean, dealerIdx: number | null): SettlementResult {
     this.s.phase = "settled";
-    const winner = this.s.players[winnerIdx];
+    const winner = this.s.players[winnerIdx]!;
     const fan = calcFan({
       selfDrawn,
       menqing: winner.exposed.every(m => m.kind === "kong_concealed"),
@@ -605,7 +605,7 @@ function buildShuffledWall(rng: () => number): MahjongTile[] {
   // Fisher–Yates，無 modulo bias                                                       // L2_鎖定
   for (let i = wall.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
-    [wall[i], wall[j]] = [wall[j], wall[i]];
+    [wall[i], wall[j]] = [wall[j]!, wall[i]!];
   }
   return wall;
 }

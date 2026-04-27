@@ -1,4 +1,3 @@
-import React from "react";
 import type { SettlementResult } from "../shared/types";
 
 const RANK_LABEL = ["", "🥇 第一", "🥈 第二", "🥉 第三", "第四"];

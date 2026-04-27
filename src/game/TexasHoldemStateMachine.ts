@@ -53,14 +53,14 @@ function secureRandomInt(maxExclusive: number): number {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     crypto.getRandomValues(buf);
-    if (buf[0] < bound) return buf[0] % maxExclusive;
+    if (buf[0]! < bound) return buf[0]! % maxExclusive;
   }
 }
 
 function shuffleDeck(deck: Card[]): Card[] {
   for (let i = deck.length - 1; i > 0; i--) {
     const j = secureRandomInt(i + 1);
-    [deck[i], deck[j]] = [deck[j], deck[i]];
+    [deck[i], deck[j]] = [deck[j]!, deck[i]!];
   }
   return deck;
 }
@@ -80,7 +80,7 @@ export function rankFiveCardKey(cards: Card[]): number {
   const uniq = [...new Set(vals)];
   const isStraight = (() => {
     if (uniq.length !== 5) return false;
-    if (uniq[0] - uniq[4] === 4) return true;
+    if (uniq[0]! - uniq[4]! === 4) return true;
     // A-2-3-4-5 wheel
     if (uniq[0] === 14 && uniq[1] === 5 && uniq[2] === 4 && uniq[3] === 3 && uniq[4] === 2) return true;
     return false;
@@ -91,39 +91,42 @@ export function rankFiveCardKey(cards: Card[]): number {
   const groups = [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
 
   let cat: number;
-  let kickers: number[];
+  // 5-tuple — TS noUncheckedIndexedAccess 不對固定長度元組生效。              // L2_鎖定
+  let kickers: [number, number, number, number, number];
+  const fillTo5 = (xs: number[]): [number, number, number, number, number] =>
+    [xs[0] ?? 0, xs[1] ?? 0, xs[2] ?? 0, xs[3] ?? 0, xs[4] ?? 0];
 
   if (isStraight && isFlush) {
     cat = CAT_STRAIGHT_FLUSH;
-    const top = (uniq[0] === 14 && uniq[4] === 2) ? 5 : uniq[0]; // wheel 頂端 5
+    const top = (uniq[0] === 14 && uniq[4] === 2) ? 5 : uniq[0]!;            // L2_鎖定
     kickers = [top, 0, 0, 0, 0];
-  } else if (groups[0][1] === 4) {
+  } else if (groups[0]![1] === 4) {
     cat = CAT_QUADS;
-    kickers = [groups[0][0], groups[1][0], 0, 0, 0];
-  } else if (groups[0][1] === 3 && groups[1][1] === 2) {
+    kickers = [groups[0]![0], groups[1]![0], 0, 0, 0];
+  } else if (groups[0]![1] === 3 && groups[1]![1] === 2) {
     cat = CAT_FULL_HOUSE;
-    kickers = [groups[0][0], groups[1][0], 0, 0, 0];
+    kickers = [groups[0]![0], groups[1]![0], 0, 0, 0];
   } else if (isFlush) {
     cat = CAT_FLUSH;
-    kickers = vals;
+    kickers = fillTo5(vals);
   } else if (isStraight) {
     cat = CAT_STRAIGHT;
-    const top = (uniq[0] === 14 && uniq[4] === 2) ? 5 : uniq[0];
+    const top = (uniq[0] === 14 && uniq[4] === 2) ? 5 : uniq[0]!;
     kickers = [top, 0, 0, 0, 0];
-  } else if (groups[0][1] === 3) {
+  } else if (groups[0]![1] === 3) {
     cat = CAT_TRIPS;
     const k = groups.slice(1).map(g => g[0]);
-    kickers = [groups[0][0], k[0], k[1], 0, 0];
-  } else if (groups[0][1] === 2 && groups[1][1] === 2) {
+    kickers = [groups[0]![0], k[0] ?? 0, k[1] ?? 0, 0, 0];
+  } else if (groups[0]![1] === 2 && groups[1]![1] === 2) {
     cat = CAT_TWO_PAIR;
-    kickers = [groups[0][0], groups[1][0], groups[2][0], 0, 0];
-  } else if (groups[0][1] === 2) {
+    kickers = [groups[0]![0], groups[1]![0], groups[2]![0], 0, 0];
+  } else if (groups[0]![1] === 2) {
     cat = CAT_PAIR;
     const k = groups.slice(1).map(g => g[0]);
-    kickers = [groups[0][0], k[0], k[1], k[2], 0];
+    kickers = [groups[0]![0], k[0] ?? 0, k[1] ?? 0, k[2] ?? 0, 0];
   } else {
     cat = CAT_HIGH;
-    kickers = vals;
+    kickers = fillTo5(vals);
   }
   return (cat << 20) | (kickers[0] << 16) | (kickers[1] << 12) | (kickers[2] << 8) | (kickers[3] << 4) | kickers[4];
 }
@@ -135,7 +138,7 @@ export function rankBestOfSeven(cards: Card[]): number {
   // C(7,5)=21 種組合 — 用反向 mask 列舉「丟掉哪 2 張」
   for (let i = 0; i < 7; i++) for (let j = i + 1; j < 7; j++) {
     const five: Card[] = [];
-    for (let k = 0; k < 7; k++) if (k !== i && k !== j) five.push(cards[k]);
+    for (let k = 0; k < 7; k++) if (k !== i && k !== j) five.push(cards[k]!);  // L2_鎖定 k bounded by length 7
     const key = rankFiveCardKey(five);
     if (key > best) best = key;
   }
@@ -182,7 +185,7 @@ export function buildSidePots(seats: Seat[]): Pot[] {
     if (amount > 0 && eligible.length > 0) {
       pots.push({ amount, eligiblePlayerIds: eligible });
     } else if (amount > 0 && pots.length > 0) {
-      pots[pots.length - 1].amount += amount;            // 全棄牌者層併入上一池
+      pots[pots.length - 1]!.amount += amount;            // 全棄牌者層併入上一池  // L2_鎖定
     }
     prev = level;
   }
@@ -279,7 +282,7 @@ export class TexasHoldemStateMachine {
   }
 
   private postBlind(i: number, amount: number) {
-    const s = this.s.seats[i];
+    const s = this.s.seats[i]!;                                                    // L2_鎖定 caller passes valid index
     const pay = Math.min(s.stack, amount);
     s.stack -= pay;
     s.betThisStreet += pay;
@@ -291,7 +294,7 @@ export class TexasHoldemStateMachine {
   viewFor(playerId: PlayerId): PokerStateView {
     const meIdx = this.s.seats.findIndex(s => s.playerId === playerId);
     if (meIdx < 0) throw new Error("PLAYER_NOT_IN_GAME");
-    const me = this.s.seats[meIdx];
+    const me = this.s.seats[meIdx]!;                                               // L2_鎖定 meIdx>=0 已守衛
     const self: PokerSelfView = {
       playerId: me.playerId,
       holeCards: [me.hole[0], me.hole[1]],         // 僅本人可見            // L2_隔離
@@ -324,7 +327,7 @@ export class TexasHoldemStateMachine {
       bigBlind: this.s.bigBlind,
       smallBlind: this.s.smallBlind,
       dealerIdx: this.s.dealerIdx,
-      currentTurn: this.s.seats[this.s.turnIdx].playerId,
+      currentTurn: this.s.seats[this.s.turnIdx]!.playerId,
       turnDeadlineMs: this.s.turnDeadlineMs,
     };
   }
@@ -338,7 +341,7 @@ export class TexasHoldemStateMachine {
     const i = this.s.seats.findIndex(s => s.playerId === playerId);
     if (i < 0) return { ok: false, error: "PLAYER_NOT_IN_GAME" };
     if (i !== this.s.turnIdx) return { ok: false, error: "NOT_YOUR_TURN" };
-    const me = this.s.seats[i];
+    const me = this.s.seats[i]!;                                                   // L2_鎖定 i>=0 已守衛
     if (me.hasFolded || me.isAllIn) return { ok: false, error: "ALREADY_OUT" };
 
     switch (action.type) {
@@ -350,20 +353,20 @@ export class TexasHoldemStateMachine {
   }
 
   private onFold(i: number): ProcessResult {
-    this.s.seats[i].hasFolded = true;
-    this.s.seats[i].hasActedThisStreet = true;
+    this.s.seats[i]!.hasFolded = true;
+    this.s.seats[i]!.hasActedThisStreet = true;
     return this.advance();
   }
 
   private onCheck(i: number): ProcessResult {
-    const me = this.s.seats[i];
+    const me = this.s.seats[i]!;
     if (me.betThisStreet < this.s.currentBet) return { ok: false, error: "CANNOT_CHECK_FACING_BET" }; // L2_鎖定
     me.hasActedThisStreet = true;
     return this.advance();
   }
 
   private onCall(i: number): ProcessResult {
-    const me = this.s.seats[i];
+    const me = this.s.seats[i]!;
     const owe = this.s.currentBet - me.betThisStreet;
     if (owe <= 0) return { ok: false, error: "NOTHING_TO_CALL" };                    // L2_鎖定
     const pay = Math.min(me.stack, owe);
@@ -376,7 +379,7 @@ export class TexasHoldemStateMachine {
   }
 
   private onRaise(i: number, raiseAmount: number): ProcessResult {
-    const me = this.s.seats[i];
+    const me = this.s.seats[i]!;
     // raiseAmount 解釋為「本街該玩家總投入」                                          // L2_鎖定
     if (!Number.isFinite(raiseAmount) || raiseAmount <= 0)
       return { ok: false, error: "INVALID_RAISE_AMOUNT" };
@@ -403,8 +406,9 @@ export class TexasHoldemStateMachine {
       this.s.lastAggressorIdx = i;
       // 重置其他在線玩家本街行動旗標
       for (let k = 0; k < this.s.seats.length; k++) {
-        if (k !== i && !this.s.seats[k].hasFolded && !this.s.seats[k].isAllIn) {
-          this.s.seats[k].hasActedThisStreet = false;
+        const sk = this.s.seats[k]!;
+        if (k !== i && !sk.hasFolded && !sk.isAllIn) {
+          sk.hasActedThisStreet = false;
         }
       }
     } else {
@@ -418,7 +422,7 @@ export class TexasHoldemStateMachine {
     const live = this.s.seats.filter(s => !s.hasFolded);
     if (live.length === 1) {
       // 只剩一人 — 直接結束
-      return { ok: true, settlement: this.settleSinglePlayerLeft(live[0].playerId) };
+      return { ok: true, settlement: this.settleSinglePlayerLeft(live[0]!.playerId) };
     }
 
     if (this.isStreetComplete()) {
@@ -434,10 +438,10 @@ export class TexasHoldemStateMachine {
       let res: ProcessResult = { ok: true };
       do {
         res = nextStreetFn();
-        if (this.s.street === "showdown") break;
+        if ((this.s.street as string) === "showdown") break;
         if (canAct.length >= 2) break;
-      } while (this.s.street !== "showdown");
-      if (this.s.street === "showdown") {
+      } while ((this.s.street as string) !== "showdown");
+      if ((this.s.street as string) === "showdown") {
         return { ok: true, settlement: this.settleShowdown() };
       }
       this.s.turnIdx = this.firstToActPostflop();
@@ -465,7 +469,7 @@ export class TexasHoldemStateMachine {
     const n = this.s.seats.length;
     for (let k = 1; k <= n; k++) {
       const i = (from + k) % n;
-      const s = this.s.seats[i];
+      const s = this.s.seats[i]!;
       if (!s.hasFolded && !s.isAllIn) return i;
     }
     return from; // 不應發生
@@ -476,7 +480,7 @@ export class TexasHoldemStateMachine {
     const n = this.s.seats.length;
     for (let k = 1; k <= n; k++) {
       const i = (this.s.dealerIdx + k) % n;
-      const s = this.s.seats[i];
+      const s = this.s.seats[i]!;
       if (!s.hasFolded && !s.isAllIn) return i;
     }
     return this.s.dealerIdx;
@@ -547,7 +551,7 @@ export class TexasHoldemStateMachine {
     const sorted = [...this.s.seats].sort(
       (a, b) => (scoreDeltas.get(b.playerId)! - scoreDeltas.get(a.playerId)!),
     );
-    const winnerId = sorted[0].playerId;
+    const winnerId = sorted[0]!.playerId;
     return {
       gameId: this.s.gameId,
       roundId: this.s.roundId,

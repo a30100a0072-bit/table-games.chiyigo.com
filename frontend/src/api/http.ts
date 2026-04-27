@@ -1,7 +1,9 @@
+import type { GameType } from "../shared/types";
+
 const BASE = import.meta.env.VITE_WORKER_URL as string;
 
 export interface TokenResponse  { token: string; playerId: string; }
-export interface MatchResponse  { roomId: string; wsUrl: string; players: string[]; }
+export interface MatchResponse  { roomId: string; wsUrl: string; players: string[]; gameType: GameType; }
 
 export async function getToken(playerId: string): Promise<TokenResponse> {
   const res = await fetch(`${BASE}/auth/token`, {
@@ -13,11 +15,19 @@ export async function getToken(playerId: string): Promise<TokenResponse> {
   return res.json();
 }
 
-export async function findMatch(token: string): Promise<MatchResponse> {
-  const res = await fetch(`${BASE}/lobby/match`, {
+export async function findMatch(token: string, gameType: GameType): Promise<MatchResponse> {
+  const res = await fetch(`${BASE}/api/match`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}` },
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type":  "application/json",
+    },
+    body: JSON.stringify({ gameType }),
   });
   if (!res.ok) throw new Error(`match failed: ${res.status}`);
-  return res.json();
+  // Backend returns { matched, roomId, gameType, players }; wsUrl is derived client-side. // L2_鎖定
+  const data = await res.json() as { roomId: string; gameType: GameType; players: string[] };
+  const wsBase = BASE.replace(/^http/, "ws");
+  const wsUrl  = `${wsBase}/rooms/${data.roomId}/join`;
+  return { roomId: data.roomId, wsUrl, players: data.players, gameType: data.gameType };
 }

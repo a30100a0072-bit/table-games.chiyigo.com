@@ -28,7 +28,7 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)
-    return joinRoom(request, env, wsMatch[1]);   // WS: no CORS wrapper
+    return joinRoom(request, env, wsMatch[1]!);   // WS: no CORS wrapper; regex guarantees group 1   // L2_鎖定
 
   return cors(new Response("not found", { status: 404 }));
 }
