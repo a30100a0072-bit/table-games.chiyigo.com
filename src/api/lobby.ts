@@ -19,7 +19,7 @@ export interface LobbyEnv {
 
 const ROOM_SIZE      = 4;
 const WAIT_MS        = 30_000;   // max queue wait before timeout
-const BOT_FILL_MS    = 10_000;   // fill remaining seats with bots after this delay // L2_實作
+const BOT_FILL_MS    = 3_000;    // fill remaining seats with bots after this delay // L2_實作
 const KV_ROOM_TTL_S  = 3_600;    // 1 h
 
 // ── Bot ID prefix ─────────────────────────────────────────────────────── L2_隔離
