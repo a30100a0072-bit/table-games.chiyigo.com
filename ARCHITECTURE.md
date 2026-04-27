@@ -3,9 +3,12 @@
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 > 最後更新：2026-04-27
 >
-> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；前端三遊戲 UI ✅；CI/CD ✅
+> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；前端三遊戲 UI ✅；CI/CD 全鏈路打通 ✅
 > **單元測試**：4 檔 / 58 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15），全綠
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功
+> **線上端點**：
+>   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
+>   - Pages：`https://big-two-frontend.pages.dev`（push master 自動 build + deploy）
 > **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
 > **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
 > `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
@@ -97,8 +100,9 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 單元測試 (BT) | `test/BigTwoStateMachine.test.ts` | ✅ | 13 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
 | 單元測試 (MJ) | `test/MahjongStateMachine.test.ts` | ✅ | 14 案例：`canWin` 6 案、初始化 3 案、動作分派 5 案；以 Mulberry32 種子 RNG 確定性 |
 | 單元測試 (TH) | `test/TexasHoldemStateMachine.test.ts` | ✅ | 16 案例：牌型階序、wheel straight、kicker、7 取 5、邊池三層 / 棄牌貢獻、盲注、加注合法性 |
-| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發、tsc (src + test) + vitest 通過後 wrangler deploy |
+| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發 → tsc(src+test) + vitest → `wrangler deploy --env production` → frontend `npm ci` + tsc + `vite build` → `wrangler pages project create big-two-frontend` (idempotent) → `wrangler pages deploy` |
 | 前端多遊戲 | `frontend/src/components/{GameSelect,GameScreen,Mahjong,TexasHoldem}*` | ✅ | 三遊戲 UI 完整：選單→大廳→對應遊戲畫面；frontend `tsc` + `vite build` 通過 |
+| GitHub Secrets | repo Settings → Secrets and variables → Actions | ✅ | `CLOUDFLARE_API_TOKEN`（含 Workers Scripts / D1 / Cloudflare Pages / Workers KV Storage / Queues 五項 Edit 權限）/ `CLOUDFLARE_ACCOUNT_ID` / `VITE_WORKER_URL` |
 
 ---
 
@@ -201,3 +205,68 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **forceSettle 語義**：mahjong / texas 在 timeout/disconnect 時採「中止退池」 — 所有玩家 `scoreDelta=0`、`reason` 在結算事件中區分；前端依 reason 顯示中止訊息。
 - **免費方案 DO Migration**：必須使用 `new_sqlite_classes`（非 `new_classes`），否則 CF 回傳錯誤 10097。
 - **wrangler 環境繼承**：`[env.production]` 不會繼承頂層 bindings，所有綁定須在 `[env.production]` 下完整重複宣告。
+
+---
+
+## 已知問題 / 待辦清單（截至 2026-04-27）
+
+### A. 已驗證可玩，但人機 AI 待強化（最高優先）
+- **`src/game/BotAI.ts`** 目前僅實作 Big Two 的「O(N) 貪婪 + 5 張組永遠 PASS」最低限度策略；麻將 / 德撲完全沒有 AI（`api/lobby.ts:189` 明確只對 `bigTwo` 啟用 BOT_FILL）。
+- **症狀**：麻將 / 德撲在大廳等不到 4 名真人時會 30 秒 timeout，等於不能單獨玩。
+- **目標**：把三款遊戲的 Bot AI 提升到「在 50ms DO CPU 預算內」可達的最高強度（見下方「下次掃整套邏輯 + 強化 AI」指令範本）。
+
+### B. 遊戲體驗待修（用戶回報「玩起來不太對」，待釐清細節）
+- 三款遊戲在 `https://big-two-frontend.pages.dev` 上線後，人類玩家實測反映行為異常，但未提供 console / network / 截圖具體症狀。
+- 下次優先：**先要使用者提供 DevTools Console / Network (WS) 截圖再動手**，避免亂猜亂改。
+
+### C. 前次盤點仍未動的項目
+1. 麻將台數精算（`MahjongStateMachine.ts:142` L2_待辦：清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花）
+2. 麻將 UI 缺：吃（chow）的「選 2 張手牌組順子」選擇器、暗槓 / 加槓獨立按鈕、reaction 倒數計時
+3. 德撲 UI 缺：showdown 揭牌動畫、最小加注金額 inline 提示
+4. 整合測試零覆蓋：`GameRoomDO`、`gateway.ts`、`api/lobby.ts`、前端皆無測試；無 e2e
+5. 死碼：`MahjongStateMachine.ts` 的 `indexToTile`、`isHonor` 未被引用
+6. 缺 `.gitattributes` 統一行尾（每次 commit 都跳 LF→CRLF 警告）
+7. 缺 rate limiting（`/auth/token`、`/api/match`）/ 結構化 log / metrics
+
+---
+
+## 下次新對話的開場指令（建議範本）
+
+清除聊天後新開一個對話，把下面這段整段貼給 Claude（**重點 1：先讀架構、再動手**；**重點 2：人機 AI 拉到頂**）：
+
+```
+這是 Cloudflare Serverless 三遊戲對戰專案（大老二 / 台灣 16 張麻將 / 德州撲克），
+請依下列順序進行，每階段做完先給我精簡報告再進下一階段：
+
+【階段 1：全棧靜態審查（不改 code，先輸出評估）】
+1. 讀 ARCHITECTURE.md 全文、wrangler.toml、package.json、.github/workflows/cloudflare-deploy.yml
+2. 掃 src/ 全部 .ts、test/ 全部 .ts、frontend/src/ 全部 .ts/.tsx
+3. 列出三層風險：
+   - L1 阻擋上線 / 會掉資料 / 安全漏洞（必修）
+   - L2 影響可玩性 / 功能不完整（強烈建議）
+   - L3 程式碼風格 / 死碼 / 未來才需要（暫緩）
+4. 不要動手改任何檔案；只交評估報告
+
+【階段 2：人機 AI 強化（這是核心目標）】
+目標 — 把三款遊戲的 Bot AI 強化到你能在「DO 50ms CPU 預算 / Cloudflare Workers 10 ms CPU 限制」內做到的最高強度，並在 api/lobby.ts 開啟麻將 / 德撲的 BOT_FILL，讓單人也能玩。
+
+具體要求：
+- Big Two：從現在 greedy 升級到 minimax / monte-carlo（限時內），含 5 張組合搜索
+- 麻將：實作打牌啟發式（聽牌距離 shanten 計算 + 安全牌偏好 + 副露決策）；canWin 已有，可直接用
+- 德州撲克：preflop 用 push/fold 表 + postflop 用 pot odds / 簡化 EV；至少要打贏全 fold 對手
+- 每款 AI 要有對應 unit tests（≥3 案：明顯該打哪、明顯不該打哪、邊界）
+- src tsc + test tsc + frontend tsc + npm test 全部要綠才 commit
+
+【階段 3：commit + push】
+1. 通過所有 typecheck + tests 後 commit
+2. push origin master 觸發 CI（會同時 deploy Worker + Pages）
+3. 等 CI 綠燈後告訴我結果
+
+【背景資訊】
+- 線上端點：Worker https://big-two-game-production.a30100a0072.workers.dev
+            Pages  https://big-two-frontend.pages.dev
+- 目前測試 58/58 通過、TypeScript 0 error
+- 已知 ARCHITECTURE.md「已知問題 / 待辦清單」B 項：用戶實測「玩起來不太對」，
+  但細節未提供 — 請在階段 1 報告中列出你「最可能壞掉」的 5 個地方，等我確認後再處理。
+```
+
