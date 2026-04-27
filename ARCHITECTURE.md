@@ -1,17 +1,15 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-04-27
+> 最後更新：2026-04-27（Bot AI 強化版）
 >
-> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas；前端三遊戲 UI ✅；CI/CD 全鏈路打通 ✅
-> **單元測試**：4 檔 / 58 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15），全綠
+> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲皆有 BotAI ✅；BOT_FILL 三款全啟用（3 秒補位）✅；前端三遊戲 UI ✅；CI/CD 全鏈路打通 ✅
+> **單元測試**：5 檔 / 73 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15、**BotAI 15**），全綠
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
 >   - Pages：`https://big-two-frontend.pages.dev`（push master 自動 build + deploy）
-> **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
-> **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
-> `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
+> **Repo**：`https://github.com/a30100a0072-bit/table-games.chiyigo.com`
 >
 > **安全提醒**：GitHub Fine-grained PAT 請存入 Windows 認證管理員（`git config --global credential.helper manager`），勿明文寫入任何檔案。
 
@@ -27,8 +25,8 @@ src/
 │   ├── BigTwoStateMachine.ts          ✅ 大老二純邏輯狀態機（零 IO）
 │   ├── MahjongStateMachine.ts         ✅ 台灣 16 張麻將純邏輯（PENDING_REACTIONS）
 │   ├── TexasHoldemStateMachine.ts     ✅ 德州撲克純邏輯（Side Pot Split）
-│   ├── GameEngineAdapter.ts           ✅ IGameEngine 統一介面 + 三引擎工廠 / restore
-│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI（Big Two；其它遊戲暫無）
+│   ├── GameEngineAdapter.ts           ✅ IGameEngine 統一介面 + 三引擎工廠 / restore + tickReactionDeadline
+│   └── BotAI.ts                       ✅ 三遊戲 BotAI（BigTwo 5 張組合搜索 / Mahjong 隔離度啟發式 + 必胡 / Texas Chen + pot odds）
 ├── do/
 │   └── GameRoomDO.ts                  ✅ Durable Object — 多遊戲房間（透過 IGameEngine 派遣）
 ├── api/
@@ -70,7 +68,8 @@ test/
 ├── BigTwoStateMachine.test.ts         ✅ 13 案例（合法出牌/非法阻擋/結算觸發）
 ├── MahjongStateMachine.test.ts        ✅ 14 案例（canWin 純函式 / 動作分派 / 反應視窗）
 ├── TexasHoldemStateMachine.test.ts    ✅ 16 案例（牌型階序 / 7 取 5 / 邊池 / 動作驗證）
-└── GameEngineAdapter.test.ts          ✅ 15 案例（工廠 / snapshot 往返 / forceSettle / 動作防呆）
+├── GameEngineAdapter.test.ts          ✅ 15 案例（工廠 / snapshot 往返 / forceSettle / 動作防呆）
+└── BotAI.test.ts                      ✅ 15 案例（三遊戲各 5：開牌/壓制/PASS/必胡/隔離捨棄）
 
 wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.production] 完整重複）
 ```
@@ -90,7 +89,7 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 9 | `workers/settlementConsumer.ts` | ✅ | INSERT OR IGNORE 冪等寫入、batch 原子、message.retry() |
 | 10 | `src/index.ts` | ✅ | Worker 主入口、export DO、fetch + queue handler |
 | 11 | `wrangler.toml` | ✅ | DO migrations (`new_sqlite_classes`)、Queue、KV、D1、JWT_SECRET、`[env.production]` |
-| Bot | `game/BotAI.ts` | ✅ | `getBotAction(view, hand)`，O(N) greedy；5 張牌組合永遠 PASS |
+| Bot | `game/BotAI.ts` | ✅ | 三遊戲 BotAI：`getBigTwoBotAction`（C(n,5) 5 張組合搜索 + 智能開牌）/ `getMahjongBotAction`（tile-utility 隔離度啟發式 + canWin 必胡 + 守 menqing）/ `getTexasBotAction`（Bill Chen 公式 preflop + 牌型 category + pot odds postflop） |
 | 12 | `frontend/` | ✅ | React 18 + Vite 5 + Tailwind 3，手機 / 桌機響應式，PWA manifest |
 | MJ | `game/MahjongStateMachine.ts` | ✅ | 台灣 16 張：PENDING_REACTIONS 等待視窗、嚴格優先級（胡>槓>碰>吃）、O(N) 回溯胡牌判定 ≤ 1088 ops、吃碰槓胡逐項回查手牌防偽造（L2_隔離）|
 | TH | `game/TexasHoldemStateMachine.ts` | ✅ | No-Limit Hold'em：`crypto.getRandomValues` 拒絕採樣洗牌、Side Pot Split（贏家不可超匹配額）、RAISE 嚴格驗證（≥currentBet+minRaise）、7 取 5 牌型評分（C(7,5)=21）|
@@ -100,6 +99,7 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 單元測試 (BT) | `test/BigTwoStateMachine.test.ts` | ✅ | 13 案例：合法出牌、非法牌型阻擋（6 種）、結算觸發（3 種） |
 | 單元測試 (MJ) | `test/MahjongStateMachine.test.ts` | ✅ | 14 案例：`canWin` 6 案、初始化 3 案、動作分派 5 案；以 Mulberry32 種子 RNG 確定性 |
 | 單元測試 (TH) | `test/TexasHoldemStateMachine.test.ts` | ✅ | 16 案例：牌型階序、wheel straight、kicker、7 取 5、邊池三層 / 棄牌貢獻、盲注、加注合法性 |
+| 單元測試 (Bot) | `test/BotAI.test.ts` | ✅ | 15 案例：BigTwo 開 3♣/ 最小壓制/ PASS / 5 張同花順壓同花/ 葫蘆無解；Mahjong 自摸胡/ 食胡/ 不胡 PASS/ 棄孤字/ 不在 awaiting 防呆；Texas AA 加注/ 7-2o 棄/ free-check/ 三條加注/ 高牌大額棄 |
 | CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發 → tsc(src+test) + vitest → `wrangler deploy --env production` → frontend `npm ci` + tsc + `vite build` → `wrangler pages project create big-two-frontend` (idempotent) → `wrangler pages deploy` |
 | 前端多遊戲 | `frontend/src/components/{GameSelect,GameScreen,Mahjong,TexasHoldem}*` | ✅ | 三遊戲 UI 完整：選單→大廳→對應遊戲畫面；frontend `tsc` + `vite build` 通過 |
 | GitHub Secrets | repo Settings → Secrets and variables → Actions | ✅ | `CLOUDFLARE_API_TOKEN`（含 Workers Scripts / D1 / Cloudflare Pages / Workers KV Storage / Queues 五項 Edit 權限）/ `CLOUDFLARE_ACCOUNT_ID` / `VITE_WORKER_URL` |
@@ -200,33 +200,43 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **Race Condition**：LobbyDO `idFromName("main")` 強制單一 JS 執行緒序列化配對邏輯。
 - **CORS**：gateway.ts 所有 HTTP 回應均加 `Access-Control-Allow-Origin: *`，支援跨來源 Cloudflare Pages。
 - **Token 傳遞**：瀏覽器 WebSocket 無法設自訂 header，token 附於 `?token=` query string。
-- **Bot 補位**：大廳等候 10 秒後自動填入 Bot，Bot 以 `BOT_1` ~ `BOT_3` 命名，1.5s 思考延遲；**僅 bigTwo 啟用**，mahjong/texas 不會塞 Bot（沒有對應 AI）。
+- **Bot 補位**：大廳等候 **3 秒**後自動填入 Bot，Bot 以 `BOT_1` ~ `BOT_3` 命名，1.5s 思考延遲（mahjong 反應動作 250ms）；**三款遊戲皆啟用**。
 - **多遊戲派遣**：客戶端打 `POST /api/match { gameType }` 或 `POST /rooms { gameType, capacity }`。LobbyDO `idFromName(gameType)` 確保各遊戲互不干擾的等候佇列。GameRoomDO 收 `gameType` 後委派 `createEngine` 建出 `IGameEngine`，後續所有 WS 訊息經 adapter 轉到對應狀態機。
 - **forceSettle 語義**：mahjong / texas 在 timeout/disconnect 時採「中止退池」 — 所有玩家 `scoreDelta=0`、`reason` 在結算事件中區分；前端依 reason 顯示中止訊息。
+- **Bot 補位**（**3 秒**）：`api/lobby.ts` 對三款遊戲皆啟用 BOT_FILL，3 秒湊不到真人就自動補 `BOT_1` ~ `BOT_3`。BigTwo 用 1.5s 思考延遲；Mahjong 反應動作（吃碰胡）走 250ms 短延遲。
+- **Mahjong 反應視窗 alarm**：DO 在 `phase === pending_reactions` 時改用 `react` alarm 對齊 `reactionDeadlineMs`（3.5s），到期呼叫 `engine.tickReactionDeadline()`（=`forceResolveReactions`）把未回應者視為過水；不再誤觸 `turn` alarm 把整局 forceSettle("timeout")。
+- **MATCH_KV 生命週期**：`GameRoomDO.cleanup()` 在房間結束時刪掉所有真人的 `room:{pid}` KV 鍵，玩家可立即重新配對；`handleMatch` 若 KV 還在但 D1 顯示 settled / 房間消失，自動清掉再進大廳。
 - **免費方案 DO Migration**：必須使用 `new_sqlite_classes`（非 `new_classes`），否則 CF 回傳錯誤 10097。
 - **wrangler 環境繼承**：`[env.production]` 不會繼承頂層 bindings，所有綁定須在 `[env.production]` 下完整重複宣告。
 
 ---
 
-## 已知問題 / 待辦清單（截至 2026-04-27）
+## 已知問題 / 待辦清單（截至 2026-04-27 Bot AI 強化版）
 
-### A. 已驗證可玩，但人機 AI 待強化（最高優先）
-- **`src/game/BotAI.ts`** 目前僅實作 Big Two 的「O(N) 貪婪 + 5 張組永遠 PASS」最低限度策略；麻將 / 德撲完全沒有 AI（`api/lobby.ts:189` 明確只對 `bigTwo` 啟用 BOT_FILL）。
-- **症狀**：麻將 / 德撲在大廳等不到 4 名真人時會 30 秒 timeout，等於不能單獨玩。
-- **目標**：把三款遊戲的 Bot AI 提升到「在 50ms DO CPU 預算內」可達的最高強度（見下方「下次掃整套邏輯 + 強化 AI」指令範本）。
+### ✅ 本次完成
+1. **三款 BotAI 全到位**（`src/game/BotAI.ts`）
+   - Big Two：升級為 C(n,5)≤1287 5 張組合搜索 + 智能開牌（保留組合不打散）；不再對 5 張組合永遠 PASS
+   - Mahjong：tile-utility 啟發式（孤字優先、相鄰 ±2 加分）+ canWin 必胡 + 反應一律 mj_pass 守 menqing
+   - Texas：Bill Chen 公式 preflop 三段 buckets（raise ≥9 / call ≥7 / 邊際 ≥5 / 棄）+ postflop 牌型 category × pot odds
+   - 每款 ≥5 個單元測試，共 +15 案例（總 73 案）
+2. **三款遊戲都會自動補 Bot**（`api/lobby.ts`）— BOT_FILL 從 bigTwo-only 擴展到所有 gameType；等候時間從 10 秒縮到 **3 秒**
+3. **Mahjong PENDING_REACTIONS 不再卡住**（`do/GameRoomDO.ts`）— 新增 `react` alarm 對齊 `reactionDeadlineMs`，到期呼叫 `engine.tickReactionDeadline()`（`forceResolveReactions`）；之前是錯用 turn alarm 在 pending phase forceSettle("timeout") 把局打掉
+4. **Mahjong 結算分數修正**（`MahjongStateMachine.ts:settle`）— dead conditional 拿掉；自摸三家各付 score、食胡只有放炮者付 score
+5. **MATCH_KV 卡死「already in a room」修掉**（`do/GameRoomDO.ts` + `api/lobby.ts`）— DO cleanup 立即清 KV；handleMatch 配 D1 status fallback 處理 cleanup race
+6. **大老二桌面牌沒顯示點數**（`frontend/src/components/BigTwoGameScreen.tsx`）— 原本只渲染花色，現在跟手牌一樣兩角 rank + 中央花色
 
-### B. 遊戲體驗待修（用戶回報「玩起來不太對」，待釐清細節）
-- 三款遊戲在 `https://big-two-frontend.pages.dev` 上線後，人類玩家實測反映行為異常，但未提供 console / network / 截圖具體症狀。
-- 下次優先：**先要使用者提供 DevTools Console / Network (WS) 截圖再動手**，避免亂猜亂改。
-
-### C. 前次盤點仍未動的項目
-1. 麻將台數精算（`MahjongStateMachine.ts:142` L2_待辦：清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花）
-2. 麻將 UI 缺：吃（chow）的「選 2 張手牌組順子」選擇器、暗槓 / 加槓獨立按鈕、reaction 倒數計時
-3. 德撲 UI 缺：showdown 揭牌動畫、最小加注金額 inline 提示
-4. 整合測試零覆蓋：`GameRoomDO`、`gateway.ts`、`api/lobby.ts`、前端皆無測試；無 e2e
-5. 死碼：`MahjongStateMachine.ts` 的 `indexToTile`、`isHonor` 未被引用
-6. 缺 `.gitattributes` 統一行尾（每次 commit 都跳 LF→CRLF 警告）
-7. 缺 rate limiting（`/auth/token`、`/api/match`）/ 結構化 log / metrics
+### ⏳ 仍未動（下次優先）
+1. **麻將台數精算**（`MahjongStateMachine.ts:142`）— 清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花尚未實作；目前只有平胡 + 自摸 + 門前清
+2. **麻將 UI 缺件**：吃（chow）的「選 2 張手牌組順子」選擇器、暗槓 / 加槓獨立按鈕、reaction 倒數計時顯示
+3. **德撲 UI 缺件**：showdown 揭牌動畫、最小加注金額 inline 提示
+4. **整合測試零覆蓋**：`GameRoomDO`、`gateway.ts`、`api/lobby.ts`、前端皆無測試；無 e2e
+5. **`.gitattributes`** 缺：每次 commit 都跳 LF→CRLF 警告（無功能影響）
+6. **rate limiting**：`/auth/token`、`/api/match` 無防刷，結構化 log / metrics 都缺
+7. **Bot 進階**：
+   - Big Two 仍是 minimum-beat 策略，沒有「保留大牌等收尾」、「主動領 5 張組合」的決策
+   - Mahjong 永遠不吃碰槓（保 menqing）— 對手實際被 bot 餵牌時無法強壓節奏
+   - Texas 不會詐唬、無對手範圍建模、3-bet 認知缺失
+8. **死碼**：`MahjongStateMachine.ts` 的 `indexToTile`、`isHonor` 仍未引用
 
 ---
 
