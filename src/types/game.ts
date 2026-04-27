@@ -39,8 +39,95 @@ export interface PassAction {
   type: "pass";           // 無牌可出或選擇 Pass           // L2_實作
 }
 
-/** 玩家送往 Worker 的動作意圖聯合型別 */
-export type PlayerAction = PlayAction | PassAction;
+/** 玩家送往 Worker 的動作意圖聯合型別（Big Two + Mahjong + Texas Hold'em）*/
+export type PlayerAction =
+  | PlayAction
+  | PassAction
+  | MahjongDiscardAction
+  | MahjongChowAction
+  | MahjongPongAction
+  | MahjongKongAction
+  | MahjongHuAction
+  | MahjongPassAction
+  | PokerFoldAction
+  | PokerCheckAction
+  | PokerCallAction
+  | PokerRaiseAction;
+
+// ──────────────────────────────────────────────
+//  1c. Texas Hold'em Action (L2_實作)
+// ──────────────────────────────────────────────
+
+export interface PokerFoldAction {
+  type: "fold";                       // 棄牌                        // L2_實作
+}
+export interface PokerCheckAction {
+  type: "check";                      // 過牌（無人加注時）          // L2_實作
+}
+export interface PokerCallAction {
+  type: "call";                       // 跟注至當前最高注              // L2_實作
+}
+export interface PokerRaiseAction {
+  type: "raise";
+  raiseAmount: number;                // 加注後該玩家總投入該街的籌碼 // L2_鎖定
+                                      // 必須 ≥ currentBet + minRaise // L2_鎖定
+}
+
+// ──────────────────────────────────────────────
+//  1b. Mahjong Tile + Action  (L3_邏輯安防)
+// ──────────────────────────────────────────────
+
+/** 台灣 16 張麻將牌種 — m=萬 p=筒 s=條 z=字(1東2南3西4北5中6發7白) */
+export type MahjongSuit = "m" | "p" | "s" | "z";
+
+export interface MahjongTile {
+  suit: MahjongSuit;
+  rank: number;            // m/p/s: 1–9；z: 1–7  // L2_鎖定
+}
+
+/** 海底牌 = 牌牆剩餘張數（不暴露牌面）           // L2_隔離 */
+export interface WallView {
+  remaining: number;
+}
+
+/** 已亮出的副露（吃碰槓）— 全 player 可見       // L2_隔離 */
+export type MeldKind = "chow" | "pong" | "kong_exposed" | "kong_concealed";
+
+export interface ExposedMeld {
+  kind: MeldKind;
+  tiles: MahjongTile[];
+  fromPlayerId?: PlayerId; // 來源（碰/槓/吃對象）
+}
+
+export interface MahjongDiscardAction {
+  type: "discard";
+  tile: MahjongTile;       // 必須是手中真實存在的牌            // L2_隔離
+}
+
+export interface MahjongChowAction {
+  type: "chow";
+  tiles: [MahjongTile, MahjongTile, MahjongTile]; // 必含對手剛打出的牌 // L2_隔離
+}
+
+export interface MahjongPongAction {
+  type: "pong";
+  tile: MahjongTile;       // 對手剛打的牌；自身須有 ≥2 同牌      // L2_隔離
+}
+
+export interface MahjongKongAction {
+  type: "kong";
+  tile: MahjongTile;       // 明槓 / 暗槓 / 加槓 由 SM 判定        // L2_隔離
+  source: "exposed" | "concealed" | "added";
+}
+
+export interface MahjongHuAction {
+  type: "hu";
+  selfDrawn: boolean;      // true=自摸，false=食胡(榮和)        // L3_邏輯安防
+}
+
+export interface MahjongPassAction {
+  type: "mj_pass";         // 不吃不碰不胡，過水                  // L3_架構
+}
 
 /** WebSocket 訊框包裝 */
 export interface ActionFrame {
@@ -91,6 +178,112 @@ export interface GameStateView {
   lastPlay: LastPlay | null;            // 桌面最後一手牌，null 表示新輪
   passCount: number;                    // 本輪連續 Pass 次數
   turnDeadlineMs: number;               // Unix ms，倒數計時鎖定 // L2_鎖定
+}
+
+// ──────────────────────────────────────────────
+//  2b. MahjongStateView (L2_隔離 + L3_架構)
+// ──────────────────────────────────────────────
+
+/** 等待視窗階段 — 有人打牌後收集吃碰槓胡反應             // L3_架構 */
+export type MahjongPhase =
+  | "dealing"
+  | "playing"             // 當前回合者抽牌→打牌中
+  | "pending_reactions"   // 收集其他玩家對剛打牌的反應      // L3_架構
+  | "settled";
+
+export interface MahjongSelfView {
+  playerId: PlayerId;
+  hand: MahjongTile[];                 // 本人完整門前清       // L2_隔離
+  exposed: ExposedMeld[];              // 本人已吃碰槓
+  flowers: MahjongTile[];              // 花牌（MVP 可空陣列）
+}
+
+export interface MahjongOpponentView {
+  playerId: PlayerId;
+  handCount: number;                   // 隱藏牌面，僅張數     // L2_隔離
+  exposed: ExposedMeld[];              // 副露公開可見         // L2_隔離
+  flowersCount: number;
+}
+
+export interface MahjongLastDiscard {
+  playerId: PlayerId;
+  tile: MahjongTile;
+}
+
+export interface MahjongStateView {
+  gameId: string;
+  roundId: string;
+  phase: MahjongPhase;
+
+  self: MahjongSelfView;               // 本人視角             // L2_隔離
+  opponents: MahjongOpponentView[];    // 對手遮蔽視角         // L2_隔離
+
+  wall: WallView;                      // 海底牌剩餘張數       // L2_隔離
+  currentTurn: PlayerId;
+  lastDiscard: MahjongLastDiscard | null;
+
+  /** PENDING_REACTIONS 期間，列出仍待回應的玩家             // L3_架構 */
+  awaitingReactionsFrom: PlayerId[];
+  reactionDeadlineMs: number;          // Unix ms             // L2_鎖定
+  turnDeadlineMs: number;
+}
+
+// ──────────────────────────────────────────────
+//  2c. Texas Hold'em StateView (L2_隔離 + L3_邏輯安防)
+// ──────────────────────────────────────────────
+
+export type PokerStreet =
+  | "preflop"
+  | "flop"
+  | "turn"
+  | "river"
+  | "showdown"
+  | "settled";
+
+/** 邊池 — 由 All-in 觸發的籌碼分層；每池僅匹配玩家可分配 // L3_糾錯風險表 */
+export interface Pot {
+  amount: number;
+  eligiblePlayerIds: PlayerId[];       // 可爭奪此池的玩家集合     // L3_糾錯風險表
+}
+
+export interface PokerSelfView {
+  playerId: PlayerId;
+  holeCards: [Card, Card];             // 本人底牌，僅自己看得到   // L2_隔離
+  stack: number;                       // 剩餘籌碼
+  betThisStreet: number;               // 本街已下注金額
+  totalCommitted: number;              // 整局已投入（用於 side pot 結算）
+  hasFolded: boolean;
+  isAllIn: boolean;
+}
+
+export interface PokerOpponentView {
+  playerId: PlayerId;
+  stack: number;
+  betThisStreet: number;               // 公開資訊                  // L2_隔離
+  totalCommitted: number;
+  hasFolded: boolean;
+  isAllIn: boolean;
+  // holeCards 故意不存在，TS 強制隔離                              // L2_隔離
+}
+
+export interface PokerStateView {
+  gameId: string;
+  roundId: string;
+  street: PokerStreet;
+
+  self: PokerSelfView;                 // 本人視角                  // L2_隔離
+  opponents: PokerOpponentView[];      // 對手遮蔽視角              // L2_隔離
+
+  communityCards: Card[];              // 0 / 3 / 4 / 5 張公牌      // L2_實作
+  pots: Pot[];                         // 主池在 [0]，邊池依序往後  // L3_糾錯風險表
+  currentBet: number;                  // 本街最高注額              // L2_鎖定
+  minRaise: number;                    // 下一次 raise 最小增量     // L2_鎖定
+  bigBlind: number;
+  smallBlind: number;
+
+  dealerIdx: number;                   // 莊家位置
+  currentTurn: PlayerId;
+  turnDeadlineMs: number;              // Unix ms                   // L2_鎖定
 }
 
 // ──────────────────────────────────────────────

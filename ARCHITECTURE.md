@@ -1,9 +1,9 @@
-# 大老二連線遊戲 — 架構與實作步驟
+# 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-04-26
+> 最後更新：2026-04-27
 >
-> **部署狀態**：Steps 1–11 ✅ 後端全部完成；Bot AI ✅；測試 & CI/CD ✅；前端 React ✅ — 已上線
+> **部署狀態**：Big Two 全棧 ✅；Mahjong 純邏輯 ✅；Texas Hold'em 純邏輯 ✅；測試 & CI/CD ✅
 > **Worker URL**：`https://big-two-game-production.a30100a0072.workers.dev`
 > **Version ID**：`6c421e01-df5c-422c-baa4-763c25a0e4c0`
 > `https://github.com/a30100a0072-bit/table-games.chiyigo.com`
@@ -19,8 +19,10 @@ src/
 ├── types/
 │   └── game.ts                        ✅ 全域型別合約
 ├── game/
-│   ├── BigTwoStateMachine.ts          ✅ 純邏輯狀態機（零 IO）
-│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI
+│   ├── BigTwoStateMachine.ts          ✅ 大老二純邏輯狀態機（零 IO）
+│   ├── MahjongStateMachine.ts         ✅ 台灣 16 張麻將純邏輯（PENDING_REACTIONS）
+│   ├── TexasHoldemStateMachine.ts     ✅ 德州撲克純邏輯（Side Pot Split）
+│   └── BotAI.ts                       ✅ O(N) 貪心機器人 AI（Big Two）
 ├── do/
 │   └── GameRoomDO.ts                  ✅ Durable Object — 房間生命週期 + WS 管理 + Bot 回合
 ├── api/
@@ -76,6 +78,8 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 11 | `wrangler.toml` | ✅ | DO migrations (`new_sqlite_classes`)、Queue、KV、D1、JWT_SECRET、`[env.production]` |
 | Bot | `game/BotAI.ts` | ✅ | `getBotAction(view, hand)`，O(N) greedy；5 張牌組合永遠 PASS |
 | 12 | `frontend/` | ✅ | React 18 + Vite 5 + Tailwind 3，手機 / 桌機響應式，PWA manifest |
+| MJ | `game/MahjongStateMachine.ts` | ✅ | 台灣 16 張：PENDING_REACTIONS 等待視窗、嚴格優先級（胡>槓>碰>吃）、O(N) 回溯胡牌判定 ≤ 1088 ops、吃碰槓胡逐項回查手牌防偽造（L2_隔離）|
+| TH | `game/TexasHoldemStateMachine.ts` | ✅ | No-Limit Hold'em：`crypto.getRandomValues` 拒絕採樣洗牌、Side Pot Split（贏家不可超匹配額）、RAISE 嚴格驗證（≥currentBet+minRaise）、7 取 5 牌型評分（C(7,5)=21）|
 
 | 工程支援 | 檔案 | 狀態 | 重點 |
 |----------|------|------|------|
@@ -90,7 +94,9 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 |---|---|---|---|
 | L0 SDK | `client/GameSocket.ts` | 前端連線管理、指數退避重連 | WebSocket |
 | L1 型別 | `types/game.ts` | 全域合約，TS interface | 無 |
-| L2 邏輯 | `game/BigTwoStateMachine.ts` | 純狀態機，含牌型驗證 | 僅 `crypto.getRandomValues` |
+| L2 邏輯 | `game/BigTwoStateMachine.ts` | 大老二純狀態機，含牌型驗證 | 僅 `crypto.getRandomValues` |
+| L2 邏輯 | `game/MahjongStateMachine.ts` | 麻將純狀態機，PENDING_REACTIONS + 胡牌回溯 | 僅 `Math.random` 注入 |
+| L2 邏輯 | `game/TexasHoldemStateMachine.ts` | 德州撲克純狀態機，Side Pot 分割 + 7 取 5 評分 | 僅 `crypto.getRandomValues` |
 | L2 Bot | `game/BotAI.ts` | 純函式 AI，無副作用 | 無 |
 | L3 房間 | `do/GameRoomDO.ts` | WS session 管理、呼叫 L2、推 Queue | WebSocket, Queue |
 | L4 配對 | `api/lobby.ts` | 等候室、配對、Bot 補位、防 Race Condition | KV, D1, DO stub |
