@@ -307,7 +307,9 @@ export class GameRoomDO implements DurableObject {
 
   private async onTurnTimeout(): Promise<void> {
     if (!this.engine || this.room?.phase !== "playing") return;
-    const settlement = this.engine.forceSettle("timeout");
+    // 逾時 = 當前行動者棄局，由其承擔 forfeit penalty；bots 沒錢包，不處罰。 // L2_實作
+    const offender = this.engine.currentTurn();
+    const settlement = this.engine.forceSettle("timeout", isBot(offender) ? undefined : offender);
     this.broadcastViews();
     await this.handleSettlement(settlement);
   }
@@ -321,7 +323,8 @@ export class GameRoomDO implements DurableObject {
     if (this.disconnected[playerId] === undefined) return;
 
     if (this.room.phase === "playing" && this.engine) {
-      const settlement = this.engine.forceSettle("disconnect");
+      // 60s 重連寬限期過了還沒回來 = 棄局，由斷線玩家承擔 forfeit。           // L2_實作
+      const settlement = this.engine.forceSettle("disconnect", isBot(playerId) ? undefined : playerId);
       this.broadcastViews();
       await this.handleSettlement(settlement);
     } else {

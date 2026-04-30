@@ -31,6 +31,8 @@ import {
 //  常數
 // ──────────────────────────────────────────────
 const HAND_SIZE = 16;                          // 台灣 16 張
+// 斷線/逾時棄局罰款；與 lobby ANTE_BY_GAME.mahjong 對齊。// L2_實作
+const MJ_FORFEIT_PENALTY = 100;
 const MELDS_NEEDED = 5;                        // 5 副 + 1 對 = 17 張胡牌
 const REACTION_WINDOW_MS = 3500;               // 等待視窗 3.5s     // L3_架構
 const TURN_WINDOW_MS = 15000;
@@ -460,23 +462,36 @@ export class MahjongStateMachine {
   }
 
   /**
-   * 強制結算 — DO timeout/disconnect 觸發；MVP 採「流局」處理：
-   * 所有玩家 scoreDelta=0，winnerId 取首位（前端依 reason 顯示中止訊息）。 // L3_架構含防禦觀測
+   * 強制結算 — DO timeout/disconnect 觸發。
+   * 若指名 forfeitPlayerId，該玩家扣 FORFEIT_PENALTY 籌碼，其他三家平分；
+   * 沒指名則全員 scoreDelta=0（流局退池，例：全員一起斷線）。           // L3_架構含防禦觀測
+   * 平分採向下取整，餘數留在系統（避免無中生有的籌碼）。
    */
-  forceSettle(reason: "timeout" | "disconnect"): SettlementResult {
+  forceSettle(reason: "timeout" | "disconnect", forfeitPlayerId?: PlayerId): SettlementResult {
     if (this.s.phase === "settled") throw new Error("already settled");
     this.s.phase = "settled";
+
+    const offenderIdx = forfeitPlayerId
+      ? this.s.players.findIndex(p => p.playerId === forfeitPlayerId)
+      : -1;
+    const otherIdxs = this.s.players.map((_, i) => i).filter(i => i !== offenderIdx);
+    const split = offenderIdx >= 0 && otherIdxs.length > 0
+      ? Math.floor(MJ_FORFEIT_PENALTY / otherIdxs.length)
+      : 0;
+    const totalLoss = split * otherIdxs.length;
+    const winnerIdx = offenderIdx >= 0 ? otherIdxs[0]! : 0;
+
     return {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
       reason,
-      winnerId: this.s.players[0]!.playerId,
+      winnerId: this.s.players[winnerIdx]!.playerId,
       players: this.s.players.map((p, i) => ({
         playerId: p.playerId,
-        finalRank: i + 1,
+        finalRank: i === offenderIdx ? 4 : (i === winnerIdx ? 1 : 2),
         remainingCards: [],                                                  // L2_隔離
-        scoreDelta: 0,
+        scoreDelta: i === offenderIdx ? -totalLoss : (offenderIdx >= 0 ? split : 0),
       })),
     };
   }

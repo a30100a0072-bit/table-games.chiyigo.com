@@ -63,6 +63,28 @@ describe("forceSettle", () => {
       expect(() => e.forceSettle("lastCardPlayed")).toThrow();               // L3_邏輯安防
     });
   }
+
+  // 棄局處罰：mahjong / texas 受罰，bigTwo 用既有 remaining-card 計分。
+  for (const gt of ["mahjong", "texas"] as const) {
+    it(`${gt} forceSettle('disconnect', offender) — 棄局者扣分、其他人均分`, () => {
+      const e = createEngine({ gameType: gt, gameId: "g", roundId: "r", playerIds: PLAYERS });
+      const offender = PLAYERS[0]!;
+      const s = e.forceSettle("disconnect", offender);
+      const off = s.players.find(p => p.playerId === offender)!;
+      const others = s.players.filter(p => p.playerId !== offender);
+      expect(off.scoreDelta).toBeLessThan(0);
+      const sumOthers = others.reduce((n, p) => n + p.scoreDelta, 0);
+      // 守恆（允許向下取整餘數）：扣分絕對值 ≥ 加分總和
+      expect(Math.abs(off.scoreDelta)).toBeGreaterThanOrEqual(sumOthers);
+      expect(s.winnerId).not.toBe(offender);
+    });
+
+    it(`${gt} forceSettle('disconnect') 不指名 — 全員 scoreDelta=0`, () => {
+      const e = createEngine({ gameType: gt, gameId: "g", roundId: "r", playerIds: PLAYERS });
+      const s = e.forceSettle("disconnect");
+      for (const p of s.players) expect(p.scoreDelta).toBe(0);
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────

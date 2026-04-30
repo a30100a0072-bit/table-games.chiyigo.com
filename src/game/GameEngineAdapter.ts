@@ -40,8 +40,9 @@ export interface IGameEngine {
   /** 當前行動者 — 用於 turn alarm / Bot 排程。                                // L3_架構含防禦觀測 */
   currentTurn(): PlayerId;
 
-  /** 強制結算（timeout / disconnect）。                                       // L3_架構含防禦觀測 */
-  forceSettle(reason: SettlementReason): SettlementResult;
+  /** 強制結算（timeout / disconnect）。傳 forfeitPlayerId 將其視為棄局者，
+   *  該玩家扣固定罰款、其餘玩家平分。不傳 = 全員退池。                        // L3_架構含防禦觀測 */
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult;
 
   /**
    * Mahjong-only: when reactionDeadlineMs expires, mark all unresolved reactions
@@ -73,8 +74,10 @@ class BigTwoEngine implements IGameEngine {
     const ids = (this.m.snapshot() as MachineSnapshot).playerIds;
     return this.m.getView(ids[0]!).currentTurn;
   }
-  forceSettle(reason: SettlementReason): SettlementResult {
+  forceSettle(reason: SettlementReason, _forfeitPlayerId?: PlayerId): SettlementResult {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
+    // Big Two 既有結算邏輯已用「剩餘手牌張數」當 scoreDelta，棄局者本來就會
+    // 因為手裡牌多而扣多分，無需額外 penalty；忽略 forfeitPlayerId 參數。     // L2_實作
     return this.m.forceSettle(reason);
   }
   tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // bigTwo no-op
@@ -100,9 +103,9 @@ class MahjongEngine implements IGameEngine {
   getView(playerId: PlayerId)             { return this.m.viewFor(playerId); }
   snapshot()                              { return this.m.snapshot(); }
   currentTurn(): PlayerId                 { return this.m.currentTurn(); }
-  forceSettle(reason: SettlementReason): SettlementResult {
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
-    return this.m.forceSettle(reason);
+    return this.m.forceSettle(reason, forfeitPlayerId);
   }
   tickReactionDeadline(): ProcessOutcome {
     const r = this.m.forceResolveReactions();
@@ -131,9 +134,9 @@ class TexasEngine implements IGameEngine {
   getView(playerId: PlayerId)             { return this.m.viewFor(playerId); }
   snapshot()                              { return this.m.snapshot(); }
   currentTurn(): PlayerId                 { return this.m.currentTurn(); }
-  forceSettle(reason: SettlementReason): SettlementResult {
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
     if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
-    return this.m.forceSettle(reason);
+    return this.m.forceSettle(reason, forfeitPlayerId);
   }
   tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // texas no-op
 }

@@ -28,6 +28,8 @@ import {
 //  常數
 // ──────────────────────────────────────────────
 const TURN_WINDOW_MS = 20000;
+// 斷線/逾時棄局罰款；與 lobby ANTE_BY_GAME.texas 對齊。// L2_實作
+const TX_FORFEIT_PENALTY = 200;
 const SUITS: Suit[] = ["spades", "hearts", "clubs", "diamonds"];
 const RANKS: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]; // 2 最小 A 最大  // L2_實作
 const RANK_VALUE: Record<Rank, number> = (() => {
@@ -590,23 +592,35 @@ export class TexasHoldemStateMachine {
 
   /**
    * 強制結算 — DO timeout/disconnect 觸發。
-   * 採「退池」：每位玩家 scoreDelta=0（退還全部 totalCommitted），標 settled。
-   * 前端依 reason 顯示「對局中止」。                                         // L3_架構含防禦觀測
+   * 若指名 forfeitPlayerId，該玩家扣 FORFEIT_PENALTY，其餘玩家平分；
+   * 沒指名則全員 scoreDelta=0（退池，例：全員一起斷線）。              // L3_架構含防禦觀測
+   * 平分採向下取整，餘數留在系統避免無中生有。
    */
-  forceSettle(reason: "timeout" | "disconnect"): SettlementResult {
+  forceSettle(reason: "timeout" | "disconnect", forfeitPlayerId?: PlayerId): SettlementResult {
     if (this.s.street === "settled") throw new Error("already settled");
     this.s.street = "settled";
+
+    const offenderIdx = forfeitPlayerId
+      ? this.s.seats.findIndex(s => s.playerId === forfeitPlayerId)
+      : -1;
+    const otherIdxs = this.s.seats.map((_, i) => i).filter(i => i !== offenderIdx);
+    const split = offenderIdx >= 0 && otherIdxs.length > 0
+      ? Math.floor(TX_FORFEIT_PENALTY / otherIdxs.length)
+      : 0;
+    const totalLoss = split * otherIdxs.length;
+    const winnerIdx = offenderIdx >= 0 ? otherIdxs[0]! : 0;
+
     return {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
       reason,
-      winnerId: this.s.seats[0]!.playerId,
-      players: this.s.seats.map((s, i) => ({
-        playerId: s.playerId,
-        finalRank: i + 1,
+      winnerId: this.s.seats[winnerIdx]!.playerId,
+      players: this.s.seats.map((seat, i) => ({
+        playerId: seat.playerId,
+        finalRank: i === offenderIdx ? this.s.seats.length : (i === winnerIdx ? 1 : 2),
         remainingCards: [],                                                  // L2_隔離
-        scoreDelta: 0,
+        scoreDelta: i === offenderIdx ? -totalLoss : (offenderIdx >= 0 ? split : 0),
       })),
     };
   }
