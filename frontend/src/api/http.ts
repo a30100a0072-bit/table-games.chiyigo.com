@@ -5,6 +5,28 @@ const BASE = import.meta.env.VITE_WORKER_URL as string;
 export interface TokenResponse  { token: string; playerId: string; }
 export interface MatchResponse  { roomId: string; wsUrl: string; players: string[]; gameType: GameType; }
 
+export interface LedgerEntry {
+  ledger_id:  number;
+  game_id:    string | null;
+  delta:      number;
+  reason:     string;
+  created_at: number;
+}
+export interface WalletResponse {
+  playerId:    string;
+  displayName: string;
+  chipBalance: number;
+  updatedAt:   number;
+  ledger:      LedgerEntry[];
+}
+
+export class InsufficientChipsError extends Error {
+  constructor(public balance: number, public required: number, public gameType: GameType) {
+    super(`需要 ${required} 籌碼，目前 ${balance}`);
+    this.name = "InsufficientChipsError";
+  }
+}
+
 export async function getToken(playerId: string): Promise<TokenResponse> {
   const res = await fetch(`${BASE}/auth/token`, {
     method: "POST",
@@ -24,10 +46,22 @@ export async function findMatch(token: string, gameType: GameType): Promise<Matc
     },
     body: JSON.stringify({ gameType }),
   });
+  if (res.status === 402) {
+    const body = await res.json().catch(() => ({})) as { balance?: number; required?: number };
+    throw new InsufficientChipsError(body.balance ?? 0, body.required ?? 0, gameType);
+  }
   if (!res.ok) throw new Error(`match failed: ${res.status}`);
   // Backend returns { matched, roomId, gameType, players }; wsUrl is derived client-side. // L2_鎖定
   const data = await res.json() as { roomId: string; gameType: GameType; players: string[] };
   const wsBase = BASE.replace(/^http/, "ws");
   const wsUrl  = `${wsBase}/rooms/${data.roomId}/join`;
   return { roomId: data.roomId, wsUrl, players: data.players, gameType: data.gameType };
+}
+
+export async function getWallet(token: string): Promise<WalletResponse> {
+  const res = await fetch(`${BASE}/api/me/wallet`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`wallet failed: ${res.status}`);
+  return res.json();
 }

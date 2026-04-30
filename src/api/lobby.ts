@@ -4,23 +4,32 @@
 // 每個遊戲類型擁有自己的 LobbyDO（idFromName(gameType)），互不干擾。            // L2_隔離
 // 機器人補位（BOT_FILL）對 bigTwo / mahjong / texas 三款遊戲皆啟用。            // L2_實作
 
-import { verifyJWT, JWTError } from "../utils/auth";
+import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import type { GameType } from "../types/game";
 import { isGameType } from "../types/game";
 
 // ── Environment ──────────────────────────────────────────────────────── L2_隔離
 export interface LobbyEnv {
-  LOBBY_DO:   DurableObjectNamespace;
-  GAME_ROOM:  DurableObjectNamespace;   // needed to init DO when bots fill a room // L2_實作
-  MATCH_KV:   KVNamespace;
-  DB:         D1Database;
-  JWT_SECRET: string;
+  LOBBY_DO:        DurableObjectNamespace;
+  GAME_ROOM:       DurableObjectNamespace;   // needed to init DO when bots fill a room // L2_實作
+  MATCH_KV:        KVNamespace;
+  DB:              D1Database;
+  JWT_PRIVATE_JWK: string;                   // JSON-serialised EC P-256 private JWK    // L3_架構含防禦觀測
 }
 
 const ROOM_SIZE      = 4;
 const WAIT_MS        = 30_000;   // max queue wait before timeout
 const BOT_FILL_MS    = 3_000;    // fill remaining seats with bots after this delay // L2_實作
 const KV_ROOM_TTL_S  = 3_600;    // 1 h
+
+// Minimum chip balance to enter matchmaking. Players who can't cover the
+// floor are bounced before queueing so we don't seat them and crash the
+// table mid-hand on settlement.                                          // L2_實作
+export const ANTE_BY_GAME: Record<GameType, number> = {
+  bigTwo:  100,
+  mahjong: 100,
+  texas:   200,
+};
 
 // ── Bot ID prefix ─────────────────────────────────────────────────────── L2_隔離
 // Any playerId starting with this prefix is treated as a bot seat.
@@ -250,7 +259,7 @@ export async function handleMatch(
 
   let playerId: string;
   try {
-    playerId = await verifyJWT(token, env.JWT_SECRET);
+    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
     return Response.json(
       { error: err instanceof JWTError ? err.message : "unauthorized" },
@@ -264,6 +273,22 @@ export async function handleMatch(
     const body = await request.json<{ gameType?: string }>();
     if (isGameType(body.gameType)) gameType = body.gameType;
   } catch { /* default */ }
+
+  // Chip floor — the wallet must cover this game's ANTE. Returning users
+  // get this row from /auth/token's lazy create; if the row is missing we
+  // treat balance as 0 (which fails the check).                          // L2_實作
+  const ante = ANTE_BY_GAME[gameType];
+  const wallet = await env.DB
+    .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ chip_balance: number }>();
+  const balance = wallet?.chip_balance ?? 0;
+  if (balance < ante) {
+    return Response.json(
+      { error: "insufficient chips", balance, required: ante, gameType },
+      { status: 402 },
+    );
+  }
 
   const existingRoom = await env.MATCH_KV.get(`room:${playerId}`);
   if (existingRoom) {

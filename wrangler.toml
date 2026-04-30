@@ -72,4 +72,7 @@ database_name = "big-two-db"
 database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
 
 # ── Secrets ───────────────────────────────────────────────────────────── # L2_隔離
-# wrangler secret put JWT_SECRET --env production
+# JWT_PRIVATE_JWK is a JSON-serialised EC P-256 private JWK with a `kid`.
+# Generate one with:  npm run gen:jwk
+# Then upload:        wrangler secret put JWT_PRIVATE_JWK --env production
+# The matching public key is published at /.well-known/jwks.json.

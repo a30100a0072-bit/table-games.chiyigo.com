@@ -55,7 +55,15 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-      # ── 6. Deploy Worker (production) ────────────────────────────────
+      # ── 6a. Apply D1 schema (idempotent) ────────────────────────────
+      # All DDL uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF
+      # NOT EXISTS`, so re-running on every deploy is a no-op when nothing
+      # changed and only applies the new tables/columns when something did.
+      # Runs BEFORE the Worker deploy so new code never hits a stale schema. # L3_架構含防禦觀測
+      - name: Apply D1 schema migration
+        run: npx wrangler d1 execute big-two-db --file=src/db/schema.sql --env production --remote
+
+      # ── 6b. Deploy Worker (production) ───────────────────────────────
       # Runs ONLY when the previous test step succeeds.                  # L2_隔離
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy --env production

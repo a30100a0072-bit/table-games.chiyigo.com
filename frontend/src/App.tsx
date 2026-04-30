@@ -27,6 +27,7 @@ export default function App() {
     return (
       <GameSelectScreen
         playerId={screen.playerId}
+        token={screen.token}
         onPick={(gameType) =>
           setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType })
         }
