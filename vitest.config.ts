@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include:     ["test/**/*.test.ts"],
+    exclude:     ["test/workers/**", "node_modules/**"],
     // No globals: tests use explicit `import { describe, it, expect } from "vitest"`.
   },
 });

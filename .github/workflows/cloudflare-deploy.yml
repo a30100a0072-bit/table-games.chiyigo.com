@@ -55,6 +55,12 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      # ── 5a. Workers integration tests (miniflare via vitest-pool-workers)
+      # Real workerd runtime; covers DO storage, alarms, the whole Worker
+      # boot path. Gates deploy alongside the Node unit suite.            # L3_架構含防禦觀測
+      - name: Run Workers integration tests
+        run: npm run test:workers
+
       # ── 6a. Apply D1 schema (idempotent) ────────────────────────────
       # All DDL uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF
       # NOT EXISTS`, so re-running on every deploy is a no-op when nothing

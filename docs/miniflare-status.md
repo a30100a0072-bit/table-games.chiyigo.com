@@ -1,51 +1,67 @@
 # Miniflare / vitest-pool-workers Integration — Status
 
-## Current state: **deferred**
+## Current state: **wired up ✅**
 
-A real `@cloudflare/vitest-pool-workers` integration would let us drive
-the Worker entry point + Durable Object lifecycle through `workerd` /
-`miniflare` exactly the way production runs them, including alarms,
-WebSocket Hibernation, and DO storage transactions.
+Real `@cloudflare/vitest-pool-workers@0.15.x` integration is live.
+Tests under `test/workers/` boot the full Worker entry point inside
+`workerd` / miniflare, with our `wrangler.toml` bindings overridden by
+`vitest.workers.config.mts`.
 
-## Why it isn't wired up yet
+## How to run
 
-`@cloudflare/vitest-pool-workers@0.15.x` (current latest) **requires
-`vitest@^4.0.0`**, while this project is on `vitest@^2.0.0`. The two
-combinations were tried:
+```bash
+npm test                # vitest 4 — pure Node unit tests (~110)
+npm run test:workers    # vitest 4 + miniflare — real Worker runtime
+```
 
-1. Pin pool-workers to a vitest-2-compatible release (~0.5.x) — works
-   but predates current Workers runtime semantics, won't reproduce
-   recent DO behaviour.
-2. Bump vitest to 4 alongside pool-workers — the existing 108 unit
-   tests need migration (vitest 4 dropped legacy globals, changed
-   snapshot format, and tightens type narrowing). Not worth landing
-   alongside everything else without a dedicated session.
+Both run in CI (`.github/workflows/cloudflare-deploy.yml`) and gate
+deploy.
 
-## What we ship instead
+## What's covered
 
-- `test/tournamentDO.test.ts` — direct DO instantiation with a
-  hand-rolled `DurableObjectState` mock. Covers TournamentDO
-  orchestration paths.
-- `test/gateway.handler.test.ts` — `handleRequest` driven against a
-  fake D1 + JWKS env. Covers the routing + auth + chip-economy
-  surface.
+`test/workers/jwks.test.ts` (3 tests):
+- /.well-known/jwks.json shape + kid match
+- 404 on unknown routes
+- CORS preflight on /api/match
 
-These together hit ~80% of what miniflare would cover, missing only:
+`test/workers/auth-flow.test.ts` (3 tests):
+- /auth/token issues a real ES256 token, verifies via /api/me/wallet,
+  signup + daily ledger rows present
+- Malformed JWT rejected with 401
+- Admin freeze → /auth/token returns 423
 
-- DO **alarm** firing semantics (we test schedule+cancel logic but
-  not that the runtime actually fires after `setAlarm()`).
-- WebSocket Hibernation reattachment after eviction.
-- Real D1 transaction interleaving (mock runs statements serially).
+The schema is bootstrapped per test run via the D1 binding exposed by
+`cloudflare:test`'s `env`; no manual fixture loading needed.
 
-## Promotion path
+## Migration history
 
-When the codebase is ready to migrate to vitest 4 (or pool-workers
-ships a vitest-2 backport):
+The earlier vitest 2.x setup couldn't take pool-workers (which now
+requires vitest@^4). Migration done in this commit:
+- `vitest@^2 → ^4` + `@vitest/runner@^4` upgrade. All 110 existing
+  Node tests pass on the new runner without changes.
+- `vitest.workers.config.mts` (note `.mts` — vite needs ESM for the
+  pool-workers plugin import). Uses the new vitest 4 plugin shape:
+  `cloudflareTest({...})` as a plugin, **not** `pool` / `poolOptions`.
+- A test-only ES256 P-256 JWK lives in the config (generated once with
+  `npm run gen:jwk`); `ADMIN_SECRET=test-admin` is also set there.
+  Both are inert outside the test isolate.
 
-1. `npm install --save-dev @cloudflare/vitest-pool-workers`
-2. Restore `vitest.workers.config.ts` (template kept in git history).
-3. Add `test:workers` to `npm run` and to the CI workflow as a
-   separate step — it runs slower so keep it parallel to the unit
-   suite, not gating it.
-4. Move `test/tournamentDO.test.ts` and `test/gateway.handler.test.ts`
-   under `test/workers/` to use the real bindings.
+## Promotion path for new tests
+
+When adding a new workers test:
+1. Drop the file under `test/workers/*.test.ts`.
+2. `import { SELF, env } from "cloudflare:test"`.
+3. `SELF.fetch(...)` to drive the Worker; `env.DB` / `env.GAME_ROOM` /
+   etc. for direct binding access.
+4. If your test needs DB rows, run schema DDL in a `beforeAll` like
+   `test/workers/auth-flow.test.ts` does.
+
+## Limitations still open
+
+- Alarm timing (`state.storage.setAlarm`) — miniflare does fire alarms
+  but our tests don't yet exercise the wait path. Could add via
+  `vi.useFakeTimers()` if needed.
+- WebSocket Hibernation across DO eviction — testable but needs a
+  test harness that explicitly evicts the DO.
+- D1 transaction interleaving under concurrent writes — out of scope
+  for our use cases (we batch, not interleave).
