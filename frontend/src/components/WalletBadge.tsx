@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getWallet, claimBailout, BailoutError } from "../api/http";
 import type { WalletResponse, LedgerEntry } from "../api/http";
+import { useT } from "../i18n/useT";
 
 const BAILOUT_THRESHOLD = 100;
 
@@ -23,6 +24,7 @@ function fmtTime(ms: number): string {
 }
 
 export default function WalletBadge({ token, refreshKey = 0 }: Props) {
+  const { t } = useT();
   const [wallet,  setWallet]  = useState<WalletResponse | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [open,    setOpen]    = useState(false);
@@ -76,8 +78,8 @@ export default function WalletBadge({ token, refreshKey = 0 }: Props) {
       {open && (
         <div className="absolute right-0 top-12 z-10 w-72 rounded-xl bg-green-900 p-3 text-xs text-green-100 shadow-2xl ring-1 ring-yellow-700/40">
           <div className="mb-2 flex items-baseline justify-between">
-            <span className="text-sm font-bold text-yellow-300">籌碼明細</span>
-            {wallet && <span className="text-green-400">餘額 {wallet.chipBalance.toLocaleString()}</span>}
+            <span className="text-sm font-bold text-yellow-300">💰</span>
+            {wallet && <span className="text-green-400">{t("wallet.balance")} {wallet.chipBalance.toLocaleString()}</span>}
           </div>
 
           {error && <p className="mb-2 text-red-300">{error}</p>}
@@ -88,12 +90,12 @@ export default function WalletBadge({ token, refreshKey = 0 }: Props) {
               disabled={claiming}
               className="mb-2 w-full rounded-md bg-red-600 py-1.5 text-xs font-bold text-white shadow transition hover:bg-red-500 disabled:opacity-50"
             >
-              {claiming ? "領取中…" : `🆘 領取救濟金（餘額 < ${BAILOUT_THRESHOLD}，每 24h 一次）`}
+              {claiming ? t("wallet.bailoutLoading") : t("wallet.bailout", { n: BAILOUT_THRESHOLD })}
             </button>
           )}
 
           {wallet && wallet.ledger.length === 0 && (
-            <p className="text-green-400">尚無流水紀錄</p>
+            <p className="text-green-400">{t("wallet.empty")}</p>
           )}
 
           {wallet && wallet.ledger.length > 0 && (

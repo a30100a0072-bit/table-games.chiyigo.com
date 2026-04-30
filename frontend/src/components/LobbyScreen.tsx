@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { findMatch } from "../api/http";
-import { GAME_LABEL } from "../shared/types";
 import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
+import { useT } from "../i18n/useT";
+
+const GAME_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas"> = {
+  bigTwo: "select.bigTwo", mahjong: "select.mahjong", texas: "select.texas",
+};
 
 interface Props {
   playerId: string;
@@ -13,6 +17,7 @@ interface Props {
 }
 
 export default function LobbyScreen({ playerId, token, gameType, onMatched, onBack }: Props) {
+  const { t } = useT();
   const [dots,  setDots]  = useState(".");
   const [error, setError] = useState("");
   const called = useRef(false);
@@ -22,8 +27,8 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
     called.current = true;
     findMatch(token, gameType)
       .then(({ roomId, wsUrl, players, gameType: gt }) => onMatched(roomId, wsUrl, players, gt))
-      .catch(err => setError(err instanceof Error ? err.message : "配對失敗"));
-  }, [token, gameType, onMatched]);
+      .catch(err => setError(err instanceof Error ? err.message : t("login.fail")));
+  }, [token, gameType, onMatched, t]);
 
   useEffect(() => {
     const id = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 500);
@@ -40,13 +45,13 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
               className="rounded-lg bg-green-700 px-4 py-2 font-bold text-green-100"
               onClick={onBack}
             >
-              返回
+              {t("common.back")}
             </button>
             <button
               className="rounded-lg bg-yellow-400 px-6 py-2 font-bold text-green-950"
               onClick={() => { called.current = false; setError(""); }}
             >
-              重試
+              {t("common.retry")}
             </button>
           </div>
         </div>
@@ -59,14 +64,14 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
         <WalletBadge token={token} />
       </div>
       <div className="text-6xl">{gameType === "mahjong" ? "🀄" : gameType === "texas" ? "♠️" : "🃏"}</div>
-      <p className="text-xl font-bold text-yellow-300">配對中{dots}</p>
-      <p className="text-sm text-green-300">{GAME_LABEL[gameType]}</p>
+      <p className="text-xl font-bold text-yellow-300">{t("lobby.matching")}{dots}</p>
+      <p className="text-sm text-green-300">{t(GAME_KEY[gameType])}</p>
       <p className="text-xs text-green-500">{playerId}</p>
       <button
         onClick={onBack}
         className="mt-4 rounded-lg bg-green-800 px-4 py-2 text-sm font-bold text-green-200 hover:bg-green-700"
       >
-        取消
+        {t("lobby.cancel")}
       </button>
     </div>
   );

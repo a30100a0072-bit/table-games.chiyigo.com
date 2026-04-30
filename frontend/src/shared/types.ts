@@ -41,7 +41,7 @@ export interface GameStateView {
 }
 
 // ─── Mahjong ─────────────────────────────────────────────────────────────────
-export type MahjongSuit = "m" | "p" | "s" | "z";
+export type MahjongSuit = "m" | "p" | "s" | "z" | "f";
 export interface MahjongTile { suit: MahjongSuit; rank: number; }
 
 export type MeldKind = "chow" | "pong" | "kong_exposed" | "kong_concealed";

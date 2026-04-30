@@ -3,6 +3,7 @@ import type {
   MahjongStateView, MahjongTile, ExposedMeld, PlayerAction, SettlementResult,
 } from "../shared/types";
 import { GameSocket } from "../shared/GameSocket";
+import { useT } from "../i18n/useT";
 
 // 給定手牌與對手剛打出的牌，回傳所有可吃的 [t1, t2, discard] 三張組合。 // L2_實作
 // 規則：discard 只能在 m/p/s（萬筒條），三張連號同花色。
@@ -51,11 +52,13 @@ function findKakanTiles(hand: MahjongTile[], exposed: ExposedMeld[]): MahjongTil
 
 // ─── tile helpers ─────────────────────────────────────────────────────────────
 
-const SUIT_LABEL: Record<string, string> = { m: "萬", p: "筒", s: "條", z: "字" };
-const HONOR_NAMES = ["", "東", "南", "西", "北", "中", "發", "白"]; // z 1–7
+const SUIT_LABEL: Record<string, string> = { m: "萬", p: "筒", s: "條", z: "字", f: "花" };
+const HONOR_NAMES  = ["", "東", "南", "西", "北", "中", "發", "白"]; // z 1–7
+const FLOWER_NAMES = ["", "春", "夏", "秋", "冬", "梅", "蘭", "竹", "菊"]; // f 1–8
 
 function tileLabel(t: MahjongTile): string {
-  if (t.suit === "z") return HONOR_NAMES[t.rank] ?? `?${t.rank}`;
+  if (t.suit === "z") return HONOR_NAMES[t.rank]  ?? `?${t.rank}`;
+  if (t.suit === "f") return FLOWER_NAMES[t.rank] ?? `花${t.rank}`;
   return `${t.rank}${SUIT_LABEL[t.suit] ?? t.suit}`;
 }
 function tileKey(t: MahjongTile): string { return `${t.suit}${t.rank}`; }
@@ -67,6 +70,9 @@ function tileColor(t: MahjongTile): string {
     if (t.rank === 5) return "text-red-600";   // 中
     if (t.rank === 6) return "text-green-700"; // 發
     return "text-gray-900";
+  }
+  if (t.suit === "f") {
+    return t.rank <= 4 ? "text-amber-600" : "text-emerald-700";  // 季 vs 花
   }
   return t.suit === "p" ? "text-blue-700" : t.suit === "s" ? "text-green-700" : "text-gray-900";
 }
@@ -116,6 +122,7 @@ function MeldView({ meld }: { meld: ExposedMeld }) {
 }
 
 function OpponentRow({ view, currentTurn }: { view: MahjongStateView; currentTurn: string }) {
+  const { t } = useT();
   return (
     <div className="flex flex-wrap justify-center gap-3">
       {view.opponents.map(op => (
@@ -126,7 +133,10 @@ function OpponentRow({ view, currentTurn }: { view: MahjongStateView; currentTur
           ].join(" ")}>
             {op.playerId}
           </div>
-          <div className="text-[10px] text-green-300">手牌 {op.handCount}</div>
+          <div className="text-[10px] text-green-300">{t("mj.handCount", { n: op.handCount })}</div>
+          {op.flowersCount > 0 && (
+            <div className="text-[10px] text-amber-300">🌸 ×{op.flowersCount}</div>
+          )}
           {op.exposed.length > 0 && (
             <div className="flex gap-1">
               {op.exposed.map((m, i) => <MeldView key={i} meld={m} />)}
@@ -149,6 +159,7 @@ interface Props {
 }
 
 export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+  const { t } = useT();
   const [view,     setView]     = useState<MahjongStateView | null>(null);
   const [picked,   setPicked]   = useState<string | null>(null);  // tile key
   const [sysMsg,   setSysMsg]   = useState("");
@@ -240,15 +251,15 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
         <OpponentRow view={view} currentTurn={view.currentTurn} />
 
         <div className="mt-4 flex flex-col items-center gap-2">
-          <div className="text-[10px] text-green-400">牌牆剩餘 {view.wall.remaining} · {view.phase}</div>
+          <div className="text-[10px] text-green-400">{t("mj.wallRemaining", { n: view.wall.remaining, phase: view.phase })}</div>
           {ld
             ? (
               <div className="flex flex-col items-center gap-1">
-                <div className="text-[10px] text-green-300">{ld.playerId} 打出</div>
+                <div className="text-[10px] text-green-300">{t("mj.discardedBy", { p: ld.playerId })}</div>
                 <TileView tile={ld.tile} selected={false} />
               </div>
             )
-            : <div className="text-xs text-green-500">尚無打牌</div>}
+            : <div className="text-xs text-green-500">{t("mj.noDiscard")}</div>}
         </div>
 
         <div className={[
@@ -258,10 +269,10 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
           : "bg-green-800 text-green-300",
         ].join(" ")}>
           {isMyTurn
-            ? "輪到你打牌"
+            ? t("mj.yourTurnToDiscard")
             : inReact
-              ? `可吃碰槓胡 · ${reactLeft.toFixed(1)}s`
-              : `${view.currentTurn} 行動中`}
+              ? t("mj.canReact", { n: reactLeft.toFixed(1) })
+              : t("mj.theirTurn", { p: view.currentTurn })}
         </div>
       </div>
 
@@ -269,7 +280,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
       {chowPicker && chowOptions.length > 0 && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-green-900 p-4 shadow-2xl">
-            <div className="mb-3 text-center text-sm font-bold text-yellow-300">選擇吃牌組合</div>
+            <div className="mb-3 text-center text-sm font-bold text-yellow-300">{t("mj.pickChow")}</div>
             <div className="flex flex-col gap-2">
               {chowOptions.map((opt, i) => (
                 <button
@@ -287,12 +298,22 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
             <button
               onClick={() => setChowPicker(false)}
               className="mt-3 w-full rounded-lg bg-gray-700 py-2 text-sm font-bold text-gray-200"
-            >取消</button>
+            >{t("common.cancel")}</button>
           </div>
         </div>
       )}
 
       <div className="shrink-0">
+        {view.self.flowers.length > 0 && (
+          <div className="flex items-center gap-1 px-3 pb-1 text-xs text-amber-300">
+            <span>{t("mj.flowers")}:</span>
+            {view.self.flowers.map((f, i) => (
+              <span key={i} className="rounded bg-amber-700/30 px-1.5 py-0.5 font-bold">
+                {FLOWER_NAMES[f.rank] ?? `花${f.rank}`}
+              </span>
+            ))}
+          </div>
+        )}
         {view.self.exposed.length > 0 && (
           <div className="flex gap-2 px-3 pb-1">
             {view.self.exposed.map((m, i) => <MeldView key={i} meld={m} />)}
@@ -315,45 +336,42 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
             disabled={!canDiscard}
             onClick={() => pickedTile && send({ type: "discard", tile: pickedTile })}
             className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:opacity-40"
-          >打牌</button>
+          >{t("mj.discard")}</button>
           <button
             disabled={!canChow}
             onClick={() => setChowPicker(true)}
-            title={canChow ? `${chowOptions.length} 種吃法` : "無法吃"}
             className="rounded-lg bg-cyan-600 py-2 font-bold text-white disabled:opacity-40"
-          >吃{canChow && chowOptions.length > 1 ? ` (${chowOptions.length})` : ""}</button>
+          >{canChow && chowOptions.length > 1 ? t("mj.chowN", { n: chowOptions.length }) : t("mj.chow")}</button>
           <button
             disabled={!canPong}
             onClick={() => ld && send({ type: "pong", tile: ld.tile })}
             className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:opacity-40"
-          >碰</button>
+          >{t("mj.pong")}</button>
           <button
             disabled={!canKong}
             onClick={() => ld && send({ type: "kong", tile: ld.tile, source: "exposed" })}
             className="rounded-lg bg-purple-600 py-2 font-bold text-white disabled:opacity-40"
-          >明槓</button>
+          >{t("mj.kong")}</button>
           <button
             disabled={!canAnkan}
             onClick={() => ankanCandidates[0] && send({ type: "kong", tile: ankanCandidates[0], source: "concealed" })}
-            title={canAnkan ? `暗槓 ${tileLabel(ankanCandidates[0])}` : "需手中 4 張同牌"}
             className="rounded-lg bg-purple-800 py-2 font-bold text-white disabled:opacity-40"
-          >暗槓</button>
+          >{t("mj.ankan")}</button>
           <button
             disabled={!canKakan}
             onClick={() => kakanCandidates[0] && send({ type: "kong", tile: kakanCandidates[0], source: "added" })}
-            title={canKakan ? `加槓 ${tileLabel(kakanCandidates[0])}` : "需有對外明刻並補進第 4 張"}
             className="rounded-lg bg-fuchsia-700 py-2 font-bold text-white disabled:opacity-40"
-          >加槓</button>
+          >{t("mj.kakan")}</button>
           <button
             disabled={!canHu && !(isMyTurn && view.phase === "playing")}
             onClick={() => send({ type: "hu", selfDrawn: isMyTurn && view.phase === "playing" })}
             className="rounded-lg bg-red-600 py-2 font-bold text-white disabled:opacity-40"
-          >{isMyTurn && view.phase === "playing" ? "自摸" : "胡"}</button>
+          >{isMyTurn && view.phase === "playing" ? t("mj.tsumo") : t("mj.hu")}</button>
           <button
             disabled={!canPass}
             onClick={() => send({ type: "mj_pass" })}
             className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:opacity-40"
-          >過</button>
+          >{t("mj.pass")}</button>
         </div>
       </div>
     </div>

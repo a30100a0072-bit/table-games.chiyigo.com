@@ -86,7 +86,9 @@ export interface PokerRaiseAction {
 // ──────────────────────────────────────────────
 
 /** 台灣 16 張麻將牌種 — m=萬 p=筒 s=條 z=字(1東2南3西4北5中6發7白) */
-export type MahjongSuit = "m" | "p" | "s" | "z";
+// "m"/"p"/"s" = number suits 1–9; "z" = honors 1–7 (E/S/W/N/中/發/白);
+// "f" = flowers/seasons 1–8, never enter the active hand (auto-replaced).
+export type MahjongSuit = "m" | "p" | "s" | "z" | "f";
 
 export interface MahjongTile {
   suit: MahjongSuit;

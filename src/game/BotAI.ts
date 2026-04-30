@@ -184,6 +184,9 @@ function tileIndex(t: MahjongTile): number {
     case "p": return 9 + (t.rank - 1);
     case "s": return 18 + (t.rank - 1);
     case "z": return 27 + (t.rank - 1);
+    // "f" flowers are auto-replaced by the state machine and never reach
+    // the bot's view; this branch is unreachable in practice.
+    case "f": return -1;
   }
 }
 
@@ -222,16 +225,61 @@ function pickDiscardTile(hand: MahjongTile[]): MahjongTile {
 export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
   const myId = view.self.playerId;
 
-  // ── Reaction phase: bot decides hu / pass on the latest discard ─────── L3_架構
+  // ── Reaction phase: bot decides hu / pong / chow / pass ──────────────── L3_架構
   if (view.phase === "pending_reactions" && view.awaitingReactionsFrom.includes(myId)) {
     const ld = view.lastDiscard;
     if (ld) {
+      // 1) Hu wins everything if we can.
       const candidate = [...view.self.hand, ld.tile];
       if (canWin(candidate, view.self.exposed.length)) {
         return { type: "hu", selfDrawn: false };
       }
+
+      // 2) Pong if we have ≥2 of the discarded tile AND our hand has many
+      //    isolated tiles. The threshold "≥3 isolated of utility < 50" keeps
+      //    menqing for clean hands and only opens up for messy hands where
+      //    the meld actually helps. Score utility here is the same as in
+      //    pickDiscardTile.                                                  // L2_實作
+      const sameCount = view.self.hand.filter(t =>
+        t.suit === ld.tile.suit && t.rank === ld.tile.rank).length;
+      if (sameCount >= 2) {
+        const counts = new Uint8Array(34);
+        for (const t of view.self.hand) counts[tileIndex(t)]!++;
+        let isolated = 0;
+        for (const t of view.self.hand) {
+          if (tileUtility(counts, tileIndex(t)) < 50) isolated++;
+        }
+        if (isolated >= 3) {
+          return { type: "pong", tile: ld.tile };
+        }
+      }
+
+      // 3) Chow if both flanking tiles exist for any window AND we'd
+      //    otherwise sit on isolated junk. Only the upstream player's
+      //    discard is chowable in real play but the SM will validate that;
+      //    we just propose, server arbitrates.                              // L3_邏輯安防
+      if (ld.tile.suit !== "z") {
+        const r = ld.tile.rank;
+        const same = view.self.hand.filter(t => t.suit === ld.tile.suit);
+        const at = (rk: number) => same.find(t => t.rank === rk);
+        const windows: [number, number][] = [[r - 2, r - 1], [r - 1, r + 1], [r + 1, r + 2]];
+        for (const [a, b] of windows) {
+          const ta = at(a); const tb = at(b);
+          if (ta && tb) {
+            const counts = new Uint8Array(34);
+            for (const t of view.self.hand) counts[tileIndex(t)]!++;
+            let isolated = 0;
+            for (const t of view.self.hand) {
+              if (tileUtility(counts, tileIndex(t)) < 50) isolated++;
+            }
+            if (isolated >= 4) {
+              return { type: "chow", tiles: [ta, tb, ld.tile] };
+            }
+          }
+        }
+      }
     }
-    // Conservative: keep menqing → never chow / pong / kong on opponent discards.  // L3_邏輯安防
+    // Default: keep menqing.                                                 // L3_邏輯安防
     return { type: "mj_pass" };
   }
 
@@ -373,11 +421,36 @@ export function getTexasBotAction(view: PokerStateView): PlayerAction {
     return { type: "fold" };
   }
   // High card only — call cheap with flush draw, otherwise fold to bet
-  if (canCheck) return { type: "check" };
+  if (canCheck) {
+    // Occasional river bluff: when checked-around to us at the river with
+    // garbage, ~12% of the time fire a small probe. Determinism is hashed
+    // off (gameId, currentBet, holeCards) so the same situation always
+    // produces the same answer — replays still match settlements.        // L3_邏輯安防
+    if (view.street === "river") {
+      const seed = bluffSeed(view.gameId, me.holeCards);
+      if (seed < 0.12) {
+        const r = buildRaise();
+        if (r) return r;
+      }
+    }
+    return { type: "check" };
+  }
   if (hasFlushDraw(avail)) {
     const potTotal = view.pots.reduce((s, p) => s + p.amount, 0);
     const callOdds = owe / (potTotal + owe);
     if (callOdds <= 0.20) return { type: "call" };
   }
   return { type: "fold" };
+}
+
+/** Cheap deterministic [0,1) hash from gameId + cards. Avoids Math.random
+ *  so the bot's decision is reproducible from a snapshot. */
+function bluffSeed(gameId: string, hole: [Card, Card]): number {
+  const s = gameId + hole.map(c => c.rank + c.suit[0]).join("");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
 }

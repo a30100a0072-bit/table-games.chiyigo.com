@@ -47,9 +47,11 @@ function tileIndex(t: MahjongTile): number {
     case "p": return 9 + (t.rank - 1);
     case "s": return 18 + (t.rank - 1);
     case "z": return 27 + (t.rank - 1);
+    case "f": throw new Error("INVARIANT_FLOWER_IN_HAND");      // L2_隔離
   }
 }
 function isSuited(i: number): boolean { return i < 27; }
+function isFlower(t: MahjongTile): boolean { return t.suit === "f"; }
 
 function tilesToCounts(tiles: MahjongTile[]): Counts {
   const c = new Uint8Array(TILE_INDEX_COUNT);
@@ -230,10 +232,15 @@ export class MahjongStateMachine {
       exposed: [],
       flowers: [],
     }));
-    // 莊家補一張
+    // 開局補花：每家把手中花牌移到 flowers，從牆頭抽新牌補（可能再花）   // L2_實作
+    for (const ps of playerStates) drainFlowers(ps.hand, ps.flowers, wall);
+
+    // 莊家補一張（從牆尾抽，遇花吸收）
     const banker = 0;
-    const drawn = wall.shift()!;
-    playerStates[banker]!.hand.push(drawn);
+    const bankerSeat = playerStates[banker]!;
+    let drawn = drawNonFlower(wall, bankerSeat.flowers);
+    if (!drawn) throw new Error("WALL_EXHAUSTED_BEFORE_GAME_START");
+    bankerSeat.hand.push(drawn);
 
     this.s = {
       gameId,
@@ -378,8 +385,8 @@ export class MahjongStateMachine {
       targetMeld.kind = "kong_exposed";
       targetMeld.tiles.push(a.tile);
     }
-    // 槓後補一張
-    const replacement = this.s.wall.pop();
+    // 槓後補一張（嶺上抽；遇花吸收進該玩家的 flowers）
+    const replacement = drawNonFlower(this.s.wall, me.flowers);
     if (!replacement) return this.drawExhaustion();
     me.hand.push(replacement);
     this.s.drawnThisTurn = replacement;
@@ -524,7 +531,7 @@ export class MahjongStateMachine {
       removeTilesFromHand(me.hand, ld.tile, 3);
       me.exposed.push({ kind: "kong_exposed", tiles: [ld.tile, ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
       this.s.lastDiscard = null;
-      const replacement = this.s.wall.pop();
+      const replacement = drawNonFlower(this.s.wall, me.flowers);
       if (!replacement) return this.drawExhaustion();
       me.hand.push(replacement);
       this.s.drawnThisTurn = replacement;
@@ -582,9 +589,10 @@ export class MahjongStateMachine {
     this.s.lastDiscard = null;
     this.s.pendingReactions = [];
     this.s.turnIdx = (this.s.turnIdx + 1) % 4;
-    const tile = this.s.wall.pop();
+    const me = this.s.players[this.s.turnIdx]!;
+    const tile = drawNonFlower(this.s.wall, me.flowers);
     if (!tile) return this.drawExhaustion();
-    this.s.players[this.s.turnIdx]!.hand.push(tile);
+    me.hand.push(tile);
     this.s.drawnThisTurn = tile;
     this.s.drewFromKongReplacement = false;       // 進入新一手 → 槓上開花失效
     this.s.phase = "playing";
@@ -663,12 +671,42 @@ function buildShuffledWall(rng: () => number): MahjongTile[] {
     const max = suit === "z" ? 7 : 9;
     for (let r = 1; r <= max; r++) for (let k = 0; k < 4; k++) wall.push({ suit, rank: r });
   }
+  // 8 unique flower / season tiles (春夏秋冬 + 梅蘭竹菊). They auto-replace
+  // on draw and never sit in the active hand, but they still count as
+  // visible bonus tiles displayed under the player's seat.               // L2_實作
+  for (let r = 1; r <= 8; r++) wall.push({ suit: "f", rank: r });
   // Fisher–Yates，無 modulo bias                                                       // L2_鎖定
   for (let i = wall.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [wall[i], wall[j]] = [wall[j]!, wall[i]!];
   }
   return wall;
+}
+
+// 花牌處理 (L2_實作)
+// drainFlowers: deal phase — 拿走 hand 中的花牌，從 wall 頭補新牌（可能再花，會循環）
+// drawNonFlower: turn / kong 補張 — 從 wall 尾抽，遇花就吸收後續抽，回傳非花牌
+function drainFlowers(hand: MahjongTile[], flowers: MahjongTile[], wall: MahjongTile[]): void {
+  for (let i = 0; i < hand.length;) {
+    if (hand[i]!.suit === "f") {
+      flowers.push(hand[i]!);
+      hand.splice(i, 1);
+      const repl = wall.shift();
+      if (!repl) return;
+      hand.push(repl);
+      // 不遞增 i — 新補的牌可能還是花牌
+    } else {
+      i++;
+    }
+  }
+}
+function drawNonFlower(wall: MahjongTile[], flowers: MahjongTile[]): MahjongTile | null {
+  while (wall.length > 0) {
+    const t = wall.pop()!;
+    if (t.suit !== "f") return t;
+    flowers.push(t);
+  }
+  return null;
 }
 
 function removeTilesFromHand(hand: MahjongTile[], tile: MahjongTile, n: number): void {

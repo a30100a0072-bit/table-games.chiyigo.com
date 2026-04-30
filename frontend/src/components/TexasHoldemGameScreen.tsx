@@ -3,6 +3,7 @@ import type {
   PokerStateView, Card, PlayerAction, SettlementResult,
 } from "../shared/types";
 import { GameSocket } from "../shared/GameSocket";
+import { useT } from "../i18n/useT";
 
 const SUIT_SYMBOL: Record<string, string> = { spades: "♠", hearts: "♥", clubs: "♣", diamonds: "♦" };
 const SUIT_COLOR:  Record<string, string> = { spades: "text-gray-900", clubs: "text-gray-900", hearts: "text-red-600", diamonds: "text-red-600" };
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+  const { t } = useT();
   const [view,    setView]    = useState<PokerStateView | null>(null);
   const [raise,   setRaise]   = useState<number>(0);
   const [sysMsg,  setSysMsg]  = useState("");
@@ -93,21 +95,21 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
                 : op.hasFolded ? "bg-gray-700 text-gray-400"
                 : "bg-green-800 text-green-200",
               ].join(" ")}>
-                {op.playerId}{op.isAllIn && " (All-in)"}{op.hasFolded && " (棄)"}
+                {op.playerId}{op.isAllIn && ` (${t("tx.opAllIn")})`}{op.hasFolded && ` (${t("tx.opFolded")})`}
               </div>
               <div className="flex gap-0.5">
                 {op.holeCards
                   ? <><CardView card={op.holeCards[0]} /><CardView card={op.holeCards[1]} /></>
                   : <><CardView faceDown /><CardView faceDown /></>}
               </div>
-              <div className="text-[10px] text-green-300">籌碼 {op.stack}</div>
-              {op.betThisStreet > 0 && <div className="text-[10px] text-yellow-300">下注 {op.betThisStreet}</div>}
+              <div className="text-[10px] text-green-300">{t("tx.chips", { n: op.stack })}</div>
+              {op.betThisStreet > 0 && <div className="text-[10px] text-yellow-300">{t("tx.thisStreet", { n: op.betThisStreet })}</div>}
             </div>
           ))}
         </div>
 
         <div className="mt-5 flex flex-col items-center gap-2 rounded-2xl bg-green-900/60 p-4">
-          <div className="text-xs text-green-300">底池 {totalPot} · {view.street}</div>
+          <div className="text-xs text-green-300">{t("tx.pot", { n: totalPot, street: view.street })}</div>
           <div className="flex gap-1.5">
             {Array.from({ length: 5 }).map((_, i) => {
               const c = view.communityCards[i];
@@ -121,10 +123,10 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
               {view.pots.map((p, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <span className={i === 0 ? "rounded-full bg-yellow-700/40 px-2 py-0.5 text-yellow-200" : "rounded-full bg-blue-800/60 px-2 py-0.5 text-blue-200"}>
-                    {i === 0 ? "主池" : `邊池 ${i}`} {p.amount}
+                    {i === 0 ? t("tx.mainPot") : t("tx.sidePot", { n: i })} {p.amount}
                   </span>
                   <span className="text-green-500/80">
-                    {p.eligiblePlayerIds.length} 人爭奪
+                    {t("tx.eligible", { n: p.eligiblePlayerIds.length })}
                   </span>
                 </div>
               ))}
@@ -136,14 +138,14 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
           "mx-auto mt-4 w-fit rounded-full px-4 py-1 text-sm font-bold",
           isMyTurn ? "bg-yellow-400 text-green-950" : "bg-green-800 text-green-300",
         ].join(" ")}>
-          {isMyTurn ? `輪到你 · 需跟 ${owe}` : `${view.currentTurn} 行動中`}
+          {isMyTurn ? t("tx.yourTurn", { n: owe }) : t("tx.theirTurn", { p: view.currentTurn })}
         </div>
       </div>
 
       <div className="shrink-0">
         <div className="flex items-center justify-between px-3 pb-2 text-xs text-green-200">
           <span>{me.playerId}</span>
-          <span>籌碼 {me.stack}{me.betThisStreet > 0 && ` · 本街下 ${me.betThisStreet}`}</span>
+          <span>{t("tx.chips", { n: me.stack })}{me.betThisStreet > 0 && ` · ${t("tx.thisStreet", { n: me.betThisStreet })}`}</span>
         </div>
 
         <div className="flex justify-center gap-2 pb-3">
@@ -156,22 +158,22 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
             disabled={!isMyTurn}
             onClick={() => send({ type: "fold" })}
             className="rounded-lg bg-gray-600 py-2 font-bold text-white disabled:opacity-40"
-          >棄牌</button>
+          >{t("tx.fold")}</button>
           <button
             disabled={!canCheck}
             onClick={() => send({ type: "check" })}
             className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:opacity-40"
-          >過牌</button>
+          >{t("tx.check")}</button>
           <button
             disabled={!canCall}
             onClick={() => send({ type: "call" })}
             className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:opacity-40"
-          >跟注 {owe}</button>
+          >{t("tx.call", { n: owe })}</button>
           <button
             disabled={!canRaise || raise <= view.currentBet}
             onClick={() => send({ type: "raise", raiseAmount: raise })}
             className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:opacity-40"
-          >加注 → {raise}</button>
+          >{t("tx.raiseTo", { n: raise })}</button>
         </div>
 
         <div className="flex items-center gap-3 px-3 pb-1">
@@ -188,14 +190,14 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
             disabled={!canRaise}
             onClick={() => send({ type: "raise", raiseAmount: me.stack + me.betThisStreet })}
             className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
-          >All-in</button>
+          >{t("tx.allIn")}</button>
         </div>
 
         {/* 加注金額提示列：最低 / 最高 / 底池倍數 */}
         <div className="flex justify-between px-3 pb-3 text-[10px] text-green-400">
-          <span>最低 {view.currentBet + view.minRaise}</span>
-          <span>底池 ×{totalPot > 0 ? (raise / totalPot).toFixed(1) : "—"}</span>
-          <span>最高 {me.stack + me.betThisStreet}</span>
+          <span>{t("tx.minRaise", { n: view.currentBet + view.minRaise })}</span>
+          <span>{t("tx.potTimes", { n: totalPot > 0 ? (raise / totalPot).toFixed(1) : "—" })}</span>
+          <span>{t("tx.maxRaise", { n: me.stack + me.betThisStreet })}</span>
         </div>
       </div>
     </div>

@@ -3,6 +3,8 @@ import type { Card, ComboType, GameStateView, PlayerAction, SettlementResult } f
 import { GameSocket } from "../shared/GameSocket";
 import { findCombos } from "../shared/bigTwoCombos";
 import type { QuickComboType } from "../shared/bigTwoCombos";
+import { useT } from "../i18n/useT";
+import type { DictKey } from "../i18n/dict";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────  L2_實作
 
@@ -144,15 +146,16 @@ interface Props {
 }
 
 // 5 個快捷鍵牌型，順序對應數字鍵 1–5。                                       // L2_實作
-const QUICK_COMBOS: { type: QuickComboType; label: string; key: string }[] = [
-  { type: "pair",          label: "對子",   key: "1" },
-  { type: "straight",      label: "順子",   key: "2" },
-  { type: "fullHouse",     label: "葫蘆",   key: "3" },
-  { type: "fourOfAKind",   label: "鐵支",   key: "4" },
-  { type: "straightFlush", label: "同花順", key: "5" },
+const QUICK_COMBOS: { type: QuickComboType; labelKey: DictKey; key: string }[] = [
+  { type: "pair",          labelKey: "bt.combo.pair",          key: "1" },
+  { type: "straight",      labelKey: "bt.combo.straight",      key: "2" },
+  { type: "fullHouse",     labelKey: "bt.combo.fullHouse",     key: "3" },
+  { type: "fourOfAKind",   labelKey: "bt.combo.fourOfAKind",   key: "4" },
+  { type: "straightFlush", labelKey: "bt.combo.straightFlush", key: "5" },
 ];
 
 export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+  const { t } = useT();
   const [view,     setView]     = useState<GameStateView | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sysMsg,   setSysMsg]   = useState("");
@@ -323,7 +326,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
               ? view.lastPlay.cards.map(c => (
                   <PlayingCard key={cardKey(c)} card={c} size="md" />
                 ))
-              : <span className="italic tracking-widest text-green-500">— 新一輪 —</span>
+              : <span className="italic tracking-widest text-green-500">{t("bt.newRound")}</span>
             }
           </div>
 
@@ -341,7 +344,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
                 : "bg-green-800 text-green-300",
             ].join(" ")}
           >
-            {isMyTurn ? `輪到你了 · ${timeLeft}s` : `${view.currentTurn} 的回合 · ${timeLeft}s`}
+            {isMyTurn ? t("bt.yourTurn", { n: timeLeft }) : t("bt.theirTurn", { p: view.currentTurn, n: timeLeft })}
           </div>
         </section>
 
@@ -356,7 +359,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
           style={{ gridArea: "self" }}
         >
           <div className="text-xs text-green-300/80">
-            手牌 {view.self.cardCount} 張
+            {t("bt.cardsLeft", { n: view.self.cardCount })}
           </div>
 
           {/* 層疊：負 margin (L2_實作) */}
@@ -374,7 +377,8 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
 
           {/* 快捷牌型列 (L2_實作) — 鍵盤 1–5 / 點擊；同鍵循環下一組 */}
           <div className="flex items-center gap-2">
-            {QUICK_COMBOS.map(({ type, label, key }) => {
+            {QUICK_COMBOS.map(({ type, labelKey, key }) => {
+              const label = t(labelKey);
               const list  = combosByType[type];
               const count = list.length;
               const active = cycle?.type === type;
@@ -384,7 +388,9 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
                   type="button"
                   disabled={count === 0}
                   onClick={() => pickCombo(type)}
-                  title={count === 0 ? `沒有可用的${label}` : `${label}（${count} 組可選；按 ${key} 或重複點擊循環）`}
+                  title={count === 0
+                    ? t("bt.combo.disabled", { label })
+                    : t("bt.combo.tooltip", { label, n: count, key })}
                   className={[
                     "relative flex flex-col items-center rounded-lg px-3 py-1.5 text-xs font-bold shadow transition",
                     "disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-500 disabled:opacity-50",
@@ -398,7 +404,11 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
                     <span>{label}</span>
                   </span>
                   <span className="text-[10px] opacity-80">
-                    {count === 0 ? "—" : active ? `${(cycle!.index + 1)}/${count}` : `${count} 組`}
+                    {count === 0
+                      ? t("bt.combo.empty")
+                      : active
+                        ? t("bt.combo.cycle", { cur: cycle!.index + 1, total: count })
+                        : t("bt.combo.count", { n: count })}
                   </span>
                 </button>
               );
@@ -412,7 +422,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
               onClick={handlePlay}
               className="min-w-[120px] rounded-xl bg-red-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-60"
             >
-              出牌{combo ? ` · ${combo}` : ` (${selected.size})`}
+              {t("bt.play")}{combo ? ` · ${combo}` : ` (${selected.size})`}
             </button>
             <button
               type="button"
@@ -420,7 +430,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
               onClick={handlePass}
               className="min-w-[110px] rounded-xl bg-gray-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-60"
             >
-              PASS
+              {t("bt.pass")}
             </button>
           </div>
         </section>
