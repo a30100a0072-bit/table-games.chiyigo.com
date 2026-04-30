@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Card, ComboType, GameStateView, PlayerAction, SettlementResult } from "../shared/types";
 import { GameSocket } from "../shared/GameSocket";
+import { findCombos } from "../shared/bigTwoCombos";
+import type { QuickComboType } from "../shared/bigTwoCombos";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────  L2_實作
 
@@ -141,12 +143,23 @@ interface Props {
   onSettled: (result: SettlementResult) => void;
 }
 
+// 5 個快捷鍵牌型，順序對應數字鍵 1–5。                                       // L2_實作
+const QUICK_COMBOS: { type: QuickComboType; label: string; key: string }[] = [
+  { type: "pair",          label: "對子",   key: "1" },
+  { type: "straight",      label: "順子",   key: "2" },
+  { type: "fullHouse",     label: "葫蘆",   key: "3" },
+  { type: "fourOfAKind",   label: "鐵支",   key: "4" },
+  { type: "straightFlush", label: "同花順", key: "5" },
+];
+
 export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
   const [view,     setView]     = useState<GameStateView | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sysMsg,   setSysMsg]   = useState("");
   const [connMsg,  setConnMsg]  = useState("連線中…");
   const [timeLeft, setTimeLeft] = useState(0);
+  // 快捷鍵循環狀態：同一鍵按多次會循環顯示同類型的下一個組合。              // L2_實作
+  const [cycle,    setCycle]    = useState<{ type: QuickComboType; index: number } | null>(null);
   const socketRef = useRef<GameSocket | null>(null);
 
   // ── socket lifecycle ───────────────────────────────────────────────────── L2_鎖定
@@ -176,6 +189,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
 
   // ── 卡牌 toggle (L3_邏輯安防) ──────────────────────────────────────────────
   const toggle = useCallback((card: Card) => {
+    setCycle(null);
     setSelected(prev => {
       const next = new Set(prev);
       const k = cardKey(card);
@@ -183,6 +197,45 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
       return next;
     });
   }, []);
+
+  // ── 快捷鍵：每種牌型可選的所有組合 (cached per hand) ─────────────────────── L2_實作
+  const hand = view?.self.hand;
+  const combosByType = useMemo<Record<QuickComboType, Card[][]>>(() => {
+    const empty = { pair: [], straight: [], fullHouse: [], fourOfAKind: [], straightFlush: [] } as
+      Record<QuickComboType, Card[][]>;
+    if (!hand) return empty;
+    return {
+      pair:          findCombos(hand, "pair"),
+      straight:      findCombos(hand, "straight"),
+      fullHouse:     findCombos(hand, "fullHouse"),
+      fourOfAKind:   findCombos(hand, "fourOfAKind"),
+      straightFlush: findCombos(hand, "straightFlush"),
+    };
+  }, [hand]);
+
+  // 按下快捷鍵：第一次 → 選最小的組合；同鍵再按 → 循環下一個。               // L2_實作
+  const pickCombo = useCallback((type: QuickComboType) => {
+    const list = combosByType[type];
+    if (list.length === 0) return;
+    const nextIndex = cycle && cycle.type === type
+      ? (cycle.index + 1) % list.length
+      : 0;
+    setCycle({ type, index: nextIndex });
+    setSelected(new Set(list[nextIndex].map(cardKey)));
+  }, [combosByType, cycle]);
+
+  // ── 鍵盤監聽 1–5 觸發對應牌型 ─────────────────────────────────────────── L2_實作
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // 避免在 input/textarea 中觸發
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const hit = QUICK_COMBOS.find(q => q.key === e.key);
+      if (hit) { e.preventDefault(); pickCombo(hit.type); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickCombo]);
 
   if (!view) {
     return (
@@ -317,6 +370,39 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
                 onClick={() => toggle(c)}
               />
             ))}
+          </div>
+
+          {/* 快捷牌型列 (L2_實作) — 鍵盤 1–5 / 點擊；同鍵循環下一組 */}
+          <div className="flex items-center gap-2">
+            {QUICK_COMBOS.map(({ type, label, key }) => {
+              const list  = combosByType[type];
+              const count = list.length;
+              const active = cycle?.type === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  disabled={count === 0}
+                  onClick={() => pickCombo(type)}
+                  title={count === 0 ? `沒有可用的${label}` : `${label}（${count} 組可選；按 ${key} 或重複點擊循環）`}
+                  className={[
+                    "relative flex flex-col items-center rounded-lg px-3 py-1.5 text-xs font-bold shadow transition",
+                    "disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-500 disabled:opacity-50",
+                    active
+                      ? "bg-yellow-400 text-green-950 ring-2 ring-yellow-200"
+                      : "bg-green-800 text-yellow-200 hover:bg-green-700",
+                  ].join(" ")}
+                >
+                  <span className="flex items-baseline gap-1">
+                    <span className="opacity-70">[{key}]</span>
+                    <span>{label}</span>
+                  </span>
+                  <span className="text-[10px] opacity-80">
+                    {count === 0 ? "—" : active ? `${(cycle!.index + 1)}/${count}` : `${count} 組`}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-3">
