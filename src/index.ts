@@ -9,8 +9,9 @@ import type { SettlementQueueMessage } from "./types/game";
 
 // ── Re-export Durable Object classes so wrangler can locate them ──────── L2_實作
 // wrangler.toml `class_name` must match these exact exported identifiers.
-export { GameRoomDO } from "./do/GameRoomDO";
-export { LobbyDO }    from "./api/lobby";
+export { GameRoomDO }   from "./do/GameRoomDO";
+export { LobbyDO }      from "./api/lobby";
+export { TournamentDO } from "./do/TournamentDO";
 
 // ── Combined Worker env (all wrangler.toml bindings) ─────────────────── L2_模組
 // GatewayEnv already extends LobbyEnv which covers every required binding.

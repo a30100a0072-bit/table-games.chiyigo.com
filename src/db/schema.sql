@@ -74,3 +74,38 @@ CREATE TABLE IF NOT EXISTS chip_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_chip_ledger_player ON chip_ledger (player_id);
 CREATE INDEX IF NOT EXISTS idx_chip_ledger_game   ON chip_ledger (game_id);
+
+-- ── tournaments / tournament_entries ──────────────────────────────────
+-- Best-of-N tournament: 4 players each pay `buy_in`, play N rounds of the
+-- same game type, scores accumulate, winner takes prize_pool (rake-adjusted).
+-- Buy-ins are debited atomically at registration time and the matching
+-- chip_ledger row uses reason='tournament' so flow is auditable.
+
+CREATE TABLE IF NOT EXISTS tournaments (
+  tournament_id  TEXT    PRIMARY KEY,
+  game_type      TEXT    NOT NULL,           -- bigTwo | mahjong | texas
+  buy_in         INTEGER NOT NULL,
+  rounds_total   INTEGER NOT NULL DEFAULT 3, -- best-of-N
+  rounds_done    INTEGER NOT NULL DEFAULT 0,
+  status         TEXT    NOT NULL,           -- registering | running | settled
+  prize_pool     INTEGER NOT NULL,           -- 4 * buy_in (after rake)
+  current_room   TEXT,                       -- active GameRoomDO id (NULL between rounds)
+  created_at     INTEGER NOT NULL,
+  started_at     INTEGER,
+  finished_at    INTEGER,
+  winner_id      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tournaments_status ON tournaments (status);
+
+CREATE TABLE IF NOT EXISTS tournament_entries (
+  tournament_id  TEXT    NOT NULL,
+  player_id      TEXT    NOT NULL,
+  registered_at  INTEGER NOT NULL,
+  agg_score      INTEGER NOT NULL DEFAULT 0,  -- sum of per-round scoreDelta
+  final_rank     INTEGER,                      -- assigned at settle (1=winner)
+  PRIMARY KEY (tournament_id, player_id),
+  FOREIGN KEY (tournament_id) REFERENCES tournaments (tournament_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tentries_player ON tournament_entries (player_id);

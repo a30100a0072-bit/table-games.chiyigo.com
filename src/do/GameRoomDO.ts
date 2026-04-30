@@ -19,6 +19,7 @@ import { isGameType } from "../types/game";
 // ── Environment bindings ──────────────────────────────────────────────── L2_模組
 export interface Env {
   GAME_ROOM:        DurableObjectNamespace;
+  TOURNAMENT_DO:    DurableObjectNamespace;     // notify on settle when room is part of a tournament
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   MATCH_KV:         KVNamespace;       // cleared on cleanup so players can rejoin // L2_隔離
 }
@@ -49,12 +50,14 @@ interface AlarmEntry {
 }
 
 interface RoomMeta {
-  gameId:    string;
-  roundId:   string;
-  gameType:  GameType;                           // L2_模組
-  phase:     "waiting" | "playing" | "settled";
-  playerIds: PlayerId[];
-  capacity:  number;
+  gameId:       string;
+  roundId:      string;
+  gameType:     GameType;                           // L2_模組
+  phase:        "waiting" | "playing" | "settled";
+  playerIds:    PlayerId[];
+  capacity:     number;
+  tournamentId?:    string;                         // set if this room is part of a tournament round
+  allowedPlayers?:  PlayerId[];                     // tournament gate: only these IDs may WS-join
 }
 
 const RECONNECT_MS  = 60_000;
@@ -109,8 +112,12 @@ export class GameRoomDO implements DurableObject {
   // players fill the remaining slots via WebSocket.                      // L2_實作
   private async handleInit(request: Request): Promise<Response> {
     if (this.room) return new Response("already initialised", { status: 409 });
-    const { gameId, roundId, gameType, capacity, botIds = [] } = await request.json<{
-      gameId: string; roundId: string; gameType?: string; capacity: number; botIds?: string[];
+    const {
+      gameId, roundId, gameType, capacity,
+      botIds = [], prefilledPlayerIds, tournamentId,
+    } = await request.json<{
+      gameId: string; roundId: string; gameType?: string; capacity: number;
+      botIds?: string[]; prefilledPlayerIds?: string[]; tournamentId?: string;
     }>();
     if (capacity < 2 || capacity > 4)
       return new Response("capacity must be 2–4", { status: 400 });
@@ -120,13 +127,18 @@ export class GameRoomDO implements DurableObject {
     if (gt === "mahjong" && capacity !== 4)
       return new Response("mahjong requires capacity=4", { status: 400 });
 
+    // For tournament rooms, prefilledPlayerIds becomes an allow-list:
+    // only those four IDs may WS-connect. The room still uses the
+    // existing "first-N-to-connect fills the seats" path — no auto-start. // L2_實作
     this.room = {
       gameId, roundId, gameType: gt, phase: "waiting",
       playerIds: [...botIds], capacity,
+      ...(tournamentId    ? { tournamentId } : {}),
+      ...(prefilledPlayerIds ? { allowedPlayers: prefilledPlayerIds } : {}),
     };
     await this.state.storage.put(SK.ROOM, this.room);
 
-    // Edge case: all-bot room (tests / future use).
+    // Edge case: all-bot room → start immediately.
     if (this.room.playerIds.length === capacity) await this.startGame();
 
     return Response.json({ ok: true, gameId, gameType: gt });
@@ -142,6 +154,10 @@ export class GameRoomDO implements DurableObject {
     const playerId = url.searchParams.get("playerId");
     if (!playerId)
       return new Response("missing playerId", { status: 400 });
+
+    // Tournament rooms only let registered participants in.
+    if (this.room.allowedPlayers && !this.room.allowedPlayers.includes(playerId))
+      return new Response("not a tournament participant", { status: 403 });
 
     const { phase, playerIds, capacity } = this.room;
     const isKnown        = playerIds.includes(playerId);
@@ -480,6 +496,26 @@ export class GameRoomDO implements DurableObject {
       try { ws.send(frame); } catch {}
     }
     await this.env.SETTLEMENT_QUEUE.send({ type: "settlement", payload: result });
+
+    // Tournament hook: notify the orchestrator so it can advance the
+    // bracket. Failure here doesn't block cleanup — the queued settlement
+    // is the source of truth; the tournament can be reconciled by an
+    // operator if this fetch ever fails persistently.                    // L3_架構含防禦觀測
+    if (this.room?.tournamentId) {
+      try {
+        const stub = this.env.TOURNAMENT_DO.get(
+          this.env.TOURNAMENT_DO.idFromName(this.room.tournamentId),
+        );
+        await stub.fetch(new Request("https://tournament.internal/round-result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ settlement: result }),
+        }));
+      } catch (err) {
+        console.error("[tournament] round-result notify failed:", err);
+      }
+    }
+
     await this.cleanup();
   }
 

@@ -4,11 +4,15 @@ import { takeToken, rateLimited, clientIp }                 from "../utils/rateL
 import { log, errStr }                                       from "../utils/log";
 import { bump, snapshotMetrics }                             from "../utils/metrics";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
+import {
+  createTournament, joinTournament, listTournaments, getTournament,
+} from "../api/tournaments";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
 export interface GatewayEnv extends LobbyEnv {
   GAME_ROOM:        DurableObjectNamespace;
+  TOURNAMENT_DO:    DurableObjectNamespace;
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   ADMIN_SECRET?:    string;          // optional; admin endpoints fail closed if unset
 }
@@ -57,6 +61,20 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "POST" && url.pathname === "/api/admin/adjust")
     return cors(await adjustChips(request, env));
+
+  if (request.method === "POST" && url.pathname === "/api/tournaments")
+    return cors(await createTournament(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/tournaments")
+    return cors(await listTournaments(request, env));
+
+  const tJoin = url.pathname.match(/^\/api\/tournaments\/([^/]+)\/join$/);
+  if (request.method === "POST" && tJoin)
+    return cors(await joinTournament(request, env, tJoin[1]!));
+
+  const tGet = url.pathname.match(/^\/api\/tournaments\/([^/]+)$/);
+  if (request.method === "GET" && tGet)
+    return cors(await getTournament(request, env, tGet[1]!));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)

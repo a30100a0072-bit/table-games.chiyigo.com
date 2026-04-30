@@ -9,6 +9,10 @@ compatibility_date = "2024-09-23"
 tag                 = "v1"
 new_sqlite_classes  = ["GameRoomDO", "LobbyDO"]
 
+[[migrations]]
+tag                 = "v2"
+new_sqlite_classes  = ["TournamentDO"]
+
 # ── Durable Objects ───────────────────────────────────────────────────── # L3_架構含防禦觀測
 [[durable_objects.bindings]]
 name       = "GAME_ROOM"
@@ -17,6 +21,10 @@ class_name = "GameRoomDO"
 [[durable_objects.bindings]]
 name       = "LOBBY_DO"
 class_name = "LobbyDO"
+
+[[durable_objects.bindings]]
+name       = "TOURNAMENT_DO"
+class_name = "TournamentDO"
 
 # ── Queues ────────────────────────────────────────────────────────────── # L3_架構含防禦觀測
 [[queues.producers]]
@@ -52,6 +60,10 @@ class_name = "GameRoomDO"
 [[env.production.durable_objects.bindings]]
 name       = "LOBBY_DO"
 class_name = "LobbyDO"
+
+[[env.production.durable_objects.bindings]]
+name       = "TOURNAMENT_DO"
+class_name = "TournamentDO"
 
 [[env.production.queues.producers]]
 binding = "SETTLEMENT_QUEUE"

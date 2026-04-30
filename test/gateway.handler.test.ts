@@ -200,6 +200,7 @@ beforeEach(async () => {
   env = {
     GAME_ROOM:        {} as DurableObjectNamespace,
     LOBBY_DO:         {} as DurableObjectNamespace,
+    TOURNAMENT_DO:    {} as DurableObjectNamespace,
     SETTLEMENT_QUEUE: {} as GatewayEnv["SETTLEMENT_QUEUE"],
     MATCH_KV:         {} as KVNamespace,
     DB:               db as unknown as D1Database,
