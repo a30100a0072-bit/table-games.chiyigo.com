@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { findMatch } from "../api/http";
 import { GAME_LABEL } from "../shared/types";
 import type { GameType } from "../shared/types";
+import WalletBadge from "./WalletBadge";
 
 interface Props {
   playerId: string;
@@ -54,6 +55,9 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950">
+      <div className="absolute right-4 top-4">
+        <WalletBadge token={token} />
+      </div>
       <div className="text-6xl">{gameType === "mahjong" ? "🀄" : gameType === "texas" ? "♠️" : "🃏"}</div>
       <p className="text-xl font-bold text-yellow-300">配對中{dots}</p>
       <p className="text-sm text-green-300">{GAME_LABEL[gameType]}</p>

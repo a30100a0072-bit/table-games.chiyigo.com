@@ -117,8 +117,17 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
             })}
           </div>
           {view.pots.length > 1 && (
-            <div className="text-[10px] text-green-400">
-              主池 {view.pots[0]?.amount}{view.pots.slice(1).map((p, i) => ` · 邊池${i + 1} ${p.amount}`)}
+            <div className="flex flex-col items-center gap-0.5 text-[10px]">
+              {view.pots.map((p, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className={i === 0 ? "rounded-full bg-yellow-700/40 px-2 py-0.5 text-yellow-200" : "rounded-full bg-blue-800/60 px-2 py-0.5 text-blue-200"}>
+                    {i === 0 ? "主池" : `邊池 ${i}`} {p.amount}
+                  </span>
+                  <span className="text-green-500/80">
+                    {p.eligiblePlayerIds.length} 人爭奪
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>

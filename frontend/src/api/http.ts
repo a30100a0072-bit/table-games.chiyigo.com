@@ -85,6 +85,33 @@ export class BailoutError extends Error {
   }
 }
 
+export interface HistoryEntry {
+  game_id:     string;
+  finished_at: number;
+  reason:      string;
+  winner_id:   string;
+  final_rank:  number;
+  score_delta: number;
+}
+export async function getHistory(token: string): Promise<{ playerId: string; games: HistoryEntry[] }> {
+  const res = await fetch(`${BASE}/api/me/history`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`history failed: ${res.status}`);
+  return res.json();
+}
+
+export interface LeaderboardRow {
+  player_id:    string;
+  display_name: string;
+  chip_balance: number;
+}
+export async function getLeaderboard(): Promise<{ updatedAt: number; rows: LeaderboardRow[] }> {
+  const res = await fetch(`${BASE}/api/leaderboard`);
+  if (!res.ok) throw new Error(`leaderboard failed: ${res.status}`);
+  return res.json();
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

@@ -2,6 +2,7 @@
 import { verifyJWT, signJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited, clientIp }                 from "../utils/rateLimit";
 import { log, errStr }                                       from "../utils/log";
+import { bump, snapshotMetrics }                             from "../utils/metrics";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
@@ -9,6 +10,7 @@ import { isGameType } from "../types/game";
 export interface GatewayEnv extends LobbyEnv {
   GAME_ROOM:        DurableObjectNamespace;
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
+  ADMIN_SECRET?:    string;          // optional; admin endpoints fail closed if unset
 }
 
 // ── Router ────────────────────────────────���─────────────────────────���─────
@@ -25,6 +27,7 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "POST" && url.pathname === "/auth/token") {
     const ip = clientIp(request);
     if (!takeToken(`token:${ip}`, "token")) {
+      bump("rate_limited");
       log("warn", "rate_limited", { ip, route: "/auth/token" });
       return cors(rateLimited());
     }
@@ -42,6 +45,18 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "POST" && url.pathname === "/api/me/bailout")
     return cors(await claimBailout(request, env));
+
+  if (request.method === "GET" && url.pathname === "/api/me/history")
+    return cors(await getHistory(request, env));
+
+  if (request.method === "GET" && url.pathname === "/api/leaderboard")
+    return cors(await getLeaderboard(env));
+
+  if (request.method === "GET" && url.pathname === "/metrics")
+    return cors(Response.json(snapshotMetrics()));
+
+  if (request.method === "POST" && url.pathname === "/api/admin/adjust")
+    return cors(await adjustChips(request, env));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)
@@ -79,6 +94,7 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
   const dailyBonus = await maybeGrantDailyBonus(env.DB, playerId);
 
   const token = await signJWT(playerId, env.JWT_PRIVATE_JWK);
+  bump("tokens_issued");
   log("info", "token_issued", { playerId, dailyBonus: dailyBonus ?? 0 });
   return Response.json({ token, playerId, dailyBonus });
 }
@@ -113,6 +129,7 @@ async function maybeGrantDailyBonus(db: D1Database, playerId: string): Promise<n
     )
     .bind(playerId, DAILY_BONUS_AMOUNT, now)
     .run();
+  bump("daily_bonus_granted");
   log("info", "daily_bonus_granted", { playerId, amount: DAILY_BONUS_AMOUNT });
   return DAILY_BONUS_AMOUNT;
 }
@@ -243,6 +260,7 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
     .bind(playerId)
     .first<{ chip_balance: number }>();
 
+  bump("bailouts_granted");
   log("info", "bailout_granted", {
     playerId, granted: BAILOUT_AMOUNT, balanceAfter: after?.chip_balance ?? BAILOUT_AMOUNT,
   });
@@ -252,6 +270,138 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
     chipBalance: after?.chip_balance ?? BAILOUT_AMOUNT,
     nextEligibleAt: now + BAILOUT_COOLDOWN,
   });
+}
+
+// ── GET /api/me/history — last 50 settled games for this player ─────
+// Joins games × player_settlements so we can show "won/lost X chips on
+// game Y at time Z" without N+1 round-trips.
+
+async function getHistory(request: Request, env: GatewayEnv): Promise<Response> {
+  const auth  = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+
+  let playerId: string;
+  try {
+    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof JWTError ? err.message : "unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  if (!takeToken(`wallet:${playerId}`, "wallet")) {
+    bump("rate_limited");
+    return rateLimited();
+  }
+
+  const rows = await env.DB
+    .prepare(
+      "SELECT g.game_id, g.finished_at, g.reason, g.winner_id," +
+      "       ps.final_rank, ps.score_delta" +
+      " FROM player_settlements ps" +
+      " JOIN games g ON g.game_id = ps.game_id" +
+      " WHERE ps.player_id = ?" +
+      " ORDER BY g.finished_at DESC" +
+      " LIMIT 50",
+    )
+    .bind(playerId)
+    .all<{
+      game_id: string; finished_at: number; reason: string; winner_id: string;
+      final_rank: number; score_delta: number;
+    }>();
+
+  return Response.json({
+    playerId,
+    games: rows.results ?? [],
+  });
+}
+
+// ── GET /api/leaderboard — top 20 by chip_balance ────────────────────
+// No auth required — public scoreboard. Bots are filtered out via the
+// BOT_ prefix; settlement consumer never inserts BOT_* into users so
+// this is mostly defence-in-depth.
+
+async function getLeaderboard(env: GatewayEnv): Promise<Response> {
+  const rows = await env.DB
+    .prepare(
+      "SELECT player_id, display_name, chip_balance" +
+      " FROM users" +
+      " WHERE player_id NOT LIKE 'BOT\\_%' ESCAPE '\\'" +
+      " ORDER BY chip_balance DESC" +
+      " LIMIT 20",
+    )
+    .all<{ player_id: string; display_name: string; chip_balance: number }>();
+
+  return Response.json({
+    updatedAt: Date.now(),
+    rows: rows.results ?? [],
+  });
+}
+
+// ── POST /api/admin/adjust — manual chip adjustment ──────────────────
+// Auth: X-Admin-Secret header must equal env.ADMIN_SECRET (timing-safe).
+// Body: { playerId, delta (signed integer), reason (free text) }.
+// Writes a chip_ledger 'adjustment' row + atomically refreshes balance.
+
+async function adjustChips(request: Request, env: GatewayEnv): Promise<Response> {
+  if (!env.ADMIN_SECRET) return Response.json({ error: "admin disabled" }, { status: 503 });
+  const provided = request.headers.get("X-Admin-Secret") ?? "";
+  if (!timingSafeEqual(provided, env.ADMIN_SECRET))
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+
+  let body: { playerId?: string; delta?: number; reason?: string };
+  try { body = await request.json(); }
+  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+
+  const playerId = (body.playerId ?? "").trim();
+  const delta    = Number(body.delta);
+  const reason   = (body.reason ?? "").trim() || "manual";
+  if (!playerId || !Number.isFinite(delta) || delta === 0 || !Number.isInteger(delta))
+    return Response.json({ error: "playerId + non-zero integer delta required" }, { status: 400 });
+
+  const now = Date.now();
+  const upd = await env.DB
+    .prepare(
+      "UPDATE users SET chip_balance = chip_balance + ?, updated_at = ?" +
+      " WHERE player_id = ? AND chip_balance + ? >= 0",
+    )
+    .bind(delta, now, playerId, delta)
+    .run();
+
+  if (!upd.success || (upd.meta?.changes ?? 0) === 0) {
+    return Response.json(
+      { error: "player not found or would overdraw" }, { status: 409 },
+    );
+  }
+
+  await env.DB
+    .prepare(
+      "INSERT INTO chip_ledger (player_id, game_id, delta, reason, created_at)" +
+      " VALUES (?, NULL, ?, 'adjustment', ?)",
+    )
+    .bind(playerId, delta, now)
+    .run();
+
+  bump("admin_adjustments");
+  log("warn", "admin_adjusted", { playerId, delta, reason });
+
+  const after = await env.DB
+    .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ chip_balance: number }>();
+
+  return Response.json({
+    playerId, delta, reason, chipBalance: after?.chip_balance ?? 0,
+  });
+}
+
+// Constant-time string compare to avoid leaking the admin secret length.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 async function ensureUserWallet(db: D1Database, playerId: string): Promise<void> {

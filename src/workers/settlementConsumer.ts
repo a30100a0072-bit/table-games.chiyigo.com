@@ -4,6 +4,7 @@
 
 import type { SettlementQueueMessage, SettlementResult, PlayerSettlement } from "../types/game";
 import { log, errStr } from "../utils/log";
+import { bump }        from "../utils/metrics";
 
 export interface ConsumerEnv {
   DB: D1Database;
@@ -31,6 +32,7 @@ export async function handleQueue(
 
     try {
       await writeSettlement(env.DB, message.body.payload);
+      bump("settlements_written");
       log("info", "settlement_written", {
         gameId: message.body.payload.gameId,
         reason: message.body.payload.reason,
@@ -39,6 +41,7 @@ export async function handleQueue(
       message.ack();
     } catch (err) {
       // Transient D1 error: re-enqueue for automatic retry.             // L3_架構含防禦觀測
+      bump("settlement_failures");
       log("error", "settlement_write_failed", {
         gameId: message.body.payload.gameId, err: errStr(err),
       });

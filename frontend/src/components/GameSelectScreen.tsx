@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { GAME_TYPES, GAME_LABEL } from "../shared/types";
 import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
+import StatsModal  from "./StatsModal";
 
 const ICON: Record<GameType, string> = {
   bigTwo:  "🃏",
@@ -28,11 +30,21 @@ interface Props {
 }
 
 export default function GameSelectScreen({ playerId, token, dailyBonus, onPick }: Props) {
+  const [stats, setStats] = useState(false);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950 p-6">
+      <div className="absolute left-4 top-4">
+        <button
+          onClick={() => setStats(true)}
+          className="rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+        >
+          📊 統計
+        </button>
+      </div>
       <div className="absolute right-4 top-4">
         <WalletBadge token={token} />
       </div>
+      {stats && <StatsModal playerId={playerId} token={token} onClose={() => setStats(false)} />}
 
       <div className="text-center">
         <h1 className="text-2xl font-bold text-yellow-300">選擇遊戲</h1>

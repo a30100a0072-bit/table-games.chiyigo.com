@@ -7,6 +7,7 @@
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { log }                                      from "../utils/log";
+import { bump }                                     from "../utils/metrics";
 import type { GameType } from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -270,9 +271,11 @@ export async function handleMatch(
   }
 
   if (!takeToken(`match:${playerId}`, "match")) {
+    bump("rate_limited");
     log("warn", "rate_limited", { playerId, route: "/api/match" });
     return rateLimited();
   }
+  bump("matches_started");
 
   // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離
   let gameType: GameType = "bigTwo";
