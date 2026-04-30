@@ -5,6 +5,7 @@
 // 機器人補位（BOT_FILL）對 bigTwo / mahjong / texas 三款遊戲皆啟用。            // L2_實作
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import type { GameType } from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -266,6 +267,8 @@ export async function handleMatch(
       { status: 401 },
     );
   }
+
+  if (!takeToken(`match:${playerId}`, "match")) return rateLimited();
 
   // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離
   let gameType: GameType = "bigTwo";

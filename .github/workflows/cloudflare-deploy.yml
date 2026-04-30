@@ -63,6 +63,16 @@ jobs:
       - name: Apply D1 schema migration
         run: npx wrangler d1 execute big-two-db --file=src/db/schema.sql --env production --remote
 
+      # ── 6a-bis. Backfill ALTER for existing tables ──────────────────
+      # SQLite has no `ADD COLUMN IF NOT EXISTS`; the ALTER errors once the
+      # column exists. We run each as best-effort and treat duplicate-column
+      # failures as success. Fresh installs already get the column from
+      # CREATE TABLE IF NOT EXISTS in schema.sql, so this is a one-shot
+      # bridge for tables created before the column existed.            // L3_架構含防禦觀測
+      - name: Backfill ALTER columns (best effort)
+        run: |
+          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN last_bailout_at INTEGER NOT NULL DEFAULT 0" --env production --remote || true
+
       # ── 6b. Deploy Worker (production) ───────────────────────────────
       # Runs ONLY when the previous test step succeeds.                  # L2_隔離
       - name: Deploy to Cloudflare Workers

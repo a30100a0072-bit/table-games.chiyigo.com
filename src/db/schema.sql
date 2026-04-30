@@ -41,11 +41,12 @@ CREATE INDEX IF NOT EXISTS idx_ps_player ON player_settlements (player_id);
 -- Created lazily on first /auth/token call (not yet wired; reserved for the
 -- chip-economy milestone). Bots (BOT_*) never appear here.
 CREATE TABLE IF NOT EXISTS users (
-  player_id    TEXT    PRIMARY KEY,
-  display_name TEXT    NOT NULL,
-  chip_balance INTEGER NOT NULL DEFAULT 1000,
-  created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
+  player_id       TEXT    PRIMARY KEY,
+  display_name    TEXT    NOT NULL,
+  chip_balance    INTEGER NOT NULL DEFAULT 1000,
+  last_bailout_at INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never claimed
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
 );
 
 -- ── chip_ledger ──────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ CREATE TABLE IF NOT EXISTS chip_ledger (
   player_id  TEXT    NOT NULL,
   game_id    TEXT,
   delta      INTEGER NOT NULL,
-  reason     TEXT    NOT NULL,           -- settlement | signup | adjustment
+  reason     TEXT    NOT NULL,           -- settlement | signup | bailout | adjustment
   created_at INTEGER NOT NULL,
   FOREIGN KEY (player_id) REFERENCES users (player_id),
   FOREIGN KEY (game_id)   REFERENCES games (game_id),

@@ -1,5 +1,6 @@
 // /src/workers/gateway.ts
 import { verifyJWT, signJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { takeToken, rateLimited, clientIp }                 from "../utils/rateLimit";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
@@ -20,8 +21,10 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "GET" && url.pathname === "/.well-known/jwks.json")
     return cors(jwksResponse(env));
 
-  if (request.method === "POST" && url.pathname === "/auth/token")
+  if (request.method === "POST" && url.pathname === "/auth/token") {
+    if (!takeToken(`token:${clientIp(request)}`, "token")) return cors(rateLimited());
     return cors(await issueToken(request, env));
+  }
 
   if (request.method === "POST" && url.pathname === "/rooms")
     return cors(await createRoom(request, env));
@@ -31,6 +34,9 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "GET" && url.pathname === "/api/me/wallet")
     return cors(await getWallet(request, env));
+
+  if (request.method === "POST" && url.pathname === "/api/me/bailout")
+    return cors(await claimBailout(request, env));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)
@@ -90,6 +96,8 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
     );
   }
 
+  if (!takeToken(`wallet:${playerId}`, "wallet")) return rateLimited();
+
   const [walletRow, ledger] = await Promise.all([
     env.DB
       .prepare("SELECT display_name, chip_balance, updated_at FROM users WHERE player_id = ?")
@@ -113,6 +121,87 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
     chipBalance: walletRow.chip_balance,
     updatedAt:   walletRow.updated_at,
     ledger:      ledger.results ?? [],
+  });
+}
+
+// ── POST /api/me/bailout — daily救濟金 ────────────────────────────────
+// 條件：餘額 < 100 且距離上次領取 ≥ 24h；給 500 籌碼。寫一筆 ledger。
+// 使用 chip_ledger 的 UNIQUE(player_id, game_id, reason) 無法擋（因為
+// game_id 為 NULL，多次領取仍可能寫入），所以用 last_bailout_at 欄位
+// 作為防重領的真正鎖。寫入採 conditional UPDATE 確保原子性。           // L3_架構含防禦觀測
+
+const BAILOUT_THRESHOLD = 100;
+const BAILOUT_AMOUNT    = 500;
+const BAILOUT_COOLDOWN  = 24 * 60 * 60 * 1000;
+
+async function claimBailout(request: Request, env: GatewayEnv): Promise<Response> {
+  const auth  = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+
+  let playerId: string;
+  try {
+    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof JWTError ? err.message : "unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  if (!takeToken(`bailout:${playerId}`, "bailout")) return rateLimited();
+
+  const now    = Date.now();
+  const cutoff = now - BAILOUT_COOLDOWN;
+
+  // Single-statement UPDATE acts as a CAS: rows-affected tells us whether
+  // the cooldown window let us through. If 0, we know the player is either
+  // already over the threshold or still on cooldown.                       // L3_架構含防禦觀測
+  const upd = await env.DB
+    .prepare(
+      "UPDATE users SET" +
+      "  chip_balance    = chip_balance + ?," +
+      "  last_bailout_at = ?," +
+      "  updated_at      = ?" +
+      " WHERE player_id = ?" +
+      "   AND chip_balance < ?" +
+      "   AND last_bailout_at <= ?",
+    )
+    .bind(BAILOUT_AMOUNT, now, now, playerId, BAILOUT_THRESHOLD, cutoff)
+    .run();
+
+  if (!upd.success || (upd.meta?.changes ?? 0) === 0) {
+    const wallet = await env.DB
+      .prepare("SELECT chip_balance, last_bailout_at FROM users WHERE player_id = ?")
+      .bind(playerId)
+      .first<{ chip_balance: number; last_bailout_at: number }>();
+    if (!wallet) return Response.json({ error: "wallet not found" }, { status: 404 });
+    const reason = wallet.chip_balance >= BAILOUT_THRESHOLD
+      ? "balance above threshold"
+      : "cooldown active";
+    const nextEligibleAt = wallet.last_bailout_at + BAILOUT_COOLDOWN;
+    return Response.json(
+      { error: reason, balance: wallet.chip_balance, nextEligibleAt },
+      { status: 409 },
+    );
+  }
+
+  await env.DB
+    .prepare(
+      "INSERT INTO chip_ledger (player_id, game_id, delta, reason, created_at)" +
+      " VALUES (?, NULL, ?, 'bailout', ?)",
+    )
+    .bind(playerId, BAILOUT_AMOUNT, now)
+    .run();
+
+  const after = await env.DB
+    .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ chip_balance: number }>();
+
+  return Response.json({
+    granted: BAILOUT_AMOUNT,
+    chipBalance: after?.chip_balance ?? BAILOUT_AMOUNT,
+    nextEligibleAt: now + BAILOUT_COOLDOWN,
   });
 }
 

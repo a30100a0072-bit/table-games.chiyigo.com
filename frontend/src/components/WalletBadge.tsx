@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { getWallet } from "../api/http";
+import { getWallet, claimBailout, BailoutError } from "../api/http";
 import type { WalletResponse, LedgerEntry } from "../api/http";
+
+const BAILOUT_THRESHOLD = 100;
 
 interface Props {
   token:    string;
@@ -10,6 +12,7 @@ interface Props {
 const REASON_LABEL: Record<string, string> = {
   signup:     "開戶贈送",
   settlement: "牌局結算",
+  bailout:    "救濟金",
   adjustment: "管理員調整",
 };
 
@@ -19,9 +22,11 @@ function fmtTime(ms: number): string {
 }
 
 export default function WalletBadge({ token, refreshKey = 0 }: Props) {
-  const [wallet, setWallet] = useState<WalletResponse | null>(null);
-  const [error,  setError]  = useState<string | null>(null);
-  const [open,   setOpen]   = useState(false);
+  const [wallet,  setWallet]  = useState<WalletResponse | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+  const [open,    setOpen]    = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [tick,    setTick]    = useState(0);   // bumped after a successful claim
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +35,28 @@ export default function WalletBadge({ token, refreshKey = 0 }: Props) {
       .then(w => { if (!cancelled) setWallet(w); })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗"); });
     return () => { cancelled = true; };
-  }, [token, refreshKey]);
+  }, [token, refreshKey, tick]);
+
+  async function handleBailout() {
+    if (claiming) return;
+    setClaiming(true);
+    setError(null);
+    try {
+      await claimBailout(token);
+      setTick(t => t + 1);   // refetch wallet
+    } catch (e) {
+      if (e instanceof BailoutError && e.detail.nextEligibleAt) {
+        const hrs = Math.ceil((e.detail.nextEligibleAt - Date.now()) / 3_600_000);
+        setError(`領取失敗：${e.message}${hrs > 0 ? `，再 ${hrs} 小時可領` : ""}`);
+      } else {
+        setError(e instanceof Error ? e.message : "領取失敗");
+      }
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  const eligible = !!wallet && wallet.chipBalance < BAILOUT_THRESHOLD;
 
   return (
     <div className="relative">
@@ -53,7 +79,17 @@ export default function WalletBadge({ token, refreshKey = 0 }: Props) {
             {wallet && <span className="text-green-400">餘額 {wallet.chipBalance.toLocaleString()}</span>}
           </div>
 
-          {error && <p className="text-red-300">{error}</p>}
+          {error && <p className="mb-2 text-red-300">{error}</p>}
+
+          {eligible && (
+            <button
+              onClick={handleBailout}
+              disabled={claiming}
+              className="mb-2 w-full rounded-md bg-red-600 py-1.5 text-xs font-bold text-white shadow transition hover:bg-red-500 disabled:opacity-50"
+            >
+              {claiming ? "領取中…" : `🆘 領取救濟金（餘額 < ${BAILOUT_THRESHOLD}，每 24h 一次）`}
+            </button>
+          )}
 
           {wallet && wallet.ledger.length === 0 && (
             <p className="text-green-400">尚無流水紀錄</p>

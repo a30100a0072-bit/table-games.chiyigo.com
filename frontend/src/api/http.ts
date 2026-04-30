@@ -65,3 +65,35 @@ export async function getWallet(token: string): Promise<WalletResponse> {
   if (!res.ok) throw new Error(`wallet failed: ${res.status}`);
   return res.json();
 }
+
+export interface BailoutResponse {
+  granted:        number;
+  chipBalance:    number;
+  nextEligibleAt: number;
+}
+
+export interface BailoutBlocked {
+  error:          string;
+  balance?:       number;
+  nextEligibleAt?: number;
+}
+
+export class BailoutError extends Error {
+  constructor(public detail: BailoutBlocked) {
+    super(detail.error);
+    this.name = "BailoutError";
+  }
+}
+
+export async function claimBailout(token: string): Promise<BailoutResponse> {
+  const res = await fetch(`${BASE}/api/me/bailout`, {
+    method:  "POST",
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({})) as BailoutBlocked;
+    throw new BailoutError(body);
+  }
+  if (!res.ok) throw new Error(`bailout failed: ${res.status}`);
+  return res.json();
+}
