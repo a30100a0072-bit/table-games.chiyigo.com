@@ -8,7 +8,7 @@ import ResultScreen     from "./components/ResultScreen";
 
 type Screen =
   | { name: "login" }
-  | { name: "select"; playerId: string; token: string }
+  | { name: "select"; playerId: string; token: string; dailyBonus: number | null }
   | { name: "lobby";  playerId: string; token: string; gameType: GameType }
   | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType }
   | { name: "result"; playerId: string; settlement: SettlementResult };
@@ -19,7 +19,7 @@ export default function App() {
   if (screen.name === "login")
     return (
       <LoginScreen
-        onLoggedIn={(playerId, token) => setScreen({ name: "select", playerId, token })}
+        onLoggedIn={(playerId, token, dailyBonus) => setScreen({ name: "select", playerId, token, dailyBonus })}
       />
     );
 
@@ -28,6 +28,7 @@ export default function App() {
       <GameSelectScreen
         playerId={screen.playerId}
         token={screen.token}
+        dailyBonus={screen.dailyBonus}
         onPick={(gameType) =>
           setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType })
         }
@@ -43,7 +44,7 @@ export default function App() {
         onMatched={(roomId, wsUrl, _players, gameType) =>
           setScreen({ name: "game", playerId: screen.playerId, token: screen.token, roomId, wsUrl, gameType })
         }
-        onBack={() => setScreen({ name: "select", playerId: screen.playerId, token: screen.token })}
+        onBack={() => setScreen({ name: "select", playerId: screen.playerId, token: screen.token, dailyBonus: null })}
       />
     );
 

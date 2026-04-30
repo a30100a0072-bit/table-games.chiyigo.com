@@ -13,6 +13,7 @@ const REASON_LABEL: Record<string, string> = {
   signup:     "開戶贈送",
   settlement: "牌局結算",
   bailout:    "救濟金",
+  daily:      "每日登入",
   adjustment: "管理員調整",
 };
 

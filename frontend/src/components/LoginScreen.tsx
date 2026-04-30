@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import { getToken } from "../api/http";
 
 interface Props {
-  onLoggedIn: (playerId: string, token: string) => void;
+  onLoggedIn: (playerId: string, token: string, dailyBonus: number | null) => void;
 }
 
 export default function LoginScreen({ onLoggedIn }: Props) {
@@ -16,8 +16,8 @@ export default function LoginScreen({ onLoggedIn }: Props) {
     if (!trimmed) return;
     setLoading(true); setError("");
     try {
-      const { token, playerId } = await getToken(trimmed);
-      onLoggedIn(playerId, token);
+      const { token, playerId, dailyBonus } = await getToken(trimmed);
+      onLoggedIn(playerId, token, dailyBonus ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "連線失敗");
     } finally {

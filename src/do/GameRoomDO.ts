@@ -307,11 +307,28 @@ export class GameRoomDO implements DurableObject {
 
   private async onTurnTimeout(): Promise<void> {
     if (!this.engine || this.room?.phase !== "playing") return;
-    // 逾時 = 當前行動者棄局，由其承擔 forfeit penalty；bots 沒錢包，不處罰。 // L2_實作
+    // 逾時不再炸整局；改成「替當事人自動出牌」(BigTwo pass / Mahjong 棄孤
+    // 字 / Texas fold)。遊戲繼續進行，懶人只損失位置/籌碼，全桌不被連坐。   // L2_實作
     const offender = this.engine.currentTurn();
-    const settlement = this.engine.forceSettle("timeout", isBot(offender) ? undefined : offender);
+    let outcome: ReturnType<IGameEngine["autoActionOnTimeout"]>;
+    try {
+      outcome = this.engine.autoActionOnTimeout(offender);
+    } catch (err) {
+      // 自動動作異常時退回原本的 force-settle + forfeit penalty 行為。      // L3_架構含防禦觀測
+      console.error(`[autoAction] failed for ${offender}:`, err);
+      const settlement = this.engine.forceSettle("timeout", isBot(offender) ? undefined : offender);
+      this.broadcastViews();
+      await this.handleSettlement(settlement);
+      return;
+    }
+
+    await this.persistMachine();
     this.broadcastViews();
-    await this.handleSettlement(settlement);
+    if (outcome.settlement) {
+      await this.handleSettlement(outcome.settlement);
+    } else {
+      await this.scheduleNextDeadline();
+    }
   }
 
   private async onReconnectExpired(playerId?: PlayerId): Promise<void> {

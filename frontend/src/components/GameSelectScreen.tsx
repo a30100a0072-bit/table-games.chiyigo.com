@@ -21,12 +21,13 @@ const ANTE: Record<GameType, number> = {
 };
 
 interface Props {
-  playerId: string;
-  token:    string;
-  onPick:   (gameType: GameType) => void;
+  playerId:    string;
+  token:       string;
+  dailyBonus?: number | null;
+  onPick:      (gameType: GameType) => void;
 }
 
-export default function GameSelectScreen({ playerId, token, onPick }: Props) {
+export default function GameSelectScreen({ playerId, token, dailyBonus, onPick }: Props) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950 p-6">
       <div className="absolute right-4 top-4">
@@ -36,6 +37,11 @@ export default function GameSelectScreen({ playerId, token, onPick }: Props) {
       <div className="text-center">
         <h1 className="text-2xl font-bold text-yellow-300">選擇遊戲</h1>
         <p className="mt-1 text-sm text-green-300">{playerId}</p>
+        {dailyBonus !== null && dailyBonus !== undefined && dailyBonus > 0 && (
+          <p className="mt-3 inline-block rounded-full bg-yellow-700/40 px-4 py-1 text-sm text-yellow-200 ring-1 ring-yellow-500/40">
+            🎁 每日登入獎勵 +{dailyBonus} 籌碼
+          </p>
+        )}
       </div>
 
       <div className="flex w-full max-w-md flex-col gap-3">

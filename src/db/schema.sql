@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name    TEXT    NOT NULL,
   chip_balance    INTEGER NOT NULL DEFAULT 1000,
   last_bailout_at INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never claimed
+  last_login_at   INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never logged in (gets daily bonus on next /auth/token)
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
 );
@@ -60,7 +61,7 @@ CREATE TABLE IF NOT EXISTS chip_ledger (
   player_id  TEXT    NOT NULL,
   game_id    TEXT,
   delta      INTEGER NOT NULL,
-  reason     TEXT    NOT NULL,           -- settlement | signup | bailout | adjustment
+  reason     TEXT    NOT NULL,           -- settlement | signup | bailout | daily | adjustment
   created_at INTEGER NOT NULL,
   FOREIGN KEY (player_id) REFERENCES users (player_id),
   FOREIGN KEY (game_id)   REFERENCES games (game_id),

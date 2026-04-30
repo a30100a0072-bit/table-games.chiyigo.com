@@ -2,7 +2,7 @@ import type { GameType } from "../shared/types";
 
 const BASE = import.meta.env.VITE_WORKER_URL as string;
 
-export interface TokenResponse  { token: string; playerId: string; }
+export interface TokenResponse  { token: string; playerId: string; dailyBonus?: number | null; }
 export interface MatchResponse  { roomId: string; wsUrl: string; players: string[]; gameType: GameType; }
 
 export interface LedgerEntry {

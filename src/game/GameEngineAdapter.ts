@@ -8,6 +8,7 @@ import { MahjongStateMachine } from "./MahjongStateMachine";
 import type { MahjongSnapshot } from "./MahjongStateMachine";
 import { TexasHoldemStateMachine } from "./TexasHoldemStateMachine";
 import type { TexasSnapshot } from "./TexasHoldemStateMachine";
+import { getBigTwoBotAction, getMahjongBotAction } from "./BotAI";
 
 import type {
   GameType, PlayerId, PlayerAction, SettlementResult, SettlementReason,
@@ -49,6 +50,14 @@ export interface IGameEngine {
    * as pass and commit the highest-priority one. No-op for other engines.    // L3_架構含防禦觀測
    */
   tickReactionDeadline(): ProcessOutcome;
+
+  /**
+   * Auto-action when a player's turn timer expires. Keeps the game flowing
+   * instead of force-settling: BigTwo passes (or leads minimum), Mahjong
+   * discards the just-drawn tile (or most isolated tile), Texas folds.
+   * Returns a ProcessOutcome — the DO handles the settlement if any.        // L3_架構含防禦觀測
+   */
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome;
 }
 
 // ──────────────────────────────────────────────
@@ -81,6 +90,21 @@ class BigTwoEngine implements IGameEngine {
     return this.m.forceSettle(reason);
   }
   tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // bigTwo no-op
+
+  // BigTwo timeout 自動動作：能 pass 就 pass，否則用 BotAI 替他出牌。       // L2_實作
+  // 開局 (isFirstTurn) 與 lead phase (lastPlay === null) 不能 pass。         // L2_實作
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const snap = this.m.snapshot() as MachineSnapshot;
+    const view = this.m.getView(playerId);
+    const canPass = view.lastPlay !== null && !snap.isFirstTurn;
+    if (canPass) {
+      const r = this.m.processAction(playerId, { type: "pass" });
+      return { settlement: r.settlement ?? null };
+    }
+    const action = getBigTwoBotAction(view, view.self.hand);
+    const r = this.m.processAction(playerId, action);
+    return { settlement: r.settlement ?? null };
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -112,6 +136,28 @@ class MahjongEngine implements IGameEngine {
     if (!r.ok) throw new Error(r.error);                                       // L3_邏輯安防
     return { settlement: r.settlement ?? null };
   }
+
+  // Mahjong timeout 自動動作：在 playing phase 從手牌中挑最孤立的牌打出。   // L2_實作
+  // pending_reactions 已由 tickReactionDeadline 處理，這裡只處理 playing。   // L2_實作
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const view = this.m.viewFor(playerId);
+    if (view.phase !== "playing" || view.currentTurn !== playerId) {
+      return { settlement: null };
+    }
+    const hand = view.self.hand;
+    if (hand.length === 0) return { settlement: null };
+    // 用 BotAI 的同款啟發式挑最該丟的牌（孤字優先）
+    const action = getMahjongBotAction(view);
+    if (action.type === "discard" || action.type === "hu") {
+      const r = this.m.process(playerId, action);
+      if (!r.ok) throw new Error(r.error);
+      return { settlement: r.settlement ?? null };
+    }
+    // 兜底：直接丟手牌第一張
+    const r = this.m.process(playerId, { type: "discard", tile: hand[0]! });
+    if (!r.ok) throw new Error(r.error);
+    return { settlement: r.settlement ?? null };
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -139,6 +185,14 @@ class TexasEngine implements IGameEngine {
     return this.m.forceSettle(reason, forfeitPlayerId);
   }
   tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }     // texas no-op
+
+  // Texas timeout 自動動作：直接 fold。比 forceSettle 整局溫和，玩家只賠
+  // 已下的盲注/跟注，棄牌後遊戲繼續。                                       // L2_實作
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const r = this.m.process(playerId, { type: "fold" });
+    if (!r.ok) throw new Error(r.error);
+    return { settlement: r.settlement ?? null };
+  }
 }
 
 // ──────────────────────────────────────────────

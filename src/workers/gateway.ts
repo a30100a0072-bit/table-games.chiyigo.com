@@ -76,10 +76,45 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
   // hit INSERT OR IGNORE / UNIQUE on the signup ledger row and nothing changes.
   // Bots are rejected above so this branch is humans-only.               // L2_實作
   await ensureUserWallet(env.DB, playerId);
+  const dailyBonus = await maybeGrantDailyBonus(env.DB, playerId);
 
   const token = await signJWT(playerId, env.JWT_PRIVATE_JWK);
-  log("info", "token_issued", { playerId });
-  return Response.json({ token, playerId });
+  log("info", "token_issued", { playerId, dailyBonus: dailyBonus ?? 0 });
+  return Response.json({ token, playerId, dailyBonus });
+}
+
+const DAILY_BONUS_AMOUNT   = 100;
+const DAILY_BONUS_COOLDOWN = 24 * 60 * 60 * 1000;
+
+/**
+ * Grant a daily-login bonus iff last_login_at is older than the cooldown.
+ * Conditional UPDATE acts as CAS so concurrent /auth/token calls in the same
+ * 24h window can't double-grant. Returns the granted amount or null.    // L3_架構含防禦觀測
+ */
+async function maybeGrantDailyBonus(db: D1Database, playerId: string): Promise<number | null> {
+  const now    = Date.now();
+  const cutoff = now - DAILY_BONUS_COOLDOWN;
+  const upd = await db
+    .prepare(
+      "UPDATE users SET" +
+      "  chip_balance  = chip_balance + ?," +
+      "  last_login_at = ?," +
+      "  updated_at    = ?" +
+      " WHERE player_id = ?" +
+      "   AND last_login_at <= ?",
+    )
+    .bind(DAILY_BONUS_AMOUNT, now, now, playerId, cutoff)
+    .run();
+  if (!upd.success || (upd.meta?.changes ?? 0) === 0) return null;
+  await db
+    .prepare(
+      "INSERT INTO chip_ledger (player_id, game_id, delta, reason, created_at)" +
+      " VALUES (?, NULL, ?, 'daily', ?)",
+    )
+    .bind(playerId, DAILY_BONUS_AMOUNT, now)
+    .run();
+  log("info", "daily_bonus_granted", { playerId, amount: DAILY_BONUS_AMOUNT });
+  return DAILY_BONUS_AMOUNT;
 }
 
 const SIGNUP_GRANT = 1000;
