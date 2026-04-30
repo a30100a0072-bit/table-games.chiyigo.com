@@ -78,6 +78,18 @@ function beatNTuple(hand: Card[], wantSize: 1 | 2 | 3, minScore: number): Card[]
   return null;
 }
 
+/** Lead-mode: pick the lowest-scoring 5-card combo we can form (no minScore). */
+function leadFiveCard(hand: Card[]): { cards: Card[]; combo: ComboType } | null {
+  let best: { cards: Card[]; combo: ComboType; score: number } | null = null;
+  for (const { cards, score } of enumFiveCardCombos(hand)) {
+    if (!best || score < best.score) {
+      const meta = detectCombo(cards)!;
+      best = { cards, combo: meta.type, score };
+    }
+  }
+  return best ? { cards: best.cards, combo: best.combo } : null;
+}
+
 /** Find the lowest-scoring 5-card combo that beats minScore. PASS-equivalent if none. */
 function beatFiveCard(hand: Card[], minScore: number): { cards: Card[]; combo: ComboType } | null {
   let best: { cards: Card[]; combo: ComboType; score: number } | null = null;
@@ -122,6 +134,13 @@ export function getBigTwoBotAction(view: GameStateView, botHand: Card[]): Player
   const { lastPlay } = view;
 
   if (lastPlay === null) {
+    // Aggressive lead: when controlling the trick with ≥6 cards left,
+    // dump a 5-card combo if we have one — burns through the hand fast
+    // and forces opponents into reactive play. Falls back to pickLead.
+    if (sorted.length >= 6) {
+      const five = leadFiveCard(sorted);
+      if (five) return { type: "play", cards: five.cards, combo: five.combo };
+    }
     const lead = pickLead(sorted);
     return { type: "play", cards: lead.cards, combo: lead.combo };
   }

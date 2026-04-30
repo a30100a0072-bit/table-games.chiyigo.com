@@ -1,9 +1,26 @@
 {
-  "name": "大老二",
-  "short_name": "大老二",
+  "name": "Chiyigo 桌遊",
+  "short_name": "桌遊",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#14532d",
-  "theme_color": "#14532d",
-  "description": "四人制大老二線上對戰"
+  "orientation": "any",
+  "background_color": "#0a2e1a",
+  "theme_color": "#0a2e1a",
+  "description": "大老二 / 麻將 / 德州撲克 三合一線上對戰",
+  "lang": "zh-TW",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%230a2e1a' rx='32'/><text x='96' y='130' font-size='130' text-anchor='middle' fill='%23facc15'>🃏</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230a2e1a' rx='80'/><text x='256' y='350' font-size='350' text-anchor='middle' fill='%23facc15'>🃏</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

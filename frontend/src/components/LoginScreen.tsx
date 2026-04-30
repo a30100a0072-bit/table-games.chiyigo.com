@@ -1,11 +1,14 @@
 import { type FormEvent, useState } from "react";
 import { getToken } from "../api/http";
+import { useT } from "../i18n/useT";
+import LocaleToggle from "./LocaleToggle";
 
 interface Props {
   onLoggedIn: (playerId: string, token: string, dailyBonus: number | null) => void;
 }
 
 export default function LoginScreen({ onLoggedIn }: Props) {
+  const { t } = useT();
   const [name,    setName]    = useState("");
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
@@ -19,7 +22,7 @@ export default function LoginScreen({ onLoggedIn }: Props) {
       const { token, playerId, dailyBonus } = await getToken(trimmed);
       onLoggedIn(playerId, token, dailyBonus ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "連線失敗");
+      setError(err instanceof Error ? err.message : t("login.fail"));
     } finally {
       setLoading(false);
     }
@@ -27,13 +30,16 @@ export default function LoginScreen({ onLoggedIn }: Props) {
 
   return (
     <div className="flex h-full items-center justify-center bg-green-950">
+      <div className="absolute right-4 top-4">
+        <LocaleToggle />
+      </div>
       <div className="w-80 rounded-2xl bg-green-900 p-8 shadow-xl">
-        <h1 className="mb-2 text-center text-3xl font-bold text-yellow-300">大老二</h1>
-        <p className="mb-6 text-center text-sm text-green-300">四人制線上對戰</p>
+        <h1 className="mb-2 text-center text-3xl font-bold text-yellow-300">{t("login.title")}</h1>
+        <p className="mb-6 text-center text-sm text-green-300">{t("login.subtitle")}</p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             className="rounded-lg bg-green-800 px-4 py-3 text-white placeholder-green-400 outline-none focus:ring-2 focus:ring-yellow-400"
-            placeholder="輸入暱稱"
+            placeholder={t("login.placeholder")}
             value={name}
             onChange={e => setName(e.target.value)}
             maxLength={16}
@@ -46,7 +52,7 @@ export default function LoginScreen({ onLoggedIn }: Props) {
             disabled={loading || !name.trim()}
             className="rounded-lg bg-yellow-400 py-3 font-bold text-green-950 transition hover:bg-yellow-300 disabled:opacity-50"
           >
-            {loading ? "連線中…" : "開始遊戲"}
+            {loading ? t("login.connecting") : t("login.submit")}
           </button>
         </form>
       </div>
