@@ -88,6 +88,7 @@ const ZH = {
   "bt.combo.empty":        "—",
   "bt.combo.cycle":        "{cur}/{total}",
   "bt.combo.count":        "{n} 組",
+  "bt.help":               "鍵盤 1–5 對應上方五個牌型，同鍵連按循環下一組",
 
   // mahjong
   "mj.handCount":          "手牌 {n}",
@@ -210,6 +211,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "bt.combo.empty":         "—",
   "bt.combo.cycle":         "{cur}/{total}",
   "bt.combo.count":         "{n} options",
+  "bt.help":                "Keyboard 1–5 maps to the five combo buttons; press again to cycle.",
 
   "mj.handCount":           "Hand {n}",
   "mj.wallRemaining":       "Wall {n} · {phase}",

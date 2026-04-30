@@ -5,6 +5,7 @@ import WalletBadge from "./WalletBadge";
 import StatsModal  from "./StatsModal";
 import TournamentModal from "./TournamentModal";
 import LocaleToggle from "./LocaleToggle";
+import MuteToggle from "./MuteToggle";
 import { useT } from "../i18n/useT";
 
 const ICON: Record<GameType, string> = {
@@ -59,6 +60,7 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
           🏆
         </button>
         <LocaleToggle />
+        <MuteToggle />
       </div>
       <div className="absolute right-4 top-4">
         <WalletBadge token={token} />

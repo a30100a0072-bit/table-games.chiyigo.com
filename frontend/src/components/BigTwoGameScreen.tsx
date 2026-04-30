@@ -5,6 +5,7 @@ import { findCombos } from "../shared/bigTwoCombos";
 import type { QuickComboType } from "../shared/bigTwoCombos";
 import { useT } from "../i18n/useT";
 import type { DictKey } from "../i18n/dict";
+import { sfx } from "../shared/sound";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────  L2_實作
 
@@ -172,8 +173,17 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
 
     sock.on("connected",    ()      => setConnMsg(""));
     sock.on("disconnected", (info)  => setConnMsg(info.willReconnect ? "重新連線中…" : "連線中斷"));
-    sock.on("state",        (v)     => { setView(v); setSelected(new Set()); });
-    sock.on("settlement",   (r)     => onSettled(r));
+    sock.on("state",        (v)     => {
+      const wasMyTurn = view?.currentTurn === playerId;
+      const nowMyTurn = v.currentTurn === playerId;
+      if (!wasMyTurn && nowMyTurn) sfx.myTurn();
+      setView(v); setSelected(new Set());
+    });
+    sock.on("settlement",   (r)     => {
+      const me = r.players.find(p => p.playerId === playerId);
+      if (me) (me.finalRank === 1 ? sfx.win : sfx.lose)();
+      onSettled(r);
+    });
     sock.on("system",       (msg)   => setSysMsg(msg));
     sock.on("error",        (msg)   => setSysMsg(msg));
 
@@ -256,13 +266,13 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
   function handlePlay() {
     if (!combo || !socketRef.current) return;
     const action: PlayerAction = { type: "play", cards: selectedCards, combo };
-    try { socketRef.current.send(action); } catch { /* L3_邏輯安防: ignore wrong state */ }
+    try { socketRef.current.send(action); sfx.cardPlay(); } catch { /* L3_邏輯安防: ignore wrong state */ }
     setSelected(new Set());
   }
 
   function handlePass() {
     if (!socketRef.current) return;
-    try { socketRef.current.send({ type: "pass" }); } catch { /* L3_邏輯安防 */ }
+    try { socketRef.current.send({ type: "pass" }); sfx.pass(); } catch { /* L3_邏輯安防 */ }
   }
 
   // 對手座位映射：opponents[0]=left, [1]=top, [2]=right                      // L2_模組
@@ -376,6 +386,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
           </div>
 
           {/* 快捷牌型列 (L2_實作) — 鍵盤 1–5 / 點擊；同鍵循環下一組 */}
+          <div className="text-[10px] text-green-400/80" title={t("bt.help")}>⌨️ 1–5</div>
           <div className="flex items-center gap-2">
             {QUICK_COMBOS.map(({ type, labelKey, key }) => {
               const label = t(labelKey);

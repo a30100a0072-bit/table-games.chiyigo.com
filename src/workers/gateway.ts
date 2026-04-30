@@ -427,6 +427,7 @@ async function adjustChips(request: Request, env: GatewayEnv): Promise<Response>
 
   bump("admin_adjustments");
   log("warn", "admin_adjusted", { playerId, delta, reason });
+  await writeAudit(env.DB, "adjust", playerId, delta, reason);
 
   const after = await env.DB
     .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
@@ -470,6 +471,7 @@ async function freezePlayer(request: Request, env: GatewayEnv): Promise<Response
     return Response.json({ error: "player not found" }, { status: 404 });
 
   log("warn", "admin_froze", { playerId, reason });
+  await writeAudit(env.DB, "freeze", playerId, null, reason);
   return Response.json({ playerId, frozen: true, reason });
 }
 
@@ -495,7 +497,28 @@ async function unfreezePlayer(request: Request, env: GatewayEnv): Promise<Respon
     return Response.json({ error: "player not found" }, { status: 404 });
 
   log("warn", "admin_unfroze", { playerId });
+  await writeAudit(env.DB, "unfreeze", playerId, null, null);
   return Response.json({ playerId, frozen: false });
+}
+
+// Append-only admin audit row. Best-effort — failure is logged but never
+// blocks the user-facing admin response (the action's primary effect is
+// already committed by the time we get here).                          // L3_架構含防禦觀測
+async function writeAudit(
+  db: D1Database, action: string, playerId: string,
+  delta: number | null, reason: string | null,
+): Promise<void> {
+  try {
+    await db
+      .prepare(
+        "INSERT INTO admin_audit (action, player_id, delta, reason, created_at)" +
+        " VALUES (?, ?, ?, ?, ?)",
+      )
+      .bind(action, playerId, delta, reason, Date.now())
+      .run();
+  } catch (err) {
+    log("error", "admin_audit_failed", { err: errStr(err), action, playerId });
+  }
 }
 
 // ── GET /api/admin/users — list with frozen state, paginated ─────────

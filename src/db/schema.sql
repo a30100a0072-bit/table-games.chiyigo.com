@@ -111,3 +111,19 @@ CREATE TABLE IF NOT EXISTS tournament_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tentries_player ON tournament_entries (player_id);
+
+-- ── admin_audit ──────────────────────────────────────────────────────────
+-- Append-only record of every admin action (chip adjust, freeze, unfreeze).
+-- The chip_ledger already captures balance changes; this table answers
+-- "who pulled the lever and why" for ops review.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  action      TEXT    NOT NULL,    -- adjust | freeze | unfreeze
+  player_id   TEXT    NOT NULL,
+  delta       INTEGER,             -- chip delta for 'adjust'; NULL for freeze/unfreeze
+  reason      TEXT,
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_player ON admin_audit (player_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit (created_at DESC);
