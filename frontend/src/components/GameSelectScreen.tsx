@@ -36,9 +36,10 @@ interface Props {
   dailyBonus?: number | null;
   onPick:      (gameType: GameType) => void;
   onJoinedTournamentRoom?: (roomId: string, gameType: GameType) => void;
+  onLogout?:   () => void;
 }
 
-export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, onJoinedTournamentRoom }: Props) {
+export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, onJoinedTournamentRoom, onLogout }: Props) {
   const { t } = useT();
   const [stats, setStats] = useState(false);
   const [tour,  setTour]  = useState(false);
@@ -77,7 +78,15 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
 
       <div className="text-center">
         <h1 className="text-2xl font-bold text-yellow-300">{t("select.title")}</h1>
-        <p className="mt-1 text-sm text-green-300">{playerId}</p>
+        <div className="mt-1 flex items-center justify-center gap-2 text-sm text-green-300">
+          <span>{playerId}</span>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="rounded-full bg-green-800/80 px-2 py-0.5 text-[10px] text-green-300 hover:bg-red-700 hover:text-red-100"
+            >{t("common.logout")}</button>
+          )}
+        </div>
         {dailyBonus !== null && dailyBonus !== undefined && dailyBonus > 0 && (
           <p className="mt-3 inline-block rounded-full bg-yellow-700/40 px-4 py-1 text-sm text-yellow-200 ring-1 ring-yellow-500/40">
             {t("select.dailyBonus", { n: dailyBonus })}

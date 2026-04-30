@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { getToken } from "../api/http";
+import { getToken, FrozenAccountError } from "../api/http";
 import { useT } from "../i18n/useT";
 import LocaleToggle from "./LocaleToggle";
 
@@ -12,17 +12,22 @@ export default function LoginScreen({ onLoggedIn }: Props) {
   const [name,    setName]    = useState("");
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
+  const [frozen,  setFrozen]  = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setFrozen(null);
     try {
       const { token, playerId, dailyBonus } = await getToken(trimmed);
       onLoggedIn(playerId, token, dailyBonus ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("login.fail"));
+      if (err instanceof FrozenAccountError) {
+        setFrozen(err.reason || "—");
+      } else {
+        setError(err instanceof Error ? err.message : t("login.fail"));
+      }
     } finally {
       setLoading(false);
     }
@@ -47,6 +52,13 @@ export default function LoginScreen({ onLoggedIn }: Props) {
             autoFocus
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
+          {frozen && (
+            <div className="rounded-lg bg-red-900/60 p-3 ring-1 ring-red-500/40">
+              <p className="text-sm font-bold text-red-300">{t("login.frozen")}</p>
+              <p className="mt-1 text-xs text-red-200">{t("login.frozenReason", { r: frozen })}</p>
+              <p className="mt-1 text-[11px] text-red-300/80">{t("login.frozenContact")}</p>
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading || !name.trim()}

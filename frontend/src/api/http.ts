@@ -27,13 +27,27 @@ export class InsufficientChipsError extends Error {
   }
 }
 
+export class FrozenAccountError extends Error {
+  constructor(public reason: string) {
+    super(reason || "account frozen");
+    this.name = "FrozenAccountError";
+  }
+}
+
 export async function getToken(playerId: string): Promise<TokenResponse> {
   const res = await fetch(`${BASE}/auth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ playerId }),
   });
-  if (!res.ok) throw new Error(`auth failed: ${res.status}`);
+  if (res.status === 423) {
+    const body = await res.json().catch(() => ({})) as { reason?: string };
+    throw new FrozenAccountError(body.reason ?? "");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `auth failed: ${res.status}`);
+  }
   return res.json();
 }
 

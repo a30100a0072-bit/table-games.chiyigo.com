@@ -27,6 +27,10 @@ const ZH = {
   "login.submit":          "開始遊戲",
   "login.connecting":      "連線中…",
   "login.fail":            "連線失敗",
+  "login.frozen":          "🔒 帳號已封鎖",
+  "login.frozenReason":    "原因：{r}",
+  "login.frozenContact":   "如有疑問請聯繫管理員",
+  "common.logout":         "登出",
 
   // select
   "select.title":          "選擇遊戲",
@@ -151,6 +155,10 @@ const EN: Partial<Record<DictKey, string>> = {
   "login.submit":           "Start",
   "login.connecting":       "Connecting…",
   "login.fail":             "Connection failed",
+  "login.frozen":           "🔒 Account suspended",
+  "login.frozenReason":     "Reason: {r}",
+  "login.frozenContact":    "Contact an administrator for details",
+  "common.logout":          "Log out",
 
   "select.title":           "Pick a game",
   "select.bigTwo":          "Big Two",

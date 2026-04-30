@@ -1,11 +1,14 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-04-30（清掃完背包：JWK 輪換 + 麻將精算 + 德撲攤牌 + Bot 強化 + 新測試）
+> 最後更新：2026-05-01（Tournament + miniflare + admin freeze + 完整 i18n + PWA + 登出/凍結 UI）
 >
-> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲皆有 BotAI ✅；BOT_FILL 三款全啟用（3 秒補位）✅；前端三遊戲 UI ✅；CI/CD 全鏈路打通（含 D1 schema migration）✅；**ES256 JWKS auth ✅**；**籌碼錢包 + 流水帳本 ✅**；**大老二 5 牌型快捷鍵 ✅**
-> **單元測試**：7 檔 / 86 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15、BotAI 15、**auth 9**、**rateLimit 4**），全綠
-> **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功
+> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲 BotAI（含進階吃碰決策 + Texas 詐唬）✅；BOT_FILL 三款全啟用（3 秒補位）✅；前端三遊戲 UI 完整 ✅；CI/CD 全鏈路打通（D1 migration + Workers integration tests）✅；**ES256 JWKS + 多 key 輪換**；**籌碼錢包 + 流水帳本 + ANTE 門檻 + bailout + daily bonus + forfeit + admin freeze**；**Tournament 後端+前端（best-of-3 / 4 人 / 5% rake）**；**Mahjong 花牌補張**；**Texas 攤牌揭牌 + 邊池 UI**；**i18n 雙語 (zh-TW / en)**；**PWA (manifest + sw.js)**；**結構化 JSON log + /metrics + admin endpoints**
+> **測試矩陣**：
+>   - **Node 單元測試**：9 檔 / **110 案例**（BigTwo 13、Mahjong 14、Texas 16、Adapter 19、BotAI 15、auth 9、rateLimit 4、tournamentDO 7、gateway handler 13），全綠
+>   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：2 檔 / **6 案例**，真 workerd / miniflare runtime
+>   - **總計 116 測試**
+> **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功（206 KB / 64 KB gzip）
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
 >   - Pages：`https://big-two-frontend.pages.dev`（push master 自動 build + deploy）
@@ -249,25 +252,65 @@ gateway.ts ──verifyJWT──► GameRoomDO
    - 新增 step `wrangler d1 execute --file=src/db/schema.sql --remote` 在 Worker deploy 前跑
    - 全部 DDL 是 `IF NOT EXISTS`，重跑無副作用，新欄位/表會冪等套用
 
-### ✅ 第二波完成（2026-04-30 同日後段）
-9. **`.gitattributes`** — 加入 `* text=auto eol=lf`，commit 不再噴 LF→CRLF 警告
-10. **死碼清理** — `MahjongStateMachine.ts` 移除未引用的 `indexToTile` / `isHonor`（`isSuited` 仍在 canWin 內使用，保留）
-11. **麻將台數精算** — `calcFan` 新增 清一色(8) / 字一色(16) / 大三元(8) / 大四喜(16) / 槓上開花(1) 偵測；State 加 `drewFromKongReplacement` 標記，於開槓補摸時設 true，下一次出新牌摸前 reset
-12. **JWK 輪換** — `JWT_PRIVATE_JWK` 接受 array 形式：第一把為 active sign key、所有公鑰都進 JWKS。`parsePrivateJwks` 拒絕重複 kid
-13. **德撲 UI** — `PokerOpponentView.holeCards?` 攤牌時揭示未棄牌對手底牌（雙端 type 同步、state machine `viewFor` 限定 `street === showdown/settled` 才寫入）；加注滑桿下方加最低/底池倍/最高 inline 提示
-14. **Bot 強化** — `pickLead` 三段式：優先丟非 2 的孤張 → 退而求其次任意孤張 → 最後選非 2 的最小牌；保留大牌（"2"）至收尾不再瞎送
-15. **整合測試覆蓋** — 新檔 `test/auth.test.ts`（9 案：sign/verify roundtrip、tampered payload、過期、未知 kid、JWKS 單/多 key、輪換期間雙向相容、重複 kid 拒絕）+ `test/rateLimit.test.ts`（4 案：capacity 上限、key 隔離、time-based refill、bailout 緊縮）
+### ✅ 全部完成（2026-04-30 → 2026-05-01）
 
-### ⏳ 仍未動（下次優先）
-1. **麻將 UI 缺件**：reaction 倒數已加；吃選擇器已加；暗 / 加槓已加。剩 — 花牌補張動畫、結算詳細台數面板
-2. **整合測試（DO / handler 層）**：純函式模組已測；`GameRoomDO` 行為測試需要 miniflare/wrangler vitest plugin，仍是空白
-3. **Bot 進階**：
-   - Big Two minimum-beat 仍粗糙，缺「主動領 5 張組合擴大優勢」的決策
-   - Mahjong 永遠不吃碰槓（保 menqing）— 對手實際被 bot 餵牌時無法強壓節奏
-   - Texas 不會詐唬、無對手範圍建模、3-bet 認知缺失
-4. **籌碼經濟邊緣**：disconnect = forfeit、贈送 / 兌換、daily login bonus（救濟金已上線）
-5. **觀測性**：結構化 log / metrics / Sentry 都缺
-6. **JWK 自動輪換流程**：技術上能多 key 並存，但「定期換 primary」需要 cron job 或運維 SOP，尚未文件化
+**Auth / 觀測性**
+- ES256 JWKS + 多 key 輪換（`JWT_PRIVATE_JWK` 接 array、`/.well-known/jwks.json` 發布全部公鑰、`parsePrivateJwks` 拒絕重複 kid）
+- 結構化 JSON log（`utils/log.ts`）涵蓋 token_issued / rate_limited / bailout_blocked / settlement_written / admin_* / tournament_* 等 events
+- isolate-local counter `/metrics` 端點（tokens_issued / matches_started / settlements_written / settlement_failures / bailouts / daily_bonus / rate_limited / admin_adjustments + uptime）
+- rate limiting token bucket（`utils/rateLimit.ts`）：token 10/min/IP、match 30/min/playerId、wallet 60/min/playerId、bailout 3/min/playerId
+- JWK 輪換 SOP（`docs/jwk-rotation.md`）
+
+**籌碼經濟**
+- D1 schema：`users`（含 last_bailout_at / last_login_at / frozen_at / frozen_reason）+ `chip_ledger`（reason: settlement / signup / daily / bailout / tournament / adjustment；UNIQUE(player_id, game_id, reason) 冪等）
+- `/auth/token` lazy 建錢包 + 開戶贈 1000 + 每日登入 +100（24h cooldown CAS）
+- ANTE 門檻：`/api/match` 餘額不足回 402（bigTwo/mahjong 100、texas 200）
+- `/api/me/bailout` 救濟金（餘額 < 100 + 24h cooldown 給 500，UPDATE 作 CAS）
+- Disconnect = forfeit：mahjong/texas 棄局者 -100/-200，其他平分（守恆向下取整）；BigTwo 用既有 remaining-cards 計分
+- Turn timeout = auto-action（不再炸整局）：BigTwo 自動 PASS 或 BotAI lead；Mahjong 用孤立度啟發式丟；Texas 直接 fold
+- Admin 端點：`/api/admin/adjust`（CAS 防透支）、`/api/admin/freeze`、`/api/admin/unfreeze`、`/api/admin/users`（X-Admin-Secret + timing-safe compare）
+- 前端 `WalletBadge` 顯示餘額 + 流水（含 reason 標籤）+ 救濟金按鈕；`StatsModal` 排行榜 + 戰績；登入頁顯示帳號被凍結原因；GameSelectScreen 登出按鈕
+
+**遊戲核心擴充**
+- 麻將台數精算：清一色(8) / 字一色(16) / 大三元(8) / 大四喜(16) / 槓上開花(1)（state 加 `drewFromKongReplacement` 旗標）
+- 麻將花牌：`MahjongSuit` 加 `"f"`，8 張花牌（春夏秋冬+梅蘭竹菊）入牌牆；`drainFlowers`（開局頭抽）+ `drawNonFlower`（補嶺尾抽）自動補張；前端對手 `🌸 ×N`、自己花牌彩標
+- 麻將 UI 完整：吃牌 modal（列出所有可吃組合）/ 暗槓 / 加槓 / 反應倒數
+- Texas 攤牌揭牌：`PokerOpponentView.holeCards?` 限定 showdown/settled 階段才寫；前端對手底牌實牌渲染
+- Texas 邊池 UI：每池獨立 pill + 「N 人爭奪」；加注 inline 提示（最低 / 底池倍 / 最高）
+- BigTwo 5 牌型快捷鍵：對子 / 順子 / 葫蘆 / 鐵支 / 同花順（鍵盤 1-5、同鍵循環）
+- BigTwo Bot lead 強化：≥6 張時主動 dump 最小 5-card 組合 + `pickLead` 三段保留 "2" 收尾
+- Mahjong Bot 機會性吃碰：reaction phase 看 isolation 決定吃/碰、平常守 menqing
+- Texas Bot 河牌詐唬：高牌 + checked-around 12% 機率小注（FNV hash 決定，replay 可重現）
+
+**Tournament**
+- D1 schema：`tournaments` + `tournament_entries`
+- TournamentDO（一賽一實例）：init / 4 join 自動開賽 / round-result hook 累積分數 / 三輪後 settle 派彩
+- 五個端點：POST `/api/tournaments`、GET `/api/tournaments`、POST `/api/tournaments/:id/join`、GET `/api/tournaments/:id`、+ TournamentDO 內 `/round-result`
+- 前端 `TournamentModal`：列表 + 建立（gameType + 預設 buy-in 200/500/1000）+ 詳情（entries + 分數）+ 自動 join room；`🏆` 按鈕掛在 GameSelect
+
+**前端工程**
+- i18n（zh-TW + en）涵蓋全部畫面：`dict.ts`、`useT.ts`、`LocaleToggle.tsx`，~80 keys
+- PWA：`public/sw.js`（cache-first 靜態 / 動態 bypass）+ `manifest.json`（含 SVG icons）+ install prompt + offline banner
+- 登出按鈕（GameSelectScreen）/ 凍結帳號 UI（LoginScreen）
+
+**測試 / 工程衛生**
+- vitest 2 → 4 升級（110 既有測試零修改）
+- **真 miniflare 整合**（`@cloudflare/vitest-pool-workers@0.15.x`）：`vitest.workers.config.mts`、`test/workers/{jwks,auth-flow}.test.ts` 6 案；CI 同步 gate
+- DO 直接構造測試：`test/tournamentDO.test.ts` 7 案（lifecycle / payout / 平手）
+- Handler 層：`test/gateway.handler.test.ts` 13 案（routing / auth / 籌碼經濟 / freeze / admin 含 mock D1）
+- `.gitattributes`：commit 不再噴 CRLF 警告
+- 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
+
+### ⏳ 真正剩下的（小到中）
+1. **DO alarm 時序測試** — miniflare 已有，可加 `vi.useFakeTimers()` 測 setAlarm 觸發
+2. **WebSocket Hibernation eviction 測試** — 需要明確 evict DO 的 harness
+3. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink
+4. **WebSocket 訊框 schema 驗證**（`zod`）— 現用 ad-hoc TS narrowing
+5. **OAuth 真登入**（Google / Apple）— 取代 guest token
+6. **好友 / 私人房間 / 觀戰 / Replay** — 純需求類，尚未開規格
+7. **音效 / 觸覺** — 完全靜音
+8. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
+9. **`npm audit` 摘要的中度漏洞**（pool-workers 拉進的傳遞依賴）
 
 ---
 

@@ -91,6 +91,7 @@ export default function App() {
             gameType,
           })
         }
+        onLogout={() => setScreen({ name: "login" })}
       />
     );
   } else if (screen.name === "lobby") {
