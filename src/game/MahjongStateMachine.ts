@@ -634,6 +634,7 @@ export class MahjongStateMachine {
           scoreDelta,
         };
       }),
+      fanDetail: { fan: fan.fan, base: fan.base, detail: fan.detail },
     };
   }
 }

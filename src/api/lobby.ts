@@ -6,6 +6,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { log }                                      from "../utils/log";
 import type { GameType } from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -268,7 +269,10 @@ export async function handleMatch(
     );
   }
 
-  if (!takeToken(`match:${playerId}`, "match")) return rateLimited();
+  if (!takeToken(`match:${playerId}`, "match")) {
+    log("warn", "rate_limited", { playerId, route: "/api/match" });
+    return rateLimited();
+  }
 
   // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離
   let gameType: GameType = "bigTwo";
@@ -287,6 +291,7 @@ export async function handleMatch(
     .first<{ chip_balance: number }>();
   const balance = wallet?.chip_balance ?? 0;
   if (balance < ante) {
+    log("info", "match_blocked_insufficient_chips", { playerId, gameType, balance, required: ante });
     return Response.json(
       { error: "insufficient chips", balance, required: ante, gameType },
       { status: 402 },

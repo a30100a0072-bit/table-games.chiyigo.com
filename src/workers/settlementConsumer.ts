@@ -3,6 +3,7 @@
 // and persists results to D1.  All D1 writes are atomic via db.batch(). // L3_架構含防禦觀測
 
 import type { SettlementQueueMessage, SettlementResult, PlayerSettlement } from "../types/game";
+import { log, errStr } from "../utils/log";
 
 export interface ConsumerEnv {
   DB: D1Database;
@@ -30,10 +31,17 @@ export async function handleQueue(
 
     try {
       await writeSettlement(env.DB, message.body.payload);
+      log("info", "settlement_written", {
+        gameId: message.body.payload.gameId,
+        reason: message.body.payload.reason,
+        winnerId: message.body.payload.winnerId,
+      });
       message.ack();
     } catch (err) {
       // Transient D1 error: re-enqueue for automatic retry.             // L3_架構含防禦觀測
-      console.error("[settlementConsumer] D1 write failed, retrying:", err);
+      log("error", "settlement_write_failed", {
+        gameId: message.body.payload.gameId, err: errStr(err),
+      });
       message.retry();
     }
   }

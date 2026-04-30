@@ -155,6 +155,7 @@ export interface SettlementResult {
   reason:      SettlementReason;
   players:     PlayerSettlement[];
   winnerId:    PlayerId;
+  fanDetail?:  { fan: number; base: number; detail: string[] };
 }
 
 // ─── Discriminated union for any state-view payload ──────────────────────────

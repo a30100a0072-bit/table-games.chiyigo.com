@@ -41,6 +41,23 @@ export default function ResultScreen({ playerId, settlement, onPlayAgain }: Prop
         ))}
       </div>
 
+      {/* 麻將台數明細 — 只有麻將會帶 fanDetail，其他遊戲為 undefined */}
+      {settlement.fanDetail && (
+        <div className="w-72 rounded-2xl border border-yellow-700/40 bg-green-900/50 p-3 text-sm shadow-inner">
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="font-bold text-yellow-300">台數明細</span>
+            <span className="text-yellow-200">底 {settlement.fanDetail.base} · {settlement.fanDetail.fan} 台</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {settlement.fanDetail.detail.map((d, i) => (
+              <span key={i} className="rounded-full bg-yellow-700/30 px-2 py-0.5 text-[11px] text-yellow-100">
+                {d}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <button
         onClick={onPlayAgain}
         className="rounded-xl bg-yellow-400 px-8 py-3 font-bold text-green-950 hover:bg-yellow-300 transition"

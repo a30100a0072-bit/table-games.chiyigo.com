@@ -1,6 +1,7 @@
 // /src/workers/gateway.ts
 import { verifyJWT, signJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited, clientIp }                 from "../utils/rateLimit";
+import { log, errStr }                                       from "../utils/log";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
@@ -22,7 +23,11 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
     return cors(jwksResponse(env));
 
   if (request.method === "POST" && url.pathname === "/auth/token") {
-    if (!takeToken(`token:${clientIp(request)}`, "token")) return cors(rateLimited());
+    const ip = clientIp(request);
+    if (!takeToken(`token:${ip}`, "token")) {
+      log("warn", "rate_limited", { ip, route: "/auth/token" });
+      return cors(rateLimited());
+    }
     return cors(await issueToken(request, env));
   }
 
@@ -73,6 +78,7 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
   await ensureUserWallet(env.DB, playerId);
 
   const token = await signJWT(playerId, env.JWT_PRIVATE_JWK);
+  log("info", "token_issued", { playerId });
   return Response.json({ token, playerId });
 }
 
@@ -174,11 +180,15 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
       .prepare("SELECT chip_balance, last_bailout_at FROM users WHERE player_id = ?")
       .bind(playerId)
       .first<{ chip_balance: number; last_bailout_at: number }>();
-    if (!wallet) return Response.json({ error: "wallet not found" }, { status: 404 });
+    if (!wallet) {
+      log("warn", "bailout_blocked", { playerId, reason: "wallet_not_found" });
+      return Response.json({ error: "wallet not found" }, { status: 404 });
+    }
     const reason = wallet.chip_balance >= BAILOUT_THRESHOLD
       ? "balance above threshold"
       : "cooldown active";
     const nextEligibleAt = wallet.last_bailout_at + BAILOUT_COOLDOWN;
+    log("info", "bailout_blocked", { playerId, reason, balance: wallet.chip_balance });
     return Response.json(
       { error: reason, balance: wallet.chip_balance, nextEligibleAt },
       { status: 409 },
@@ -197,6 +207,10 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
     .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
     .bind(playerId)
     .first<{ chip_balance: number }>();
+
+  log("info", "bailout_granted", {
+    playerId, granted: BAILOUT_AMOUNT, balanceAfter: after?.chip_balance ?? BAILOUT_AMOUNT,
+  });
 
   return Response.json({
     granted: BAILOUT_AMOUNT,

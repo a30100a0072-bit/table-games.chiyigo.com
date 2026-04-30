@@ -320,6 +320,8 @@ export interface SettlementResult {
   reason: SettlementReason;
   players: PlayerSettlement[];  // 固定長度 = 房間人數       // L2_鎖定
   winnerId: PlayerId;
+  // 麻將獨有：贏家台數明細，純資訊性，前端可顯示。其他遊戲為 undefined。 // L2_實作
+  fanDetail?: { fan: number; base: number; detail: string[] };
 }
 
 /** D1 Queue 訊息包裝，對應 Cloudflare Queue Producer 格式 */
