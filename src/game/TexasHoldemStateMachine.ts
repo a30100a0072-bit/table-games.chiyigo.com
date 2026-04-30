@@ -304,16 +304,22 @@ export class TexasHoldemStateMachine {
       hasFolded: me.hasFolded,
       isAllIn: me.isAllIn,
     };
+    // 攤牌時揭示未棄牌對手的底牌；其他階段不寫 holeCards 欄位以維持隔離。 // L3_邏輯安防
+    const isShowdown = this.s.street === "showdown" || this.s.street === "settled";
     const opponents: PokerOpponentView[] = this.s.seats
       .filter((_, i) => i !== meIdx)
-      .map(s => ({
-        playerId: s.playerId,
-        stack: s.stack,
-        betThisStreet: s.betThisStreet,
-        totalCommitted: s.totalCommitted,
-        hasFolded: s.hasFolded,
-        isAllIn: s.isAllIn,
-      }));
+      .map(s => {
+        const base: PokerOpponentView = {
+          playerId: s.playerId,
+          stack: s.stack,
+          betThisStreet: s.betThisStreet,
+          totalCommitted: s.totalCommitted,
+          hasFolded: s.hasFolded,
+          isAllIn: s.isAllIn,
+        };
+        if (isShowdown && !s.hasFolded) base.holeCards = [s.hole[0], s.hole[1]];
+        return base;
+      });
     return {
       gameId: this.s.gameId,
       roundId: this.s.roundId,

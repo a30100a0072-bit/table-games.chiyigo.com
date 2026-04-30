@@ -1,0 +1,11 @@
+# Normalise all text files to LF in the repo. Windows checkouts can keep
+# CRLF in the working tree (text=auto), but commits land as LF so we don't
+# get the "LF will be replaced by CRLF" warning on every change.
+* text=auto eol=lf
+
+# Lockfiles and snapshots are usually best left untouched.
+*.lockb binary
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary

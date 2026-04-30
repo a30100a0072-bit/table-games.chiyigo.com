@@ -271,7 +271,9 @@ export interface PokerOpponentView {
   totalCommitted: number;
   hasFolded: boolean;
   isAllIn: boolean;
-  // holeCards 故意不存在，TS 強制隔離                              // L2_隔離
+  // 攤牌時揭示對手底牌；只在 street === "showdown" 且該玩家未棄牌
+  // 時才會帶值，其他階段一律 undefined（TS 與 server 雙重把關）。  // L3_邏輯安防
+  holeCards?: [Card, Card];
 }
 
 export interface PokerStateView {

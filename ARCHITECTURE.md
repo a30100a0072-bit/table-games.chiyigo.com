@@ -1,10 +1,10 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-04-30（ES256 JWKS + 籌碼經濟 + 大老二快捷鍵）
+> 最後更新：2026-04-30（清掃完背包：JWK 輪換 + 麻將精算 + 德撲攤牌 + Bot 強化 + 新測試）
 >
 > **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲皆有 BotAI ✅；BOT_FILL 三款全啟用（3 秒補位）✅；前端三遊戲 UI ✅；CI/CD 全鏈路打通（含 D1 schema migration）✅；**ES256 JWKS auth ✅**；**籌碼錢包 + 流水帳本 ✅**；**大老二 5 牌型快捷鍵 ✅**
-> **單元測試**：5 檔 / 73 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15、BotAI 15），全綠
+> **單元測試**：7 檔 / 86 案例（Big Two 13、Mahjong 14、Texas Hold'em 16、Adapter 15、BotAI 15、**auth 9**、**rateLimit 4**），全綠
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error；frontend `npm run build` 成功
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -249,20 +249,25 @@ gateway.ts ──verifyJWT──► GameRoomDO
    - 新增 step `wrangler d1 execute --file=src/db/schema.sql --remote` 在 Worker deploy 前跑
    - 全部 DDL 是 `IF NOT EXISTS`，重跑無副作用，新欄位/表會冪等套用
 
+### ✅ 第二波完成（2026-04-30 同日後段）
+9. **`.gitattributes`** — 加入 `* text=auto eol=lf`，commit 不再噴 LF→CRLF 警告
+10. **死碼清理** — `MahjongStateMachine.ts` 移除未引用的 `indexToTile` / `isHonor`（`isSuited` 仍在 canWin 內使用，保留）
+11. **麻將台數精算** — `calcFan` 新增 清一色(8) / 字一色(16) / 大三元(8) / 大四喜(16) / 槓上開花(1) 偵測；State 加 `drewFromKongReplacement` 標記，於開槓補摸時設 true，下一次出新牌摸前 reset
+12. **JWK 輪換** — `JWT_PRIVATE_JWK` 接受 array 形式：第一把為 active sign key、所有公鑰都進 JWKS。`parsePrivateJwks` 拒絕重複 kid
+13. **德撲 UI** — `PokerOpponentView.holeCards?` 攤牌時揭示未棄牌對手底牌（雙端 type 同步、state machine `viewFor` 限定 `street === showdown/settled` 才寫入）；加注滑桿下方加最低/底池倍/最高 inline 提示
+14. **Bot 強化** — `pickLead` 三段式：優先丟非 2 的孤張 → 退而求其次任意孤張 → 最後選非 2 的最小牌；保留大牌（"2"）至收尾不再瞎送
+15. **整合測試覆蓋** — 新檔 `test/auth.test.ts`（9 案：sign/verify roundtrip、tampered payload、過期、未知 kid、JWKS 單/多 key、輪換期間雙向相容、重複 kid 拒絕）+ `test/rateLimit.test.ts`（4 案：capacity 上限、key 隔離、time-based refill、bailout 緊縮）
+
 ### ⏳ 仍未動（下次優先）
-1. **麻將台數精算**（`MahjongStateMachine.ts:142`）— 清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花尚未實作；目前只有平胡 + 自摸 + 門前清
-2. **麻將 UI 缺件**：吃（chow）的「選 2 張手牌組順子」選擇器、暗槓 / 加槓獨立按鈕、reaction 倒數計時顯示
-3. **德撲 UI 缺件**：showdown 揭牌動畫、最小加注金額 inline 提示
-4. **整合測試零覆蓋**：`GameRoomDO`、`gateway.ts`、`api/lobby.ts`、前端皆無測試；無 e2e；籌碼經濟流程也沒測
-5. **`.gitattributes`** 缺：每次 commit 都跳 LF→CRLF 警告（無功能影響）
-6. **rate limiting**：`/auth/token`、`/api/match`、`/api/me/wallet` 無防刷；結構化 log / metrics 都缺
-7. **Bot 進階**：
-   - Big Two 仍是 minimum-beat 策略，沒有「保留大牌等收尾」、「主動領 5 張組合」的決策
+1. **麻將 UI 缺件**：reaction 倒數已加；吃選擇器已加；暗 / 加槓已加。剩 — 花牌補張動畫、結算詳細台數面板
+2. **整合測試（DO / handler 層）**：純函式模組已測；`GameRoomDO` 行為測試需要 miniflare/wrangler vitest plugin，仍是空白
+3. **Bot 進階**：
+   - Big Two minimum-beat 仍粗糙，缺「主動領 5 張組合擴大優勢」的決策
    - Mahjong 永遠不吃碰槓（保 menqing）— 對手實際被 bot 餵牌時無法強壓節奏
    - Texas 不會詐唬、無對手範圍建模、3-bet 認知缺失
-8. **籌碼經濟尚缺**：管理員調整端點、贈送 / 兌換、防範棄局逃避扣分（disconnect 算 forfeit?）、daily login bonus
-9. **死碼**：`MahjongStateMachine.ts` 的 `indexToTile`、`isHonor` 仍未引用
-10. **JWK 輪換**：JWKS 已支援多 `kid`，但 sign 路徑只用單一私鑰；尚無雙金鑰並存（舊 verify、新 sign）的 rotation 流程
+4. **籌碼經濟邊緣**：disconnect = forfeit、贈送 / 兌換、daily login bonus（救濟金已上線）
+5. **觀測性**：結構化 log / metrics / Sentry 都缺
+6. **JWK 自動輪換流程**：技術上能多 key 並存，但「定期換 primary」需要 cron job 或運維 SOP，尚未文件化
 
 ---
 

@@ -95,7 +95,11 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
               ].join(" ")}>
                 {op.playerId}{op.isAllIn && " (All-in)"}{op.hasFolded && " (棄)"}
               </div>
-              <div className="flex gap-0.5"><CardView faceDown /><CardView faceDown /></div>
+              <div className="flex gap-0.5">
+                {op.holeCards
+                  ? <><CardView card={op.holeCards[0]} /><CardView card={op.holeCards[1]} /></>
+                  : <><CardView faceDown /><CardView faceDown /></>}
+              </div>
               <div className="text-[10px] text-green-300">籌碼 {op.stack}</div>
               {op.betThisStreet > 0 && <div className="text-[10px] text-yellow-300">下注 {op.betThisStreet}</div>}
             </div>
@@ -161,7 +165,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
           >加注 → {raise}</button>
         </div>
 
-        <div className="flex items-center gap-3 px-3 pb-3">
+        <div className="flex items-center gap-3 px-3 pb-1">
           <input
             type="range"
             min={view.currentBet + view.minRaise}
@@ -176,6 +180,13 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
             onClick={() => send({ type: "raise", raiseAmount: me.stack + me.betThisStreet })}
             className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
           >All-in</button>
+        </div>
+
+        {/* 加注金額提示列：最低 / 最高 / 底池倍數 */}
+        <div className="flex justify-between px-3 pb-3 text-[10px] text-green-400">
+          <span>最低 {view.currentBet + view.minRaise}</span>
+          <span>底池 ×{totalPot > 0 ? (raise / totalPot).toFixed(1) : "—"}</span>
+          <span>最高 {me.stack + me.betThisStreet}</span>
         </div>
       </div>
     </div>

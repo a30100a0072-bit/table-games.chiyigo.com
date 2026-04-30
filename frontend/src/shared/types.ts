@@ -109,6 +109,7 @@ export interface PokerOpponentView {
   totalCommitted: number;
   hasFolded: boolean;
   isAllIn: boolean;
+  holeCards?: [Card, Card];           // 僅 showdown 階段非棄牌玩家才有
 }
 export interface PokerStateView {
   gameId: string;

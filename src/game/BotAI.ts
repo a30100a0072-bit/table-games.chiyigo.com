@@ -91,19 +91,30 @@ function beatFiveCard(hand: Card[], minScore: number): { cards: Card[]; combo: C
   return best ? { cards: best.cards, combo: best.combo } : null;
 }
 
-/** Lead-mode lowest playable subset when bot controls the trick.            // L3_邏輯安防 */
+/** Lead-mode lowest playable subset when bot controls the trick.            // L3_邏輯安防
+ *  Endgame hold: never lead with a "2" unless it's the only option, since
+ *  2s are the highest cards in Big Two and are best saved for closing
+ *  tricks against opponents. Pairs/triples of 2 are also avoided. */
 function pickLead(hand: Card[]): { cards: Card[]; combo: ComboType } {
   const sorted = sortAsc(hand);
   // Opening turn 3♣ rule: if 3♣ is present, lead with it (machine enforces). // L3_邏輯安防
   const threeClub = sorted.find(c => c.rank === "3" && c.suit === "clubs");
   if (threeClub) return { cards: [threeClub], combo: "single" };
 
-  // Otherwise dump the lowest card that doesn't break a pair/triple, falling
-  // back to the lowest card if every card is part of a multi.                 // L3_邏輯安防
   const rankCount = new Map<Rank, number>();
   for (const c of sorted) rankCount.set(c.rank, (rankCount.get(c.rank) ?? 0) + 1);
+
+  // Tier 1 — isolated card that isn't a 2 (best lead: small loss).            // L3_邏輯安防
+  const isolatedNon2 = sorted.find(c => rankCount.get(c.rank) === 1 && c.rank !== "2");
+  if (isolatedNon2) return { cards: [isolatedNon2], combo: "single" };
+
+  // Tier 2 — any isolated card (only 2s are isolated; we'd burn a 2 either way).
   const isolated = sorted.find(c => rankCount.get(c.rank) === 1);
-  return { cards: [isolated ?? sorted[0]!], combo: "single" };
+  if (isolated) return { cards: [isolated], combo: "single" };
+
+  // Tier 3 — every card is part of a multi; dump the lowest non-2 if possible.
+  const lowestNon2 = sorted.find(c => c.rank !== "2");
+  return { cards: [lowestNon2 ?? sorted[0]!], combo: "single" };
 }
 
 export function getBigTwoBotAction(view: GameStateView, botHand: Card[]): PlayerAction {

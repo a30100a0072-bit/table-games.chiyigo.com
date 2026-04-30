@@ -47,14 +47,7 @@ function tileIndex(t: MahjongTile): number {
     case "z": return 27 + (t.rank - 1);
   }
 }
-function indexToTile(i: number): MahjongTile {
-  if (i < 9) return { suit: "m", rank: i + 1 };
-  if (i < 18) return { suit: "p", rank: i - 9 + 1 };
-  if (i < 27) return { suit: "s", rank: i - 18 + 1 };
-  return { suit: "z", rank: i - 27 + 1 };
-}
 function isSuited(i: number): boolean { return i < 27; }
-function isHonor(i: number): boolean { return i >= 27; }
 
 function tilesToCounts(tiles: MahjongTile[]): Counts {
   const c = new Uint8Array(TILE_INDEX_COUNT);
@@ -132,14 +125,44 @@ function calcFan(opts: {
   selfDrawn: boolean;
   menqing: boolean;        // 門前清（未吃碰）
   exposed: ExposedMeld[];
-  hand: MahjongTile[];
+  hand: MahjongTile[];     // 含胡牌
+  drewFromKongReplacement?: boolean;
 }): FanResult {
   const detail: string[] = ["平胡"];
   let fan = 0;
+
+  // 完整牌組（手牌 + 對外副露）— 所有結構性台用得上                       // L2_實作
+  const all: MahjongTile[] = [...opts.hand, ...opts.exposed.flatMap(m => m.tiles)];
+
+  // 清一色：全 m / p / s 同花色，無字牌
+  // 字一色：全字牌
+  const suits = new Set(all.map(t => t.suit));
+  if (suits.size === 1) {
+    if (suits.has("z")) { fan += 16; detail.push("字一色"); }
+    else                { fan += 8;  detail.push("清一色"); }
+  }
+
+  // 大三元：中(z5) / 發(z6) / 白(z7) 三組刻子（≥3 張即視為刻子，含明刻 / 暗刻 / 槓）
+  const honorCount = (rank: number) =>
+    all.filter(t => t.suit === "z" && t.rank === rank).length;
+  if (honorCount(5) >= 3 && honorCount(6) >= 3 && honorCount(7) >= 3) {
+    fan += 8; detail.push("大三元");
+  }
+
+  // 大四喜：東(z1) / 南(z2) / 西(z3) / 北(z4) 四組刻子
+  if (honorCount(1) >= 3 && honorCount(2) >= 3 && honorCount(3) >= 3 && honorCount(4) >= 3) {
+    fan += 16; detail.push("大四喜");
+  }
+
+  // 槓上開花：開槓後從牌牆尾補一張，補到的牌正好胡（state machine 標記）   // L3_架構
+  if (opts.drewFromKongReplacement && opts.selfDrawn) {
+    fan += 1; detail.push("槓上開花");
+  }
+
   if (opts.selfDrawn) { fan += 1; detail.push("自摸"); }
-  if (opts.menqing) { fan += 1; detail.push("門前清"); }
+  if (opts.menqing)   { fan += 1; detail.push("門前清"); }
   if (opts.menqing && opts.selfDrawn) { fan += 1; detail.push("門清自摸"); }
-  // L2_待辦：清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花 …
+
   return { base: 1, fan, detail };
 }
 
@@ -175,6 +198,7 @@ interface InternalState {
   reactionDeadlineMs: number;
   turnDeadlineMs: number;
   drawnThisTurn: MahjongTile | null;             // 本回合剛摸的牌（決定 menqing/自摸）
+  drewFromKongReplacement: boolean;              // 補摸自槓尾，下一手胡計「槓上開花」 // L3_架構
 }
 
 export type ProcessResult =
@@ -221,6 +245,7 @@ export class MahjongStateMachine {
       reactionDeadlineMs: 0,
       turnDeadlineMs: Date.now() + TURN_WINDOW_MS,
       drawnThisTurn: drawn,
+      drewFromKongReplacement: false,
     };
   }
 
@@ -356,6 +381,7 @@ export class MahjongStateMachine {
     if (!replacement) return this.drawExhaustion();
     me.hand.push(replacement);
     this.s.drawnThisTurn = replacement;
+    this.s.drewFromKongReplacement = true;        // 下一手自摸胡計槓上開花  // L3_架構
     return { ok: true };
   }
 
@@ -487,6 +513,7 @@ export class MahjongStateMachine {
       if (!replacement) return this.drawExhaustion();
       me.hand.push(replacement);
       this.s.drawnThisTurn = replacement;
+      this.s.drewFromKongReplacement = true;
       this.s.turnIdx = i;
       this.s.phase = "playing";
       this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
@@ -544,6 +571,7 @@ export class MahjongStateMachine {
     if (!tile) return this.drawExhaustion();
     this.s.players[this.s.turnIdx]!.hand.push(tile);
     this.s.drawnThisTurn = tile;
+    this.s.drewFromKongReplacement = false;       // 進入新一手 → 槓上開花失效
     this.s.phase = "playing";
     this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
     return { ok: true };
@@ -581,6 +609,7 @@ export class MahjongStateMachine {
       menqing: winner.exposed.every(m => m.kind === "kong_concealed"),
       exposed: winner.exposed,
       hand: winner.hand,
+      drewFromKongReplacement: this.s.drewFromKongReplacement,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
     return {

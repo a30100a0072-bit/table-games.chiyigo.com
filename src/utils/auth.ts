@@ -49,13 +49,41 @@ let jwksCache:      { jwkJson: string; jwks: Jwks } | null = null;
 const verifyKeyCache = new Map<string, CryptoKey>();
 
 // ── Private JWK parsing & public derivation ────────────────────────────
-export function parsePrivateJwk(raw: string): PrivateJwk {
-  let j: Partial<PrivateJwk>;
-  try { j = JSON.parse(raw) as Partial<PrivateJwk>; }
+// JWT_PRIVATE_JWK accepts either:
+//   - A single JWK object  → that key signs and verifies (no rotation)
+//   - An array of JWKs     → first signs (primary); all verify (rotation)
+// The rotation case lets you publish the next key alongside the current
+// one for one TTL, then drop the old one — no token-validity gap.       // L3_架構含防禦觀測
+function isPrivateJwk(j: unknown): j is PrivateJwk {
+  if (typeof j !== "object" || j === null) return false;
+  const o = j as Partial<PrivateJwk>;
+  return o.kty === "EC" && o.crv === "P-256" &&
+    typeof o.x === "string" && typeof o.y === "string" &&
+    typeof o.d === "string" && typeof o.kid === "string";
+}
+
+export function parsePrivateJwks(raw: string): PrivateJwk[] {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
   catch { throw new JWTError("JWT_PRIVATE_JWK is not valid JSON"); }
-  if (j.kty !== "EC" || j.crv !== "P-256" || !j.x || !j.y || !j.d || !j.kid)
-    throw new JWTError("JWT_PRIVATE_JWK must be an EC P-256 JWK with kid");
-  return j as PrivateJwk;
+  const arr = Array.isArray(parsed) ? parsed : [parsed];
+  if (arr.length === 0) throw new JWTError("JWT_PRIVATE_JWK has no keys");
+  for (const j of arr) {
+    if (!isPrivateJwk(j))
+      throw new JWTError("JWT_PRIVATE_JWK entries must be EC P-256 JWKs with kid");
+  }
+  // Reject duplicate kids — they break verify-by-kid lookup.            // L2_鎖定
+  const kids = new Set<string>();
+  for (const j of arr as PrivateJwk[]) {
+    if (kids.has(j.kid)) throw new JWTError(`duplicate kid in JWT_PRIVATE_JWK: ${j.kid}`);
+    kids.add(j.kid);
+  }
+  return arr as PrivateJwk[];
+}
+
+/** Back-compat single-key parse (first in the list). */
+export function parsePrivateJwk(raw: string): PrivateJwk {
+  return parsePrivateJwks(raw)[0]!;
 }
 
 export function publicJwkOf(priv: PrivateJwk): PublicJwk {
@@ -65,7 +93,7 @@ export function publicJwkOf(priv: PrivateJwk): PublicJwk {
 /** Build the JWKS document this Worker publishes at /.well-known/jwks.json. */
 export function jwksFromPrivateEnv(privateJwkJson: string): Jwks {
   if (jwksCache && jwksCache.jwkJson === privateJwkJson) return jwksCache.jwks;
-  const jwks: Jwks = { keys: [publicJwkOf(parsePrivateJwk(privateJwkJson))] };
+  const jwks: Jwks = { keys: parsePrivateJwks(privateJwkJson).map(publicJwkOf) };
   jwksCache = { jwkJson: privateJwkJson, jwks };
   return jwks;
 }
@@ -74,7 +102,8 @@ export function jwksFromPrivateEnv(privateJwkJson: string): Jwks {
 async function getSignKey(privateJwkJson: string): Promise<{ key: CryptoKey; kid: string }> {
   if (signKeyCache && signKeyCache.jwkJson === privateJwkJson)
     return { key: signKeyCache.key, kid: signKeyCache.kid };
-  const priv = parsePrivateJwk(privateJwkJson);
+  // First key in the list is the active signing key.                    // L2_鎖定
+  const priv = parsePrivateJwks(privateJwkJson)[0]!;
   const key  = await crypto.subtle.importKey(
     "jwk", priv as JsonWebKey,
     { name: "ECDSA", namedCurve: "P-256" },
