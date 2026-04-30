@@ -72,6 +72,7 @@ export default function App() {
       />
     );
   } else if (screen.name === "select") {
+    const wsBase = (import.meta.env.VITE_WORKER_URL as string).replace(/^http/, "ws");
     body = (
       <GameSelectScreen
         playerId={screen.playerId}
@@ -79,6 +80,16 @@ export default function App() {
         dailyBonus={screen.dailyBonus}
         onPick={(gameType) =>
           setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType })
+        }
+        onJoinedTournamentRoom={(roomId, gameType) =>
+          setScreen({
+            name: "game",
+            playerId: screen.playerId,
+            token: screen.token,
+            roomId,
+            wsUrl: `${wsBase}/rooms/${roomId}/join`,
+            gameType,
+          })
         }
       />
     );

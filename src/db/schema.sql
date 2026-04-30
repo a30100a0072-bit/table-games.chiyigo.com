@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS users (
   chip_balance    INTEGER NOT NULL DEFAULT 1000,
   last_bailout_at INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never claimed
   last_login_at   INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never logged in (gets daily bonus on next /auth/token)
+  frozen_at       INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = active. >0 = blocked from auth + matchmaking.
+  frozen_reason   TEXT,                          -- audit trail; NULL when active
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
 );

@@ -275,6 +275,19 @@ export async function handleMatch(
     log("warn", "rate_limited", { playerId, route: "/api/match" });
     return rateLimited();
   }
+
+  // Defence in depth: a token issued before a freeze must not survive
+  // matchmaking. /auth/token also checks but legitimate tokens live up
+  // to 24 h and the freeze should bite immediately.                    // L3_架構含防禦觀測
+  const frozen = await env.DB
+    .prepare("SELECT frozen_at FROM users WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ frozen_at: number }>();
+  if (frozen && frozen.frozen_at > 0) {
+    log("warn", "match_blocked_frozen", { playerId });
+    return Response.json({ error: "account frozen" }, { status: 423 });
+  }
+
   bump("matches_started");
 
   // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離

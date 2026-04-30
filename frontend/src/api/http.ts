@@ -112,6 +112,72 @@ export async function getLeaderboard(): Promise<{ updatedAt: number; rows: Leade
   return res.json();
 }
 
+// ── Tournaments ─────────────────────────────────────────────────────
+export interface TournamentRow {
+  tournament_id: string;
+  game_type:     GameType;
+  buy_in:        number;
+  prize_pool:    number;
+  status:        string;
+  created_at:    number;
+  registered:    number;
+}
+export interface TournamentEntry {
+  player_id:  string;
+  agg_score:  number;
+  final_rank: number | null;
+}
+export interface TournamentDetail {
+  tournament: {
+    tournament_id: string;
+    game_type:     GameType;
+    buy_in:        number;
+    rounds_total:  number;
+    rounds_done:   number;
+    status:        string;
+    prize_pool:    number;
+    current_room:  string | null;
+    started_at:    number | null;
+    finished_at:   number | null;
+    winner_id:     string | null;
+  };
+  entries:     TournamentEntry[];
+  currentRoom: string | null;
+}
+
+export async function listTournaments(): Promise<{ rows: TournamentRow[]; required: number }> {
+  const res = await fetch(`${BASE}/api/tournaments`);
+  if (!res.ok) throw new Error(`list failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getTournament(id: string): Promise<TournamentDetail> {
+  const res = await fetch(`${BASE}/api/tournaments/${id}`);
+  if (!res.ok) throw new Error(`get failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTournament(token: string, gameType: GameType, buyIn: number)
+  : Promise<{ tournamentId: string; prizePool: number; required: number }> {
+  const res = await fetch(`${BASE}/api/tournaments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ gameType, buyIn }),
+  });
+  if (res.status === 402) throw new Error("insufficient chips");
+  if (!res.ok) throw new Error(`create failed: ${res.status}`);
+  return res.json();
+}
+
+export async function joinTournamentApi(token: string, id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/tournaments/${id}/join`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 402) throw new Error("insufficient chips");
+  if (!res.ok) throw new Error(`join failed: ${res.status}`);
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

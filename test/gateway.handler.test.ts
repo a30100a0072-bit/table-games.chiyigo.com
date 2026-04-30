@@ -128,6 +128,33 @@ class MockStmt {
       return ok(1);
     }
 
+    // UPDATE users SET frozen_at = ?, frozen_reason = ?, updated_at = ? WHERE player_id = ?
+    if (sql.includes("UPDATE users") && sql.includes("frozen_at = ?, frozen_reason = ?")) {
+      const [frozenAt, reason, , pid] = a as [number, string | null, number, string];
+      const u = this.db.users.get(pid);
+      if (!u) return ok(0);
+      (u as MockUser & { frozen_at: number; frozen_reason: string | null }).frozen_at = frozenAt;
+      (u as MockUser & { frozen_at: number; frozen_reason: string | null }).frozen_reason = reason;
+      return ok(1);
+    }
+    if (sql.includes("UPDATE users SET frozen_at = 0")) {
+      const [, pid] = a as [number, string];
+      const u = this.db.users.get(pid);
+      if (!u) return ok(0);
+      (u as MockUser & { frozen_at: number; frozen_reason: string | null }).frozen_at = 0;
+      (u as MockUser & { frozen_at: number; frozen_reason: string | null }).frozen_reason = null;
+      return ok(1);
+    }
+
+    if (sql.includes("SELECT frozen_at, frozen_reason FROM users")) {
+      const u = this.db.users.get(a[0] as string);
+      // No frozen flag in mock; treat all as active.
+      return { ...ok(0), firstRow: u ? { frozen_at: 0, frozen_reason: null } : null };
+    }
+    if (sql.includes("SELECT frozen_at FROM users")) {
+      const u = this.db.users.get(a[0] as string);
+      return { ...ok(0), firstRow: u ? { frozen_at: 0 } : null };
+    }
     if (sql.includes("SELECT chip_balance, last_bailout_at FROM users")) {
       const u = this.db.users.get(a[0] as string);
       return { ...ok(0), firstRow: u ? { chip_balance: u.chip_balance, last_bailout_at: u.last_bailout_at } : null };
@@ -319,6 +346,57 @@ describe("gateway routes", () => {
     const r = await handleRequest(req("GET", "/api/leaderboard"), env);
     const body = await r.json() as { rows: Array<{ player_id: string }> };
     expect(body.rows.map(r => r.player_id)).toEqual(["alice", "bob"]);
+  });
+
+  it("POST /api/admin/freeze blocks /auth/token afterwards", async () => {
+    await handleRequest(req("POST", "/auth/token", { body: { playerId: "alice" } }), env);
+
+    // Manually flip the user's frozen flag — easier than wiring full mock SELECT.
+    (db.users.get("alice") as unknown as { frozen_at: number; frozen_reason: string | null }).frozen_at = Date.now();
+    (db.users.get("alice") as unknown as { frozen_at: number; frozen_reason: string | null }).frozen_reason = "abuse";
+
+    // Override the SELECT mock to honour the flag for this test.
+    const origPrepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      const stmt = origPrepare(sql);
+      if (sql.includes("SELECT frozen_at, frozen_reason FROM users")) {
+        stmt.first = async () => {
+          const u = db.users.get("alice") as MockUser & { frozen_at?: number; frozen_reason?: string | null };
+          return u ? { frozen_at: u.frozen_at ?? 0, frozen_reason: u.frozen_reason ?? null } as never : null as never;
+        };
+      }
+      return stmt;
+    };
+
+    const r = await handleRequest(req("POST", "/auth/token", { body: { playerId: "alice" } }), env);
+    expect(r.status).toBe(423);
+    const body = await r.json() as { error: string; reason: string };
+    expect(body.error).toBe("account frozen");
+    expect(body.reason).toBe("abuse");
+  });
+
+  it("POST /api/admin/freeze + unfreeze require X-Admin-Secret", async () => {
+    await handleRequest(req("POST", "/auth/token", { body: { playerId: "alice" } }), env);
+    const wrong = await handleRequest(req("POST", "/api/admin/freeze", {
+      headers: { "X-Admin-Secret": "nope" },
+      body: { playerId: "alice", reason: "test" },
+    }), env);
+    expect(wrong.status).toBe(401);
+
+    const ok = await handleRequest(req("POST", "/api/admin/freeze", {
+      headers: { "X-Admin-Secret": "test-admin-secret" },
+      body: { playerId: "alice", reason: "test" },
+    }), env);
+    expect(ok.status).toBe(200);
+    const body = await ok.json() as { frozen: boolean; reason: string };
+    expect(body.frozen).toBe(true);
+    expect(body.reason).toBe("test");
+
+    const un = await handleRequest(req("POST", "/api/admin/unfreeze", {
+      headers: { "X-Admin-Secret": "test-admin-secret" },
+      body: { playerId: "alice" },
+    }), env);
+    expect(un.status).toBe(200);
   });
 
   it("unknown route returns 404", async () => {

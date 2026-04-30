@@ -62,6 +62,15 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "POST" && url.pathname === "/api/admin/adjust")
     return cors(await adjustChips(request, env));
 
+  if (request.method === "POST" && url.pathname === "/api/admin/freeze")
+    return cors(await freezePlayer(request, env));
+
+  if (request.method === "POST" && url.pathname === "/api/admin/unfreeze")
+    return cors(await unfreezePlayer(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/admin/users")
+    return cors(await listAdminUsers(request, env));
+
   if (request.method === "POST" && url.pathname === "/api/tournaments")
     return cors(await createTournament(request, env));
 
@@ -94,6 +103,21 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
     playerId   = (body.playerId ?? "").trim();
   } catch {
     return Response.json({ error: "invalid JSON" }, { status: 400 });
+  }
+
+  // Frozen account check — defended at the auth boundary so a banned
+  // user can't even pick up a token. Match endpoint also checks (defence
+  // in depth) for tokens issued before the freeze landed.               // L3_架構含防禦觀測
+  const frozen = await env.DB
+    .prepare("SELECT frozen_at, frozen_reason FROM users WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ frozen_at: number; frozen_reason: string | null }>();
+  if (frozen && frozen.frozen_at > 0) {
+    log("warn", "auth_blocked_frozen", { playerId, reason: frozen.frozen_reason ?? "unspecified" });
+    return Response.json(
+      { error: "account frozen", reason: frozen.frozen_reason ?? "" },
+      { status: 423 },
+    );
   }
 
   if (playerId.length < 2 || playerId.length > 20)
@@ -412,6 +436,96 @@ async function adjustChips(request: Request, env: GatewayEnv): Promise<Response>
   return Response.json({
     playerId, delta, reason, chipBalance: after?.chip_balance ?? 0,
   });
+}
+
+// ── Shared admin gate (timing-safe + 503 when secret unset) ──────────
+function checkAdmin(request: Request, env: GatewayEnv): Response | null {
+  if (!env.ADMIN_SECRET) return Response.json({ error: "admin disabled" }, { status: 503 });
+  const provided = request.headers.get("X-Admin-Secret") ?? "";
+  if (!timingSafeEqual(provided, env.ADMIN_SECRET))
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  return null;
+}
+
+// ── POST /api/admin/freeze — block a player from auth + matchmaking ──
+async function freezePlayer(request: Request, env: GatewayEnv): Promise<Response> {
+  const gate = checkAdmin(request, env);
+  if (gate) return gate;
+
+  let body: { playerId?: string; reason?: string };
+  try { body = await request.json(); }
+  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const playerId = (body.playerId ?? "").trim();
+  const reason   = (body.reason ?? "").trim().slice(0, 200);
+  if (!playerId) return Response.json({ error: "playerId required" }, { status: 400 });
+
+  const upd = await env.DB
+    .prepare(
+      "UPDATE users SET frozen_at = ?, frozen_reason = ?, updated_at = ?" +
+      " WHERE player_id = ?",
+    )
+    .bind(Date.now(), reason || null, Date.now(), playerId)
+    .run();
+  if (!upd.success || (upd.meta?.changes ?? 0) === 0)
+    return Response.json({ error: "player not found" }, { status: 404 });
+
+  log("warn", "admin_froze", { playerId, reason });
+  return Response.json({ playerId, frozen: true, reason });
+}
+
+// ── POST /api/admin/unfreeze ─────────────────────────────────────────
+async function unfreezePlayer(request: Request, env: GatewayEnv): Promise<Response> {
+  const gate = checkAdmin(request, env);
+  if (gate) return gate;
+
+  let body: { playerId?: string };
+  try { body = await request.json(); }
+  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const playerId = (body.playerId ?? "").trim();
+  if (!playerId) return Response.json({ error: "playerId required" }, { status: 400 });
+
+  const upd = await env.DB
+    .prepare(
+      "UPDATE users SET frozen_at = 0, frozen_reason = NULL, updated_at = ?" +
+      " WHERE player_id = ?",
+    )
+    .bind(Date.now(), playerId)
+    .run();
+  if (!upd.success || (upd.meta?.changes ?? 0) === 0)
+    return Response.json({ error: "player not found" }, { status: 404 });
+
+  log("warn", "admin_unfroze", { playerId });
+  return Response.json({ playerId, frozen: false });
+}
+
+// ── GET /api/admin/users — list with frozen state, paginated ─────────
+async function listAdminUsers(request: Request, env: GatewayEnv): Promise<Response> {
+  const gate = checkAdmin(request, env);
+  if (gate) return gate;
+
+  const url    = new URL(request.url);
+  const limit  = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+  const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+  const search = (url.searchParams.get("q") ?? "").trim();
+
+  const rows = search
+    ? await env.DB
+        .prepare(
+          "SELECT player_id, display_name, chip_balance, frozen_at, frozen_reason, created_at" +
+          " FROM users WHERE player_id LIKE ?" +
+          " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        )
+        .bind(`%${search}%`, limit, offset)
+        .all()
+    : await env.DB
+        .prepare(
+          "SELECT player_id, display_name, chip_balance, frozen_at, frozen_reason, created_at" +
+          " FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        )
+        .bind(limit, offset)
+        .all();
+
+  return Response.json({ rows: rows.results ?? [], limit, offset });
 }
 
 // Constant-time string compare to avoid leaking the admin secret length.
