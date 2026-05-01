@@ -1,102 +1,67 @@
-# Tournament Mode — Design Sketch
+# Tournament Mode
 
-Status: **proposed, not yet implemented.** This is a working design so the
-next session can pick it up without re-litigating decisions.
+Status: **shipped.** Best-of-3, 4-player, single-table, scores accumulate
+across rounds, winner takes prize pool (rake-adjusted). MVP differs from
+the original sketch in two ways:
 
-## Goal
+- **No bracket / elimination.** Single table, all 4 players play every
+  round. Final rank is by aggregate score, ties broken by registration
+  order. Simpler to reason about and matches our existing `GameRoomDO`
+  shape without spawning multiple rooms per round.
+- **Modal, not page.** Frontend lives in `TournamentModal` opened from
+  `GameSelectScreen`, not a dedicated `/tournaments` route.
 
-Multi-round elimination play where chips persist across hands and the last
-player standing wins a prize pool. Distinct from the current free-flow
-single-hand matchmaking.
+## Code map
 
-## Why it's not in this sprint
+- `src/db/schema.sql` — `tournaments` + `tournament_entries` tables.
+- `src/do/TournamentDO.ts` — orchestrator: register / start / round-result
+  / payout. Hydrates from storage so DO eviction is safe.
+- `src/api/tournaments.ts` — `POST /api/tournaments`, `GET /api/tournaments`,
+  `POST /api/tournaments/:id/join`, `GET /api/tournaments/:id`.
+- `src/do/GameRoomDO.ts` — accepts `tournamentId` on `/init` and POSTs
+  `/round-result` to the matching `TournamentDO` when settlement fires.
+- `frontend/src/components/TournamentModal.tsx` — list, create, join,
+  detail-with-bracket, polls every 3 s.
+- `test/tournamentDO.test.ts` — 7 tests covering init / join cap /
+  multi-round score accumulation / payout / tie-break.
 
-It needs schema changes (new tables), a new DO type (`TournamentDO`),
-match-orchestration that survives DO eviction, and prize-payout logic
-that has to be bullet-proof against retries. ~6–8 hours of focused work
-including tests. Out of scope for the "do everything in one round"
-ask — needs a dedicated sprint.
+## Economy
 
-## Schema additions
-
-```sql
-CREATE TABLE IF NOT EXISTS tournaments (
-  tournament_id   TEXT    PRIMARY KEY,
-  game_type       TEXT    NOT NULL,        -- bigTwo | mahjong | texas
-  buy_in          INTEGER NOT NULL,        -- chips locked at registration
-  max_players     INTEGER NOT NULL,        -- 4 | 8 | 16
-  status          TEXT    NOT NULL,        -- registering | running | settled
-  prize_pool      INTEGER NOT NULL,        -- sum of buy_ins (less rake)
-  created_at      INTEGER NOT NULL,
-  started_at      INTEGER,
-  finished_at     INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS tournament_entries (
-  tournament_id   TEXT    NOT NULL,
-  player_id       TEXT    NOT NULL,
-  registered_at   INTEGER NOT NULL,
-  eliminated_at   INTEGER,                 -- NULL until they bust
-  final_rank      INTEGER,                 -- 1 = winner; assigned at settle
-  PRIMARY KEY (tournament_id, player_id),
-  FOREIGN KEY (tournament_id) REFERENCES tournaments (tournament_id),
-  FOREIGN KEY (player_id)     REFERENCES users (player_id)
-);
-```
+- `MIN_BUY_IN = 100`, `MAX_BUY_IN = 5000` chips.
+- House rake: 5 % of gross pool (`buy_in × 4`). Winner receives the rest.
+- Buy-in is debited at registration via the same D1 batch that inserts
+  the `tournament_entries` row and a `chip_ledger` row with
+  `reason='tournament'` (negative). Failure path refunds best-effort.
+- Payout writes a single `INSERT OR IGNORE INTO chip_ledger` keyed on
+  `(player_id, game_id=tournament_id, reason='tournament')` so retries
+  don't double-pay.
 
 ## DO topology
 
-- **`TournamentDO`** (one per tournament_id) — drives the bracket: spawns
-  `GameRoomDO` instances for each match, listens for settlements, advances
-  survivors, eliminates losers. Persists bracket state via storage so DO
-  evictions resume cleanly.
-- **`GameRoomDO`** stays as-is. Its `SettlementResult` already carries
-  `winnerId` + per-player `scoreDelta`, which is what the tournament needs.
+One `TournamentDO` per `tournament_id`. Spawns one `GameRoomDO` per
+round (new `gameId` each time), waits for its settlement to POST back
+`/round-result`, accumulates `aggScore`, then either spawns the next
+round or finalises. State is persisted to DO storage on every mutation;
+`hydrate()` restores on cold start so eviction is transparent.
 
-## Bracket logic (single-elimination, 8-player big two example)
+## What's NOT implemented (deliberate scope cuts)
 
-1. Round 1: 2 tables × 4 players. Top 2 in each survive.
-2. Round 2: 1 table × 4 survivors. Top 2 again.
-3. Final: 1 table × 2 survivors (heads-up). Winner takes pool.
+- **Multi-table brackets.** 8/16-player elimination would need bracket
+  state and concurrent `GameRoomDO`s; deferred until 4-player mode has
+  real usage.
+- **Disconnect mid-tournament.** The current `GameRoomDO` disconnect
+  policy (bot replacement / forfeit) carries through; we don't refund
+  buy-in and we don't kick the entry from the bracket. Acceptable
+  because there is no bracket — the player just keeps playing badly.
+- **Feature flag.** Originally planned (`TOURNAMENTS_ENABLED`) but the
+  feature shipped behind tests-green gating instead. Add a flag if we
+  ever need to dark-launch a redesign.
+- **Dedicated `/tournaments` route.** Modal works; route adds nav
+  surface area without UX value at this player count.
 
-Edge cases that need explicit handling:
-- **Disconnect mid-tournament**: elimination + buy-in forfeit (no refund).
-- **DO eviction**: TournamentDO must rebuild bracket from `tournament_entries`
-  on hydrate. Idempotency by tournament_id + round number.
-- **Tied scores**: chip leader by tiebreaker, then random. Document choice.
+## Future work
 
-## Endpoints
-
-```
-POST /api/tournaments            — register (debit buy_in atomically)
-GET  /api/tournaments            — list registering / running
-GET  /api/tournaments/:id        — bracket + survivors
-POST /api/tournaments/:id/start  — admin (or auto when full)
-```
-
-## Payout
-
-When `TournamentDO` finalises, write a single `chip_ledger` row per
-non-winner with delta=−buy_in (already debited at registration, this is
-just the audit trail) and one row for the winner with delta=+prize_pool.
-Use `INSERT OR IGNORE` keyed by tournament_id so retries don't double-pay.
-
-Use a `'tournament'` reason in `chip_ledger` (extend the existing reason
-column).
-
-## Integration points
-
-- `lobby.ts` ANTE check: tournament rooms bypass it (buy-in already locked).
-- `WalletBadge` ledger reasons: add `'tournament'` → 「賽事」.
-- New `/tournaments` page in frontend with list + bracket view.
-
-## Tests
-
-Unit: TournamentDO bracket advancement (player A wins both rounds → final
-rank 1, others 2/3/4 by elimination order).
-Integration: handler-level register → start → settle → ledger row exists.
-
-## Rollout
-
-Behind a feature flag `TOURNAMENTS_ENABLED` (env var). Off until the DO
-test suite is green.
+- Stat: track per-player tournament wins / placings on the leaderboard.
+- 8-player single-elimination once 4-player has steady traffic.
+- Scheduled tournaments (cron-spawned) — would need a `RemoteTrigger`
+  or scheduled Worker entry.

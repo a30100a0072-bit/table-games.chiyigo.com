@@ -16,6 +16,7 @@ const REASON_LABEL: Record<string, string> = {
   bailout:    "救濟金",
   daily:      "每日登入",
   adjustment: "管理員調整",
+  tournament: "賽事",
 };
 
 function fmtTime(ms: number): string {

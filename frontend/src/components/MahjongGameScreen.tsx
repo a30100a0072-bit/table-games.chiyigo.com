@@ -4,6 +4,7 @@ import type {
 } from "../shared/types";
 import { GameSocket } from "../shared/GameSocket";
 import { useT } from "../i18n/useT";
+import { sfx } from "../shared/sound";
 
 // 給定手牌與對手剛打出的牌，回傳所有可吃的 [t1, t2, discard] 三張組合。 // L2_實作
 // 規則：discard 只能在 m/p/s（萬筒條），三張連號同花色。
@@ -174,8 +175,23 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
 
     sock.on("connected",    ()    => setConnMsg(""));
     sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? "重新連線中…" : "連線中斷"));
-    sock.on("state",        (v)   => { setView(v as unknown as MahjongStateView); setPicked(null); });
-    sock.on("settlement",   (r)   => onSettled(r));
+    sock.on("state",        (v)   => {
+      const next = v as unknown as MahjongStateView;
+      setView(prev => {
+        const wasMine = prev?.currentTurn === playerId && prev.phase === "playing";
+        const nowMine = next.currentTurn === playerId && next.phase === "playing";
+        const wasReact = prev?.phase === "pending_reactions" && prev.awaitingReactionsFrom.includes(playerId);
+        const nowReact = next.phase === "pending_reactions" && next.awaitingReactionsFrom.includes(playerId);
+        if ((!wasMine && nowMine) || (!wasReact && nowReact)) sfx.myTurn();
+        return next;
+      });
+      setPicked(null);
+    });
+    sock.on("settlement",   (r)   => {
+      const me = r.players.find(p => p.playerId === playerId);
+      if (me) (me.finalRank === 1 ? sfx.win : sfx.lose)();
+      onSettled(r);
+    });
     sock.on("system",       (m)   => setSysMsg(m));
     sock.on("error",        (m)   => setSysMsg(m));
 
@@ -184,7 +200,11 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
   }, [wsUrl, playerId, roomId, token, onSettled]);
 
   function send(action: PlayerAction) {
-    try { socketRef.current?.send(action); }
+    try {
+      socketRef.current?.send(action);
+      if (action.type === "mj_pass") sfx.pass();
+      else                            sfx.cardPlay();
+    }
     catch (err) { setSysMsg(err instanceof Error ? err.message : "送出失敗"); }
   }
 

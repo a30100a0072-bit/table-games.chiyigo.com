@@ -302,15 +302,24 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
 
 ### ⏳ 真正剩下的（小到中）
-1. **DO alarm 時序測試** — miniflare 已有，可加 `vi.useFakeTimers()` 測 setAlarm 觸發
-2. **WebSocket Hibernation eviction 測試** — 需要明確 evict DO 的 harness
-3. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink
-4. **WebSocket 訊框 schema 驗證**（`zod`）— 現用 ad-hoc TS narrowing
-5. **OAuth 真登入**（Google / Apple）— 取代 guest token
-6. **好友 / 私人房間 / 觀戰 / Replay** — 純需求類，尚未開規格
-7. **音效 / 觸覺** — 完全靜音
-8. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
-9. **`npm audit` 摘要的中度漏洞**（pool-workers 拉進的傳遞依賴）
+
+**需要外部資源 / 我介入決策**
+1. **`npm audit` 高/中度漏洞** — `undici`（high，HTTP smuggling / WS DoS）+ `esbuild`（mod，dev-server 資料外洩），都在 wrangler/miniflare 的 dev deps，要升 `wrangler@4.x`（breaking，要驗 deploy）
+2. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink；要 sentry DSN 或設 `tail_consumers`
+3. **OAuth 真登入**（Google / Apple）— 取代 guest token；要 IdP App credentials
+
+**規格 / 產品決策**
+4. **好友 / 私人房間 / 觀戰 / Replay** — 尚未開規格
+5. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
+
+### ✅ 本次補齊（2026-05-01 後續）
+- **音效接 Mahjong + Texas**（`MahjongGameScreen.tsx` / `TexasHoldemGameScreen.tsx`）：myTurn / cardPlay / pass / win / lose 全 cue；BigTwo 既有實作不變
+- **WS 訊框信封驗證**（`src/utils/wsFrame.ts` + `test/wsFrame.test.ts` 10 案）：信封層守 gameId / playerId / seq（非負整數）/ action.type 白名單；per-action 細節仍由各狀態機防禦。零新依賴（純 TS validator，不拉 zod）
+- **DO alarm 時序 + Hibernation eviction 測試**（`test/gameRoomDO.test.ts` 4 案）：startGame 排 turn alarm、alarm() FUDGE 視窗、JSON-roundtrip safe、eviction 後新實例從同一 storage 重建並對 `/init` 回 409
+- **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
+- **`WalletBadge` 補 `tournament: "賽事"` 標籤**
+
+測試矩陣現況：**Node 單元 11 檔 / 124 案 + Workers 整合 2 檔 / 6 案 = 130 全綠**。
 
 ---
 

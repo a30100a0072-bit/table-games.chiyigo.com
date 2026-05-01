@@ -4,6 +4,7 @@ import type {
 } from "../shared/types";
 import { GameSocket } from "../shared/GameSocket";
 import { useT } from "../i18n/useT";
+import { sfx } from "../shared/sound";
 
 const SUIT_SYMBOL: Record<string, string> = { spades: "♠", hearts: "♥", clubs: "♣", diamonds: "♦" };
 const SUIT_COLOR:  Record<string, string> = { spades: "text-gray-900", clubs: "text-gray-900", hearts: "text-red-600", diamonds: "text-red-600" };
@@ -45,11 +46,19 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
     sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? "重新連線中…" : "連線中斷"));
     sock.on("state",        (v)   => {
       const pv = v as unknown as PokerStateView;
-      setView(pv);
+      setView(prev => {
+        const wasMine = prev?.currentTurn === playerId;
+        if (!wasMine && pv.currentTurn === playerId) sfx.myTurn();
+        return pv;
+      });
       // default raise = currentBet + minRaise (clamped to stack)
       setRaise(Math.min(pv.self.stack + pv.self.betThisStreet, pv.currentBet + pv.minRaise));
     });
-    sock.on("settlement",   (r)   => onSettled(r));
+    sock.on("settlement",   (r)   => {
+      const me = r.players.find(p => p.playerId === playerId);
+      if (me) (me.finalRank === 1 ? sfx.win : sfx.lose)();
+      onSettled(r);
+    });
     sock.on("system",       (m)   => setSysMsg(m));
     sock.on("error",        (m)   => setSysMsg(m));
 
@@ -58,7 +67,12 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
   }, [wsUrl, playerId, roomId, token, onSettled]);
 
   function send(action: PlayerAction) {
-    try { socketRef.current?.send(action); }
+    try {
+      socketRef.current?.send(action);
+      if (action.type === "fold")        sfx.pass();
+      else if (action.type === "check")  sfx.cardSelect();
+      else                                sfx.cardPlay();
+    }
     catch (err) { setSysMsg(err instanceof Error ? err.message : "送出失敗"); }
   }
 

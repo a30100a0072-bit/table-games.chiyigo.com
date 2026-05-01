@@ -11,10 +11,11 @@ import type { IGameEngine } from "../game/GameEngineAdapter";
 import { getBigTwoBotAction, getMahjongBotAction, getTexasBotAction } from "../game/BotAI";
 import type {
   PlayerAction,
-  PlayerId, ActionFrame, GameType, GameStateView, MahjongStateView, PokerStateView,
+  PlayerId, GameType, GameStateView, MahjongStateView, PokerStateView,
   SettlementResult, SettlementQueueMessage,
 } from "../types/game";
 import { isGameType } from "../types/game";
+import { parseIncomingFrame } from "../utils/wsFrame";
 
 // ── Environment bindings ──────────────────────────────────────────────── L2_模組
 export interface Env {
@@ -221,21 +222,19 @@ export class GameRoomDO implements DurableObject {
     if (!att) { ws.close(1011, "missing attachment"); return; }
     const { playerId } = att;
 
-    let parsed: ActionFrame | { type: "sync" };
-    try {
-      parsed = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
-    } catch {
-      ws.send(JSON.stringify({ error: "invalid JSON" }));
+    const result = parseIncomingFrame(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
+    if (!result.ok) {
+      ws.send(JSON.stringify({ error: result.error }));
       return;
     }
 
-    if ((parsed as { type: string }).type === "sync") {
+    if (result.frame.kind === "sync") {
       if (this.engine)
         ws.send(JSON.stringify({ type: "state", payload: this.engine.getView(playerId) }));
       return;
     }
 
-    const frame = parsed as ActionFrame;
+    const frame = result.frame.frame;
 
     if (frame.seq <= (this.seqs[playerId] ?? -1)) {
       ws.send(JSON.stringify({ error: "stale or duplicate seq", seq: frame.seq }));
