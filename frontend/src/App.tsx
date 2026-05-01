@@ -24,6 +24,19 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: "login" });
   const [offline, setOffline] = useState(typeof navigator !== "undefined" && !navigator.onLine);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyRoomId(id: string) {
+    try { await navigator.clipboard.writeText(id); }
+    catch {
+      // Insecure context fallback (dev / file://). Doesn't block the UX.
+      const ta = document.createElement("textarea");
+      ta.value = id; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setCopied(true);
+  }
 
   useEffect(() => {
     const onOnline  = () => setOffline(false);
@@ -38,6 +51,13 @@ export default function App() {
       window.removeEventListener("beforeinstallprompt", onInstall);
     };
   }, []);
+
+  // Auto-clear the "copied" toast after a brief window.
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
 
   async function triggerInstall() {
     if (!installEvt) return;
@@ -59,6 +79,15 @@ export default function App() {
           className="fixed bottom-4 left-4 z-40 rounded-full bg-yellow-600 px-4 py-2 text-xs font-bold text-yellow-50 shadow-lg hover:bg-yellow-500"
         >
           {t("pwa.install")}
+        </button>
+      )}
+      {screen.name === "game" && (
+        <button
+          onClick={() => copyRoomId(screen.roomId)}
+          title={screen.roomId}
+          className="fixed bottom-4 right-4 z-40 max-w-[60vw] truncate rounded-full bg-green-800/90 px-3 py-1.5 text-[11px] font-bold text-yellow-200 shadow-lg ring-1 ring-yellow-500/40 hover:bg-green-700"
+        >
+          {copied ? `✅ ${t("game.copied")}` : `📋 ${t("game.roomId")}: ${screen.roomId.slice(0, 8)}…`}
         </button>
       )}
     </>

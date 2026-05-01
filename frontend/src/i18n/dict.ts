@@ -147,6 +147,10 @@ const ZH = {
   "spec.start":            "開始觀戰",
   "spec.invalidRoom":      "房號格式不正確",
   "spec.notStarted":       "對局尚未開始",
+
+  // game-screen overlay
+  "game.roomId":           "房號",
+  "game.copied":           "已複製",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -275,6 +279,9 @@ const EN: Partial<Record<DictKey, string>> = {
   "spec.start":             "Start watching",
   "spec.invalidRoom":       "Invalid room ID",
   "spec.notStarted":        "Game has not started yet",
+
+  "game.roomId":            "Room",
+  "game.copied":            "Copied",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {
