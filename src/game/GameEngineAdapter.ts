@@ -19,12 +19,23 @@ import type {
  *  with real player ids since user-supplied ids never start with `__`.   */
 export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
+/** Bumped whenever a state-machine algorithm changes in a way that
+ *  would make an existing snapshot+events sequence diverge on replay
+ *  (mahjong fan calc, texas side-pot rules, big two combo ordering).
+ *  Replays stamped with an older version still surface the final
+ *  settlement, but the client refuses to step through the action list.   */
+export const ENGINE_VERSION = 1;
+
 // ──────────────────────────────────────────────
 //  統一介面  (L3_架構)
 // ──────────────────────────────────────────────
 
 export interface ProcessOutcome {
   settlement: SettlementResult | null;
+  /** Set by `autoActionOnTimeout` so the DO can append the actual
+   *  action to the replay log. Undefined for explicit `processAction`
+   *  calls (the DO already knows the action it passed in).             // L3_架構 */
+  appliedAction?: PlayerAction;
 }
 
 /**
@@ -121,11 +132,11 @@ class BigTwoEngine implements IGameEngine {
     const canPass = view.lastPlay !== null && !snap.isFirstTurn;
     if (canPass) {
       const r = this.m.processAction(playerId, { type: "pass" });
-      return { settlement: r.settlement ?? null };
+      return { settlement: r.settlement ?? null, appliedAction: { type: "pass" } };
     }
     const action = getBigTwoBotAction(view, view.self.hand);
     const r = this.m.processAction(playerId, action);
-    return { settlement: r.settlement ?? null };
+    return { settlement: r.settlement ?? null, appliedAction: action };
   }
 }
 
@@ -193,12 +204,13 @@ class MahjongEngine implements IGameEngine {
     if (action.type === "discard" || action.type === "hu") {
       const r = this.m.process(playerId, action);
       if (!r.ok) throw new Error(r.error);
-      return { settlement: r.settlement ?? null };
+      return { settlement: r.settlement ?? null, appliedAction: action };
     }
     // 兜底：直接丟手牌第一張
-    const r = this.m.process(playerId, { type: "discard", tile: hand[0]! });
+    const fallback = { type: "discard" as const, tile: hand[0]! };
+    const r = this.m.process(playerId, fallback);
     if (!r.ok) throw new Error(r.error);
-    return { settlement: r.settlement ?? null };
+    return { settlement: r.settlement ?? null, appliedAction: fallback };
   }
 }
 
@@ -261,7 +273,7 @@ class TexasEngine implements IGameEngine {
   autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
     const r = this.m.process(playerId, { type: "fold" });
     if (!r.ok) throw new Error(r.error);
-    return { settlement: r.settlement ?? null };
+    return { settlement: r.settlement ?? null, appliedAction: { type: "fold" } };
   }
 }
 

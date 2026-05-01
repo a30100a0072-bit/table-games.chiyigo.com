@@ -6,7 +6,7 @@
 // 多遊戲版本：透過 IGameEngine 適配層支援 bigTwo / mahjong / texas。              // L2_模組
 // 機器人補位目前僅支援 bigTwo（其它遊戲 Lobby 不會塞 BOT_）。                     // L2_實作
 
-import { createEngine, restoreEngine } from "../game/GameEngineAdapter";
+import { createEngine, restoreEngine, ENGINE_VERSION } from "../game/GameEngineAdapter";
 import type { IGameEngine } from "../game/GameEngineAdapter";
 import { getBigTwoBotAction, getMahjongBotAction, getTexasBotAction } from "../game/BotAI";
 import type {
@@ -23,6 +23,7 @@ export interface Env {
   TOURNAMENT_DO:    DurableObjectNamespace;     // notify on settle when room is part of a tournament
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   MATCH_KV:         KVNamespace;       // cleared on cleanup so players can rejoin // L2_隔離
+  DB:               D1Database;        // replay_meta append at settle           // L3_架構
 }
 
 // ── Storage key registry ─────────────────────────────────────────────── L2_模組
@@ -32,7 +33,22 @@ const SK = {
   SEQS:    "seqs",
   DISC:    "disconnected",
   ALARMS:  "alarms",
+  REPLAY:  "replay",
 } as const;
+
+// ── Replay event log ─────────────────────────────────────────────────── L3_架構
+// Append-only record of state-mutating calls. `tick` covers mahjong's
+// reactionDeadline auto-resolve — a state change that isn't a player
+// action but affects the deterministic replay path.
+type ReplayEvent =
+  | { kind: "action"; seq: number; playerId: PlayerId; action: PlayerAction; ts: number }
+  | { kind: "tick";   ts: number };
+
+interface ReplayState {
+  startedAt:       number;
+  initialSnapshot: unknown;       // engine.snapshot() at startGame
+  events:          ReplayEvent[];
+}
 
 interface WsAttachment {
   playerId:    PlayerId;
@@ -78,6 +94,7 @@ export class GameRoomDO implements DurableObject {
   private seqs:         Record<PlayerId, number>  = {};
   private disconnected: Record<PlayerId, number>  = {};
   private alarms:       AlarmEntry[]              = [];
+  private replay:       ReplayState | null        = null;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -86,17 +103,19 @@ export class GameRoomDO implements DurableObject {
   }
 
   private async hydrate(): Promise<void> {
-    const [room, snap, seqs, disc, alarms] = await Promise.all([
+    const [room, snap, seqs, disc, alarms, replay] = await Promise.all([
       this.state.storage.get<RoomMeta>(SK.ROOM),
       this.state.storage.get<unknown>(SK.MACHINE),
       this.state.storage.get<Record<PlayerId, number>>(SK.SEQS),
       this.state.storage.get<Record<PlayerId, number>>(SK.DISC),
       this.state.storage.get<AlarmEntry[]>(SK.ALARMS),
+      this.state.storage.get<ReplayState>(SK.REPLAY),
     ]);
     this.room         = room   ?? null;
     this.seqs         = seqs   ?? {};
     this.disconnected = disc   ?? {};
     this.alarms       = alarms ?? [];
+    this.replay       = replay ?? null;
     if (snap && this.room) this.engine = restoreEngine(this.room.gameType, snap);
   }
 
@@ -223,9 +242,17 @@ export class GameRoomDO implements DurableObject {
       roundId:   this.room.roundId,
       playerIds: this.room.playerIds,
     });
+    // Capture the post-deal snapshot so a replay can restoreEngine()
+    // with identical state and reapply events deterministically.        // L3_架構
+    this.replay = {
+      startedAt:       Date.now(),
+      initialSnapshot: this.engine.snapshot(),
+      events:          [],
+    };
     await Promise.all([
       this.state.storage.put(SK.ROOM, this.room),
       this.persistMachine(),
+      this.state.storage.put(SK.REPLAY, this.replay),
     ]);
     this.broadcastViews();
     // Mahjong pending_reactions uses reactionDeadlineMs; others use turnDeadlineMs. // L2_鎖定
@@ -286,6 +313,7 @@ export class GameRoomDO implements DurableObject {
     await Promise.all([
       this.persistMachine(),
       this.state.storage.put(SK.SEQS, this.seqs),
+      this.recordEvent({ kind: "action", seq: frame.seq, playerId, action: frame.action, ts: Date.now() }),
     ]);
 
     this.broadcastViews();
@@ -366,6 +394,12 @@ export class GameRoomDO implements DurableObject {
     }
 
     await this.persistMachine();
+    if (outcome.appliedAction) {
+      await this.recordEvent({
+        kind: "action", seq: -1, playerId: offender,
+        action: outcome.appliedAction, ts: Date.now(),
+      });
+    }
     this.broadcastViews();
     if (outcome.settlement) {
       await this.handleSettlement(outcome.settlement);
@@ -429,6 +463,7 @@ export class GameRoomDO implements DurableObject {
     }
 
     await this.persistMachine();
+    await this.recordEvent({ kind: "action", seq: -1, playerId: botId, action, ts: Date.now() });
     this.broadcastViews();
 
     if (outcome.settlement) {
@@ -506,6 +541,7 @@ export class GameRoomDO implements DurableObject {
     if (this.room.gameType !== "mahjong") return;
     const outcome = this.engine.tickReactionDeadline();
     await this.persistMachine();
+    await this.recordEvent({ kind: "tick", ts: Date.now() });
     this.broadcastViews();
     if (outcome.settlement) {
       await this.handleSettlement(outcome.settlement);
@@ -523,6 +559,39 @@ export class GameRoomDO implements DurableObject {
       try { ws.send(frame); } catch {}
     }
     await this.env.SETTLEMENT_QUEUE.send({ type: "settlement", payload: result });
+
+    // Replay flush: one row per finished game. INSERT OR IGNORE so a
+    // forceSettle that runs twice (e.g. timeout + reconnect-expired race)
+    // doesn't double-write. Stamping engine_version lets the read side
+    // refuse to step through the events when the algorithm has shifted.
+    if (this.replay && this.room) {
+      try {
+        await this.env.DB
+          .prepare(
+            "INSERT OR IGNORE INTO replay_meta" +
+            " (game_id, game_type, engine_version, player_ids, initial_snapshot," +
+            "  events, started_at, finished_at, winner_id, reason)" +
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .bind(
+            this.room.gameId,
+            this.room.gameType,
+            ENGINE_VERSION,
+            JSON.stringify(this.room.playerIds),
+            JSON.stringify(this.replay.initialSnapshot),
+            JSON.stringify(this.replay.events),
+            this.replay.startedAt,
+            result.finishedAt,
+            result.winnerId,
+            result.reason,
+          )
+          .run();
+      } catch (err) {
+        console.error("[replay] flush failed:", err);
+        // Replay is non-critical to settlement; swallow so chip economy
+        // still proceeds via SETTLEMENT_QUEUE above.
+      }
+    }
 
     // Tournament hook: notify the orchestrator so it can advance the
     // bracket. Failure here doesn't block cleanup — the queued settlement
@@ -631,6 +700,15 @@ export class GameRoomDO implements DurableObject {
 
   private async persistMachine(): Promise<void> {
     if (this.engine) await this.state.storage.put(SK.MACHINE, this.engine.snapshot());
+  }
+
+  /** Append a replay event and persist the buffer. Tolerates missing
+   *  replay state (legacy rooms started before the replay system was
+   *  added still work — they just don't get a replay row at settle). */
+  private async recordEvent(ev: ReplayEvent): Promise<void> {
+    if (!this.replay) return;
+    this.replay.events.push(ev);
+    await this.state.storage.put(SK.REPLAY, this.replay);
   }
 
   private async cleanup(): Promise<void> {

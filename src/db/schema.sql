@@ -186,3 +186,24 @@ CREATE TABLE IF NOT EXISTS room_invites (
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_invites_invitee ON room_invites (invitee, status);
+
+-- ── replays ──────────────────────────────────────────────────────────────
+-- One row per finished game: initial engine snapshot + ordered event list.
+-- The replay player restores the engine from `initial_snapshot` then
+-- applies events one by one. `engine_version` is checked on read — a
+-- mismatch means the state-machine algorithm has shifted and replay
+-- would diverge, so the client falls back to "show settlement only".
+CREATE TABLE IF NOT EXISTS replay_meta (
+  game_id          TEXT    PRIMARY KEY,
+  game_type        TEXT    NOT NULL,
+  engine_version   INTEGER NOT NULL,
+  player_ids       TEXT    NOT NULL,        -- JSON array of seat order
+  initial_snapshot TEXT    NOT NULL,        -- JSON; restoreEngine input
+  events           TEXT    NOT NULL,        -- JSON array, see ReplayEvent in code
+  started_at       INTEGER NOT NULL,
+  finished_at      INTEGER NOT NULL,
+  winner_id        TEXT,
+  reason           TEXT                     -- SettlementReason (lastCardPlayed/timeout/disconnect)
+);
+
+CREATE INDEX IF NOT EXISTS idx_replay_meta_finished ON replay_meta (finished_at DESC);

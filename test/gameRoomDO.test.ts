@@ -75,9 +75,20 @@ class MockDoState {
   getWebSockets(): unknown[] { return []; }
 }
 
-function makeEnv(): { env: Env; queueSends: unknown[]; kvDeletes: string[] } {
+function makeEnv(): { env: Env; queueSends: unknown[]; kvDeletes: string[]; dbInserts: unknown[] } {
   const queueSends: unknown[] = [];
   const kvDeletes: string[]   = [];
+  const dbInserts: unknown[]  = [];
+  // Minimal D1 stub: every prepare/bind/run swallows args into dbInserts
+  // so a settle-time replay flush doesn't crash these tests.
+  const stmt = (sql: string) => ({
+    sql,
+    args: [] as unknown[],
+    bind(...args: unknown[]) { this.args = args; return this; },
+    async run() { dbInserts.push({ sql: this.sql, args: this.args }); return { success: true, meta: { changes: 1 } }; },
+    async first() { return null; },
+    async all() { return { results: [] }; },
+  });
   const env: Env = {
     GAME_ROOM:        {} as DurableObjectNamespace,
     TOURNAMENT_DO:    {} as DurableObjectNamespace,
@@ -85,8 +96,9 @@ function makeEnv(): { env: Env; queueSends: unknown[]; kvDeletes: string[] } {
     MATCH_KV:         {
       delete: async (k: string) => { kvDeletes.push(k); },
     } as unknown as KVNamespace,
+    DB: { prepare: stmt } as unknown as D1Database,
   };
-  return { env, queueSends, kvDeletes };
+  return { env, queueSends, kvDeletes, dbInserts };
 }
 
 function initBody(overrides: Partial<{
@@ -209,5 +221,26 @@ describe("GameRoomDO hibernation rehydrate", () => {
     for (const v of store.storage.store.values()) {
       expect(() => JSON.parse(JSON.stringify(v))).not.toThrow();
     }
+  });
+});
+
+describe("GameRoomDO replay recording", () => {
+  it("startGame initialises the replay buffer with an engine snapshot", async () => {
+    const room = new GameRoomDO(store as unknown as DurableObjectState, env);
+    await room.fetch(new Request("https://room.local/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: initBody(),
+    }));
+
+    const replay = store.storage.store.get("replay") as {
+      startedAt: number; initialSnapshot: unknown; events: unknown[];
+    } | undefined;
+    expect(replay).toBeTruthy();
+    expect(replay!.initialSnapshot).toBeTruthy();
+    expect(Array.isArray(replay!.events)).toBe(true);
+    // Bot moves are scheduled async via alarms, so events array is empty
+    // immediately after init — the test for event accumulation lives in
+    // the engine adapter / replay handler suites.
   });
 });

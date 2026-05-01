@@ -195,6 +195,14 @@ const ZH = {
   "inv.fromInviter":         "{p} 邀請你",
   "inv.expiresAt":           "{ts} 之前",
   "inv.enter":               "進場",
+
+  // replays
+  "rep.title":               "回放",
+  "rep.empty":               "還沒有完成的對局",
+  "rep.view":                "查看",
+  "rep.versionOld":          "（舊版本，僅顯示結果）",
+  "rep.versionOldDetail":    "對局以引擎 v{saved} 紀錄；目前是 v{current}。演算法已更新，無法逐步重播；只顯示結算。",
+  "rep.noEvents":            "（無事件）",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -367,6 +375,13 @@ const EN: Partial<Record<DictKey, string>> = {
   "inv.fromInviter":          "{p} invited you",
   "inv.expiresAt":            "until {ts}",
   "inv.enter":                "Enter",
+
+  "rep.title":                "Replays",
+  "rep.empty":                "No finished games yet",
+  "rep.view":                 "View",
+  "rep.versionOld":           "(older version — result only)",
+  "rep.versionOldDetail":     "Recorded with engine v{saved}; current is v{current}. The algorithm has changed, so step-by-step replay is disabled — only the final result is shown.",
+  "rep.noEvents":             "(no events)",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

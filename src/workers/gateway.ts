@@ -12,6 +12,7 @@ import {
 } from "../api/friends";
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
+import { listMyReplays, getReplay } from "../api/replays";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -127,6 +128,14 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   const invDecline = url.pathname.match(/^\/api\/rooms\/invites\/(\d+)\/decline$/);
   if (request.method === "POST" && invDecline)
     return cors(await declineInvite(request, env, invDecline[1]!));
+
+  // ── Replays ─────────────────────────────────────────────────────────
+  if (request.method === "GET" && url.pathname === "/api/me/replays")
+    return cors(await listMyReplays(request, env));
+
+  const repGet = url.pathname.match(/^\/api\/replays\/([^/]+)$/);
+  if (request.method === "GET" && repGet)
+    return cors(await getReplay(request, env, decodeURIComponent(repGet[1]!)));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)

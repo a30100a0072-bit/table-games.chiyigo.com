@@ -314,6 +314,52 @@ export async function declineInviteApi(token: string, id: number): Promise<void>
   if (!res.ok) throw new Error(`decline failed: ${res.status}`);
 }
 
+// ── Replays ─────────────────────────────────────────────────────────
+export interface ReplaySummary {
+  gameId:        string;
+  gameType:      GameType;
+  engineVersion: number;
+  playerIds:     string[];
+  startedAt:     number;
+  finishedAt:    number;
+  winnerId:      string | null;
+  reason:        string | null;
+  replayable:    boolean;
+}
+
+export interface ReplayEvent {
+  kind:     "action" | "tick";
+  seq?:     number;
+  playerId?: string;
+  action?:  unknown;
+  ts:       number;
+}
+
+export interface ReplayDetail extends ReplaySummary {
+  currentVersion:  number;
+  initialSnapshot: unknown | null;
+  events:          ReplayEvent[];
+}
+
+export async function listMyReplaysApi(token: string)
+  : Promise<{ engineVersion: number; replays: ReplaySummary[] }> {
+  const res = await fetch(`${BASE}/api/me/replays`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`replays list failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getReplayApi(token: string, gameId: string): Promise<ReplayDetail> {
+  const res = await fetch(`${BASE}/api/replays/${encodeURIComponent(gameId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) throw new Error("replay not found");
+  if (res.status === 403) throw new Error("not your game");
+  if (!res.ok) throw new Error(`replay get failed: ${res.status}`);
+  return res.json();
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",
