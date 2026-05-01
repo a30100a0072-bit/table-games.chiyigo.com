@@ -378,6 +378,25 @@ export async function listMyReplaysApi(token: string)
   return res.json();
 }
 
+export async function shareReplayApi(token: string, gameId: string, ttlMs?: number)
+  : Promise<{ token: string; expiresAt: number }> {
+  const res = await fetch(`${BASE}/api/replays/${encodeURIComponent(gameId)}/share`, {
+    method:  "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body:    JSON.stringify(ttlMs !== undefined ? { ttlMs } : {}),
+  });
+  if (!res.ok) throw new Error(`replay share failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getSharedReplayApi(token: string): Promise<ReplayDetail & { sharedBy: string }> {
+  const res = await fetch(`${BASE}/api/replays/by-token/${encodeURIComponent(token)}`);
+  if (res.status === 404) throw new Error("share link not found");
+  if (res.status === 410) throw new Error("share link expired");
+  if (!res.ok) throw new Error(`shared replay get failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getReplayApi(token: string, gameId: string): Promise<ReplayDetail> {
   const res = await fetch(`${BASE}/api/replays/${encodeURIComponent(gameId)}`, {
     headers: { Authorization: `Bearer ${token}` },

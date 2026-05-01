@@ -311,6 +311,9 @@ gateway.ts ──verifyJWT──► GameRoomDO
 3. ~~**搶槓 / 七搶一 / 八仙過海**~~ — 完成（2026-05-01 第五批，bump `ENGINE_VERSION = 3`）
 4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先把麻將改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）才有意義
 
+### ✅ 後續補齊（2026-05-02 第六批 — 互動延伸）
+- **Replay 分享 token**（`src/db/schema.sql` 加 `replay_shares` 表 + 兩索引 / `src/api/replays.ts` `shareReplay` + `resolveSharedReplay` / `src/workers/gateway.ts` 路由 `POST /api/replays/:gameId/share` + `GET /api/replays/by-token/:token` / `frontend/src/api/http.ts` `shareReplayApi` + `getSharedReplayApi` / `frontend/src/components/ReplaysModal.tsx` 加 🔗 按鈕產生 + 複製 URL，`token` 改為 optional 並加 `sharedReplayToken` prop / `frontend/src/App.tsx` 偵測 `?replay=<token>` deeplink、未登入也能看 / `test/replays.test.ts` +6 案）：仿 private-room token 模式；座位玩家簽發 capability token，TTL 預設 7 天上限 30 天下限 1 小時；公開 GET 走 sharedBy 標籤；舊 engine_version 仍保留 settlement-only fallback；deeplink 消費後 `history.replaceState` 移除 query 防 reload 重觸發
+
 ### ✅ 後續補齊（2026-05-01 第五批 — 麻將進階台）
 - **搶槓**（`MahjongStateMachine.ts` 加 `kongUpgradeContext` 狀態 + 改 `onKong` `source==="added"` 改走反應視窗 / `commitHighestPriority` 加「視窗無人胡 → 完成加槓」分支 / `onPong` `onChow` 在搶槓視窗中拒絕 / `calcFan` 加 `chiangKong` flag +1 台 / `test/MahjongStateMachine.test.ts` +5 案）：加槓不再立即完成，而是用既有 `pending_reactions` 機制讓他家可食胡 lastDiscard = 加槓的牌；視窗結束無人胡 → 真正改 `pong → kong_exposed` + 嶺上抽。
 - **八仙過海 / 七搶一**（`MahjongStateMachine.ts` 加 `checkFlowerTerminal()` + `settleFlowerWin()` 在 `advanceToNextDraw` 與 `onKong` 嶺上抽後呼叫 / 8 台 + 1 底特殊結算 / `test/MahjongStateMachine.test.ts` +2 案）：在每次 `drawNonFlower` 把花牌轉到玩家後檢查全桌花牌總數；等於 8 + drawer 持 8 → 八仙過海（自摸路徑，三家攤付）；等於 8 + 他人持 7 → 七搶一（食胡路徑，drawer 一家賠）。
@@ -348,7 +351,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 20 檔 / 215 案 + Workers 整合 2 檔 / 6 案 = 221 全綠**。`npm audit` 0 漏洞。
+測試矩陣現況：**Node 單元 20 檔 / 221 案 + Workers 整合 2 檔 / 6 案 = 227 全綠**。`npm audit` 0 漏洞。
 
 ---
 

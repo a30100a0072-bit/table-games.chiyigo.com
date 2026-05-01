@@ -226,3 +226,22 @@ CREATE TABLE IF NOT EXISTS dms (
 CREATE INDEX IF NOT EXISTS idx_dms_inbox    ON dms (recipient, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dms_outbox   ON dms (sender,    created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dms_purgable ON dms (created_at);
+
+-- ── replay_shares ────────────────────────────────────────────────────────
+-- Capability tokens that grant public (unauthenticated) read access to one
+-- replay row. Only a seated player can mint one. Tokens have a TTL (default
+-- 7 days, max 30) so a leaked URL doesn't grant forever access.
+-- The replay payload returned via a share token is rendered from the
+-- minter's seat perspective so opponents' hands stay hidden by the same
+-- view-isolation that protects in-game state.
+CREATE TABLE IF NOT EXISTS replay_shares (
+  token       TEXT    PRIMARY KEY,
+  game_id     TEXT    NOT NULL,
+  owner_id    TEXT    NOT NULL,             -- the seated player who minted the link
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  FOREIGN KEY (game_id) REFERENCES replay_meta (game_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_replay_shares_game    ON replay_shares (game_id);
+CREATE INDEX IF NOT EXISTS idx_replay_shares_expires ON replay_shares (expires_at);

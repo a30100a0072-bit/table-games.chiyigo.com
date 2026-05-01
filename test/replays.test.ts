@@ -3,7 +3,7 @@
 // / forbidden-when-not-a-player paths.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { listMyReplays, getReplay } from "../src/api/replays";
+import { listMyReplays, getReplay, shareReplay, resolveSharedReplay } from "../src/api/replays";
 import type { ReplaysEnv } from "../src/api/replays";
 import { ENGINE_VERSION } from "../src/game/GameEngineAdapter";
 import { signJWT } from "../src/utils/auth";
@@ -15,8 +15,11 @@ interface MetaRow {
   winner_id: string | null; reason: string | null;
 }
 
+interface ShareRow { token: string; game_id: string; owner_id: string; created_at: number; expires_at: number; }
+
 class MockDb {
   rows: MetaRow[] = [];
+  shares: ShareRow[] = [];
   prepare(sql: string) { return new MockStmt(this, sql); }
 }
 
@@ -30,7 +33,25 @@ class MockStmt {
       const [id] = this.args as [string];
       return (this.db.rows.find(r => r.game_id === id) ?? null) as T | null;
     }
+    if (this.sql.includes("SELECT player_ids FROM replay_meta")) {
+      const [id] = this.args as [string];
+      const row = this.db.rows.find(r => r.game_id === id);
+      return (row ? { player_ids: row.player_ids } : null) as T | null;
+    }
+    if (this.sql.includes("FROM replay_shares WHERE token = ?")) {
+      const [t] = this.args as [string];
+      return (this.db.shares.find(s => s.token === t) ?? null) as T | null;
+    }
     return null;
+  }
+
+  async run() {
+    if (this.sql.startsWith("INSERT INTO replay_shares")) {
+      const [token, gameId, ownerId, createdAt, expiresAt] = this.args as [string, string, string, number, number];
+      this.db.shares.push({ token, game_id: gameId, owner_id: ownerId, created_at: createdAt, expires_at: expiresAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    return { success: true, meta: { changes: 0 } };
   }
 
   async all<T = unknown>(): Promise<{ results: T[] }> {
@@ -167,6 +188,76 @@ describe("replays API", () => {
   it("get returns 404 for unknown gameId", async () => {
     const tok = await tokFor("alice");
     const r = await getReplay(authedReq("GET", "/", tok), env, "ghost");
+    expect(r.status).toBe(404);
+  });
+
+  it("share mints a token for a seated player and persists it", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    const tok = await tokFor("alice");
+    const req = new Request("https://gw.local/", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const r = await shareReplay(req, env, "g1");
+    expect(r.status).toBe(201);
+    const body = await r.json() as { token: string; expiresAt: number };
+    expect(body.token).toBeTruthy();
+    expect(db.shares).toHaveLength(1);
+    expect(db.shares[0]!.game_id).toBe("g1");
+    expect(db.shares[0]!.owner_id).toBe("alice");
+  });
+
+  it("share refuses non-seated callers (403)", async () => {
+    db.rows.push(mkRow({ game_id: "g1", player_ids: JSON.stringify(["bob", "carol"]) }));
+    const tok = await tokFor("alice");
+    const req = new Request("https://gw.local/", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const r = await shareReplay(req, env, "g1");
+    expect(r.status).toBe(403);
+  });
+
+  it("share rejects bad ttlMs (out-of-range)", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    const tok = await tokFor("alice");
+    const req = new Request("https://gw.local/", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ttlMs: 1 }),               // < 1h floor
+    });
+    const r = await shareReplay(req, env, "g1");
+    expect(r.status).toBe(400);
+  });
+
+  it("resolveSharedReplay returns the replay payload + sharedBy for a valid token", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+    });
+    const r = await resolveSharedReplay(env, "abc");
+    expect(r.status).toBe(200);
+    const body = await r.json() as { gameId: string; sharedBy: string; replayable: boolean };
+    expect(body.gameId).toBe("g1");
+    expect(body.sharedBy).toBe("alice");
+    expect(body.replayable).toBe(true);
+  });
+
+  it("resolveSharedReplay returns 410 for an expired token", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now() - 1000, expires_at: Date.now() - 1,
+    });
+    const r = await resolveSharedReplay(env, "abc");
+    expect(r.status).toBe(410);
+  });
+
+  it("resolveSharedReplay returns 404 for an unknown token", async () => {
+    const r = await resolveSharedReplay(env, "ghost");
     expect(r.status).toBe(404);
   });
 });

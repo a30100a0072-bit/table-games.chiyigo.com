@@ -115,3 +115,93 @@ export async function getReplay(request: Request, env: ReplaysEnv, gameId: strin
     reason:          row.reason,
   });
 }
+
+// ── POST /api/replays/:gameId/share { ttlMs? } ───────────────────────────
+// Mint a share token for this replay. Caller must have been a seated
+// player. Token defaults to 7-day TTL, capped at 30.                     // L2_實作
+const SHARE_TTL_DEFAULT_MS = 7  * 86_400_000;
+const SHARE_TTL_MIN_MS     = 60 * 60_000;
+const SHARE_TTL_MAX_MS     = 30 * 86_400_000;
+
+export async function shareReplay(request: Request, env: ReplaysEnv, gameId: string): Promise<Response> {
+  const me = await authPlayer(request, env);
+  if (me instanceof Response) return me;
+
+  let ttlMs = SHARE_TTL_DEFAULT_MS;
+  try {
+    const body = await request.json<{ ttlMs?: number }>();
+    if (typeof body.ttlMs === "number" && Number.isFinite(body.ttlMs)) ttlMs = body.ttlMs;
+  } catch { /* default */ }
+  if (ttlMs < SHARE_TTL_MIN_MS || ttlMs > SHARE_TTL_MAX_MS)
+    return Response.json({ error: "ttlMs out of range" }, { status: 400 });
+
+  const seatRow = await env.DB
+    .prepare("SELECT player_ids FROM replay_meta WHERE game_id = ?")
+    .bind(gameId)
+    .first<{ player_ids: string }>();
+  if (!seatRow) return Response.json({ error: "not found" }, { status: 404 });
+  const playerIds = JSON.parse(seatRow.player_ids) as string[];
+  if (!playerIds.includes(me))
+    return Response.json({ error: "forbidden" }, { status: 403 });
+
+  // 16 random bytes URL-safe base64. The token IS the capability — anyone
+  // with it can read the replay until it expires.                         // L2_隔離
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  const token = btoa(String.fromCharCode(...buf))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  const now = Date.now();
+  await env.DB
+    .prepare(
+      "INSERT INTO replay_shares (token, game_id, owner_id, created_at, expires_at)" +
+      " VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(token, gameId, me, now, now + ttlMs)
+    .run();
+
+  return Response.json({ token, expiresAt: now + ttlMs }, { status: 201 });
+}
+
+// ── GET /api/replays/by-token/:token ────────────────────────────────────
+// Public read of a shared replay. No auth — the token is the capability.
+// 410 = expired, 404 = unknown.                                          // L2_實作
+export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promise<Response> {
+  const share = await env.DB
+    .prepare("SELECT game_id, owner_id, expires_at FROM replay_shares WHERE token = ?")
+    .bind(token)
+    .first<{ game_id: string; owner_id: string; expires_at: number }>();
+  if (!share) return Response.json({ error: "unknown token" }, { status: 404 });
+  if (share.expires_at <= Date.now())
+    return Response.json({ error: "token expired" }, { status: 410 });
+
+  const row = await env.DB
+    .prepare(
+      "SELECT game_id, game_type, engine_version, player_ids, initial_snapshot," +
+      "       events, started_at, finished_at, winner_id, reason" +
+      " FROM replay_meta WHERE game_id = ?",
+    )
+    .bind(share.game_id)
+    .first<ReplayMetaRow>();
+  if (!row) return Response.json({ error: "replay vanished" }, { status: 404 });
+
+  const replayable      = row.engine_version === ENGINE_VERSION;
+  const events          = replayable ? JSON.parse(row.events) : [];
+  const initialSnapshot = replayable ? JSON.parse(row.initial_snapshot) : null;
+
+  return Response.json({
+    gameId:          row.game_id,
+    gameType:        row.game_type,
+    engineVersion:   row.engine_version,
+    currentVersion:  ENGINE_VERSION,
+    replayable,
+    playerIds:       JSON.parse(row.player_ids) as string[],
+    initialSnapshot,
+    events,
+    startedAt:       row.started_at,
+    finishedAt:      row.finished_at,
+    winnerId:        row.winner_id,
+    reason:          row.reason,
+    sharedBy:        share.owner_id,
+  });
+}

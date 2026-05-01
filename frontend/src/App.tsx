@@ -5,6 +5,7 @@ import GameSelectScreen from "./components/GameSelectScreen";
 import LobbyScreen      from "./components/LobbyScreen";
 import GameScreen       from "./components/GameScreen";
 import ResultScreen     from "./components/ResultScreen";
+import ReplaysModal     from "./components/ReplaysModal";
 import { listMyTournamentsApi } from "./api/http";
 import type { MyTournamentRow } from "./api/http";
 import { useT } from "./i18n/useT";
@@ -36,6 +37,13 @@ export default function App() {
     if (typeof window === "undefined") return null;
     const u = new URL(window.location.href);
     return u.searchParams.get("join");
+  });
+  // ?replay=<token> deeplink — opens the ReplaysModal pre-pointed at the
+  // shared replay. Public access (no JWT needed for the underlying GET).
+  const [pendingReplayToken, setPendingReplayToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const u = new URL(window.location.href);
+    return u.searchParams.get("replay");
   });
 
   async function copyRoomId(id: string) {
@@ -118,6 +126,22 @@ export default function App() {
         >
           {t("pwa.install")}
         </button>
+      )}
+      {pendingReplayToken && (
+        <ReplaysModal
+          sharedReplayToken={pendingReplayToken}
+          onClose={() => {
+            // Strip the deeplink param so a refresh doesn't re-pop the modal.
+            if (typeof window !== "undefined") {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has("replay")) {
+                url.searchParams.delete("replay");
+                window.history.replaceState(null, "", url.toString());
+              }
+            }
+            setPendingReplayToken(null);
+          }}
+        />
       )}
       {screen.name === "game" && (
         <button

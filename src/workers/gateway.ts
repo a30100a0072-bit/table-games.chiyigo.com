@@ -13,7 +13,7 @@ import {
 } from "../api/friends";
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
-import { listMyReplays, getReplay } from "../api/replays";
+import { listMyReplays, getReplay, shareReplay, resolveSharedReplay } from "../api/replays";
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
 import { deleteAccount, exportAccount } from "../api/account";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
@@ -157,6 +157,14 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   // ── Replays ─────────────────────────────────────────────────────────
   if (request.method === "GET" && url.pathname === "/api/me/replays")
     return cors(await listMyReplays(request, env));
+
+  const repByToken = url.pathname.match(/^\/api\/replays\/by-token\/([^/]+)$/);
+  if (request.method === "GET" && repByToken)
+    return cors(await resolveSharedReplay(env, decodeURIComponent(repByToken[1]!)));
+
+  const repShare = url.pathname.match(/^\/api\/replays\/([^/]+)\/share$/);
+  if (request.method === "POST" && repShare)
+    return cors(await shareReplay(request, env, decodeURIComponent(repShare[1]!)));
 
   const repGet = url.pathname.match(/^\/api\/replays\/([^/]+)$/);
   if (request.method === "GET" && repGet)

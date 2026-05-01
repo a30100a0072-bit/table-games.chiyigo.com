@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { listMyReplaysApi, getReplayApi } from "../api/http";
+import { listMyReplaysApi, getReplayApi, shareReplayApi, getSharedReplayApi } from "../api/http";
 import type { ReplayDetail, ReplaySummary, ReplayEvent } from "../api/http";
 import type { GameType } from "../shared/types";
 import { useT } from "../i18n/useT";
 
 interface Props {
-  token:   string;
+  /** Required for the owner-side flow (list + per-game open + share). */
+  token?:   string;
+  /** When set, skip the list and load this shared-replay token directly.
+   *  No JWT needed — the underlying GET is public. */
+  sharedReplayToken?: string;
   onClose: () => void;
 }
 
@@ -172,10 +176,11 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
 
 // ─── Main modal ──────────────────────────────────────────────────────────
 
-export default function ReplaysModal({ token, onClose }: Props) {
+export default function ReplaysModal({ token, sharedReplayToken, onClose }: Props) {
   const { t } = useT();
+  const isShared = !!sharedReplayToken;
   const [list,    setList]    = useState<ReplaySummary[] | null>(null);
-  const [detail,  setDetail]  = useState<ReplayDetail | null>(null);
+  const [detail,  setDetail]  = useState<(ReplayDetail & { sharedBy?: string }) | null>(null);
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState<string | null>(null);
 
@@ -186,10 +191,17 @@ export default function ReplaysModal({ token, onClose }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (isShared) {
+      getSharedReplayApi(sharedReplayToken!)
+        .then(d => { setDetail(d); setStep(0); setPlaying(false); setSpeed(1); })
+        .catch(e => setErr(e instanceof Error ? e.message : "failed"));
+      return;
+    }
+    if (!token) return;
     listMyReplaysApi(token)
       .then(d => setList(d.replays))
       .catch(e => setErr(e instanceof Error ? e.message : "failed"));
-  }, [token]);
+  }, [token, sharedReplayToken, isShared]);
 
   // Auto-advance while playing. Stops at the end (no infinite re-render).
   useEffect(() => {
@@ -201,6 +213,7 @@ export default function ReplaysModal({ token, onClose }: Props) {
   }, [playing, step, speed, detail]);
 
   async function open(gameId: string) {
+    if (!token) return;
     setBusy(true); setErr(null);
     try {
       const d = await getReplayApi(token, gameId);
@@ -224,11 +237,16 @@ export default function ReplaysModal({ token, onClose }: Props) {
             🎬 {detail ? `${ICON[detail.gameType]} ${t(LABEL_KEY[detail.gameType])}` : t("rep.title")}
           </h2>
           <div className="flex gap-1">
-            {detail && (
+            {detail && !isShared && (
               <button
                 onClick={backToList}
                 className="rounded-full bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700"
               >{t("common.back")}</button>
+            )}
+            {isShared && detail && (
+              <span className="self-center text-[10px] text-green-300">
+                🔗 由 {detail.sharedBy} 分享
+              </span>
             )}
             <button
               onClick={onClose}
@@ -263,11 +281,34 @@ export default function ReplaysModal({ token, onClose }: Props) {
                           <span className="text-[10px] text-amber-400">{t("rep.versionOld")}</span>
                         )}
                       </div>
-                      <button
-                        onClick={() => open(r.gameId)}
-                        disabled={busy}
-                        className="rounded bg-purple-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-purple-500 disabled:opacity-50"
-                      >{t("rep.view")}</button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={async () => {
+                            if (!token) return;             // share button only renders in owner mode
+                            try {
+                              const r2 = await shareReplayApi(token, r.gameId);
+                              const url = `${window.location.origin}${window.location.pathname}?replay=${encodeURIComponent(r2.token)}`;
+                              try { await navigator.clipboard.writeText(url); }
+                              catch {
+                                const ta = document.createElement("textarea");
+                                ta.value = url; document.body.appendChild(ta);
+                                ta.select(); document.execCommand("copy"); ta.remove();
+                              }
+                              setErr("分享連結已複製：" + url.slice(0, 60) + "…");
+                            } catch (e) {
+                              setErr(e instanceof Error ? e.message : "分享失敗");
+                            }
+                          }}
+                          disabled={busy}
+                          className="rounded bg-yellow-600 px-2 py-1 text-[10px] font-bold text-yellow-50 hover:bg-yellow-500 disabled:opacity-50"
+                          title="分享"
+                        >🔗</button>
+                        <button
+                          onClick={() => open(r.gameId)}
+                          disabled={busy}
+                          className="rounded bg-purple-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-purple-500 disabled:opacity-50"
+                        >{t("rep.view")}</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
