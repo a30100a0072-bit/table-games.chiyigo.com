@@ -10,11 +10,12 @@ const buckets = new Map<string, Bucket>();
 
 export interface RateSpec { capacity: number; perSec: number; }
 
-export const RATE: Record<"token" | "match" | "wallet" | "bailout", RateSpec> = {
+export const RATE: Record<"token" | "match" | "wallet" | "bailout" | "friend", RateSpec> = {
   token:   { capacity: 10, perSec: 10 / 60 },   // 10/min  per IP
   match:   { capacity: 30, perSec: 30 / 60 },   // 30/min  per playerId
   wallet:  { capacity: 60, perSec: 60 / 60 },   //  1/sec  per playerId
   bailout: { capacity:  3, perSec:  3 / 60 },   //  3/min  per playerId (24h cooldown still applies)
+  friend:  { capacity: 20, perSec: 20 / 60 },   // 20/min  per playerId — friend req/accept/etc.
 };
 
 export function takeToken(key: string, kind: keyof typeof RATE): boolean {

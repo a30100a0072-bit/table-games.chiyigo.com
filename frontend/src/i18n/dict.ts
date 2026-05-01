@@ -151,6 +151,22 @@ const ZH = {
   // game-screen overlay
   "game.roomId":           "房號",
   "game.copied":           "已複製",
+
+  // friends
+  "friends.title":           "好友",
+  "friends.add":             "加好友",
+  "friends.addPlaceholder":  "對方的玩家 ID",
+  "friends.tab.accepted":    "已加",
+  "friends.tab.incoming":    "邀請",
+  "friends.tab.outgoing":    "等待",
+  "friends.accept":          "接受",
+  "friends.decline":         "拒絕",
+  "friends.unfriend":        "解除",
+  "friends.cancel":          "取消",
+  "friends.loading":         "載入中…",
+  "friends.empty.accepted":  "還沒加任何好友",
+  "friends.empty.incoming":  "沒有待回覆的邀請",
+  "friends.empty.outgoing":  "沒有送出的邀請",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -282,6 +298,21 @@ const EN: Partial<Record<DictKey, string>> = {
 
   "game.roomId":            "Room",
   "game.copied":            "Copied",
+
+  "friends.title":            "Friends",
+  "friends.add":              "Add",
+  "friends.addPlaceholder":   "Their player ID",
+  "friends.tab.accepted":     "Friends",
+  "friends.tab.incoming":     "Requests",
+  "friends.tab.outgoing":     "Pending",
+  "friends.accept":           "Accept",
+  "friends.decline":          "Decline",
+  "friends.unfriend":         "Remove",
+  "friends.cancel":           "Cancel",
+  "friends.loading":          "Loading…",
+  "friends.empty.accepted":   "No friends yet",
+  "friends.empty.incoming":   "No pending requests",
+  "friends.empty.outgoing":   "No outgoing requests",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

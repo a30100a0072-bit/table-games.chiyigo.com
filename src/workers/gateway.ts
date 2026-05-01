@@ -7,6 +7,9 @@ import { handleMatch, LobbyEnv }        from "../api/lobby";
 import {
   createTournament, joinTournament, listTournaments, getTournament,
 } from "../api/tournaments";
+import {
+  requestFriend, acceptFriend, declineFriend, unfriend, listFriends,
+} from "../api/friends";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -84,6 +87,25 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   const tGet = url.pathname.match(/^\/api\/tournaments\/([^/]+)$/);
   if (request.method === "GET" && tGet)
     return cors(await getTournament(request, env, tGet[1]!));
+
+  // ── Friends ─────────────────────────────────────────────────────────
+  if (request.method === "GET"  && url.pathname === "/api/friends")
+    return cors(await listFriends(request, env));
+
+  if (request.method === "POST" && url.pathname === "/api/friends/request")
+    return cors(await requestFriend(request, env));
+
+  const fAccept = url.pathname.match(/^\/api\/friends\/([^/]+)\/accept$/);
+  if (request.method === "POST" && fAccept)
+    return cors(await acceptFriend(request, env, decodeURIComponent(fAccept[1]!)));
+
+  const fDecline = url.pathname.match(/^\/api\/friends\/([^/]+)\/decline$/);
+  if (request.method === "POST" && fDecline)
+    return cors(await declineFriend(request, env, decodeURIComponent(fDecline[1]!)));
+
+  const fOther = url.pathname.match(/^\/api\/friends\/([^/]+)$/);
+  if (request.method === "DELETE" && fOther)
+    return cors(await unfriend(request, env, decodeURIComponent(fOther[1]!)));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)

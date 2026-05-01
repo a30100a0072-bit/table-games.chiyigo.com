@@ -4,6 +4,7 @@ import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
 import StatsModal  from "./StatsModal";
 import TournamentModal from "./TournamentModal";
+import FriendsModal from "./FriendsModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
 import { useT } from "../i18n/useT";
@@ -45,6 +46,7 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
   const { t } = useT();
   const [stats,    setStats]    = useState(false);
   const [tour,     setTour]     = useState(false);
+  const [friends,  setFriends]  = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
@@ -63,6 +65,13 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
         >
           🏆
         </button>
+        <button
+          onClick={() => setFriends(true)}
+          title={t("friends.title")}
+          className="rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+        >
+          👥
+        </button>
         {onSpectate && (
           <button
             onClick={() => setSpecOpen(true)}
@@ -79,6 +88,7 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
         <WalletBadge token={token} />
       </div>
       {stats && <StatsModal playerId={playerId} token={token} onClose={() => setStats(false)} />}
+      {friends && <FriendsModal token={token} onClose={() => setFriends(false)} />}
       {specOpen && onSpectate && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-green-900 p-5 shadow-2xl">

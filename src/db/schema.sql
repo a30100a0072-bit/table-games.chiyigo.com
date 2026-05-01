@@ -127,3 +127,23 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 
 CREATE INDEX IF NOT EXISTS idx_admin_audit_player ON admin_audit (player_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit (created_at DESC);
+
+-- ── friendships ──────────────────────────────────────────────────────────
+-- Bidirectional consent. (a_id, b_id) is canonical with a_id < b_id so the
+-- same relationship has exactly one row regardless of who initiated.
+-- `requester` records who sent the request (one of a_id / b_id) so we can
+-- distinguish incoming vs outgoing pending without a second row.
+CREATE TABLE IF NOT EXISTS friendships (
+  a_id          TEXT    NOT NULL,
+  b_id          TEXT    NOT NULL,
+  requester     TEXT    NOT NULL,           -- a_id | b_id, set on request
+  status        TEXT    NOT NULL,           -- pending | accepted
+  created_at    INTEGER NOT NULL,
+  responded_at  INTEGER,                    -- set when status leaves pending
+  PRIMARY KEY (a_id, b_id),
+  CHECK (a_id < b_id),
+  CHECK (status IN ('pending', 'accepted')),
+  CHECK (requester = a_id OR requester = b_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships (b_id);

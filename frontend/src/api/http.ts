@@ -192,6 +192,55 @@ export async function joinTournamentApi(token: string, id: string): Promise<void
   if (!res.ok) throw new Error(`join failed: ${res.status}`);
 }
 
+// ── Friends ─────────────────────────────────────────────────────────
+export interface FriendsResponse {
+  accepted: { playerId: string; since: number }[];
+  incoming: { playerId: string; createdAt: number }[];
+  outgoing: { playerId: string; createdAt: number }[];
+}
+
+export async function listFriendsApi(token: string): Promise<FriendsResponse> {
+  const res = await fetch(`${BASE}/api/friends`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`friends list failed: ${res.status}`);
+  return res.json();
+}
+
+export async function requestFriendApi(token: string, targetPlayerId: string)
+  : Promise<{ status: "pending" | "accepted" }> {
+  const res = await fetch(`${BASE}/api/friends/request`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ targetPlayerId }),
+  });
+  if (res.status === 404) throw new Error("target user not found");
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? "conflict");
+  }
+  if (!res.ok) throw new Error(`request failed: ${res.status}`);
+  return res.json();
+}
+
+export async function respondFriendApi(
+  token: string, other: string, action: "accept" | "decline",
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/friends/${encodeURIComponent(other)}/${action}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`${action} failed: ${res.status}`);
+}
+
+export async function unfriendApi(token: string, other: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/friends/${encodeURIComponent(other)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`unfriend failed: ${res.status}`);
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",
