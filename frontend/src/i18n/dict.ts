@@ -167,6 +167,23 @@ const ZH = {
   "friends.empty.accepted":  "還沒加任何好友",
   "friends.empty.incoming":  "沒有待回覆的邀請",
   "friends.empty.outgoing":  "沒有送出的邀請",
+
+  // private rooms
+  "priv.title":              "私人房",
+  "priv.tab.create":         "建立",
+  "priv.tab.join":           "加入",
+  "priv.createHint":         "建立後分享連結，朋友打開就能加入",
+  "priv.create":             "建立房間",
+  "priv.creating":           "建立中…",
+  "priv.created":            "已建立 {gt} 房間，分享下面這個連結：",
+  "priv.copyUrl":            "複製連結",
+  "priv.enterRoom":          "我先進場",
+  "priv.expiresAt":          "連結有效至 {ts}",
+  "priv.joinHint":           "貼上朋友傳給你的連結（或單純的 token）",
+  "priv.joinPlaceholder":    "https://… 或 token",
+  "priv.join":               "加入",
+  "priv.joining":            "加入中…",
+  "priv.invalid":            "連結格式不正確",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -313,6 +330,22 @@ const EN: Partial<Record<DictKey, string>> = {
   "friends.empty.accepted":   "No friends yet",
   "friends.empty.incoming":   "No pending requests",
   "friends.empty.outgoing":   "No outgoing requests",
+
+  "priv.title":               "Private Room",
+  "priv.tab.create":          "Create",
+  "priv.tab.join":            "Join",
+  "priv.createHint":          "Share the link with friends — anyone with it can join.",
+  "priv.create":              "Create",
+  "priv.creating":            "Creating…",
+  "priv.created":             "{gt} room ready. Share this link:",
+  "priv.copyUrl":             "Copy link",
+  "priv.enterRoom":           "Enter now",
+  "priv.expiresAt":           "Link expires at {ts}",
+  "priv.joinHint":            "Paste a link a friend sent you (or just the token).",
+  "priv.joinPlaceholder":     "https://… or token",
+  "priv.join":                "Join",
+  "priv.joining":             "Joining…",
+  "priv.invalid":             "Invalid link",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

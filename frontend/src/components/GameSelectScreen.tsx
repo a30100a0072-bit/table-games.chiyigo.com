@@ -5,6 +5,7 @@ import WalletBadge from "./WalletBadge";
 import StatsModal  from "./StatsModal";
 import TournamentModal from "./TournamentModal";
 import FriendsModal from "./FriendsModal";
+import PrivateRoomModal from "./PrivateRoomModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
 import { useT } from "../i18n/useT";
@@ -39,14 +40,22 @@ interface Props {
   onPick:      (gameType: GameType) => void;
   onJoinedTournamentRoom?: (roomId: string, gameType: GameType) => void;
   onSpectate?: (roomId: string, gameType: GameType) => void;
+  onPrivateEnter?: (roomId: string, gameType: GameType) => void;
+  /** When the user landed with `?join=<token>` we open the private-room
+   *  modal pre-populated on the join tab. */
+  initialJoinToken?: string | null;
   onLogout?:   () => void;
 }
 
-export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, onJoinedTournamentRoom, onSpectate, onLogout }: Props) {
+export default function GameSelectScreen({
+  playerId, token, dailyBonus, onPick,
+  onJoinedTournamentRoom, onSpectate, onPrivateEnter, initialJoinToken, onLogout,
+}: Props) {
   const { t } = useT();
   const [stats,    setStats]    = useState(false);
   const [tour,     setTour]     = useState(false);
   const [friends,  setFriends]  = useState(false);
+  const [priv,     setPriv]     = useState<boolean>(!!initialJoinToken);
   const [specOpen, setSpecOpen] = useState(false);
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
@@ -72,6 +81,15 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
         >
           👥
         </button>
+        {onPrivateEnter && (
+          <button
+            onClick={() => setPriv(true)}
+            title={t("priv.title")}
+            className="rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+          >
+            🔒
+          </button>
+        )}
         {onSpectate && (
           <button
             onClick={() => setSpecOpen(true)}
@@ -89,6 +107,13 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
       </div>
       {stats && <StatsModal playerId={playerId} token={token} onClose={() => setStats(false)} />}
       {friends && <FriendsModal token={token} onClose={() => setFriends(false)} />}
+      {priv && onPrivateEnter && (
+        <PrivateRoomModal
+          token={token}
+          onClose={() => setPriv(false)}
+          onEnter={(roomId, gameType) => { setPriv(false); onPrivateEnter(roomId, gameType); }}
+        />
+      )}
       {specOpen && onSpectate && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-green-900 p-5 shadow-2xl">

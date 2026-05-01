@@ -10,6 +10,7 @@ import {
 import {
   requestFriend, acceptFriend, declineFriend, unfriend, listFriends,
 } from "../api/friends";
+import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -106,6 +107,14 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   const fOther = url.pathname.match(/^\/api\/friends\/([^/]+)$/);
   if (request.method === "DELETE" && fOther)
     return cors(await unfriend(request, env, decodeURIComponent(fOther[1]!)));
+
+  // ── Private rooms ───────────────────────────────────────────────────
+  if (request.method === "POST" && url.pathname === "/api/rooms/private")
+    return cors(await createPrivateRoom(request, env));
+
+  const tokenJoin = url.pathname.match(/^\/api\/rooms\/by-token\/([^/]+)$/);
+  if (request.method === "GET" && tokenJoin)
+    return cors(await resolvePrivateRoom(request, env, decodeURIComponent(tokenJoin[1]!)));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)

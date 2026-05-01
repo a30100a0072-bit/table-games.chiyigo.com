@@ -241,6 +241,39 @@ export async function unfriendApi(token: string, other: string): Promise<void> {
   if (!res.ok) throw new Error(`unfriend failed: ${res.status}`);
 }
 
+// ── Private rooms ───────────────────────────────────────────────────
+export interface PrivateRoomCreated {
+  roomId:    string;
+  gameType:  GameType;
+  capacity:  number;
+  joinToken: string;
+  expiresAt: number;
+}
+
+export async function createPrivateRoomApi(
+  token: string, gameType: GameType, ttlMinutes?: number,
+): Promise<PrivateRoomCreated> {
+  const res = await fetch(`${BASE}/api/rooms/private`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ gameType, ...(ttlMinutes ? { ttlMinutes } : {}) }),
+  });
+  if (!res.ok) throw new Error(`create failed: ${res.status}`);
+  return res.json();
+}
+
+export async function resolvePrivateRoomApi(
+  token: string, joinToken: string,
+): Promise<{ roomId: string; gameType: GameType; capacity: number; expiresAt: number }> {
+  const res = await fetch(`${BASE}/api/rooms/by-token/${encodeURIComponent(joinToken)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) throw new Error("token not found");
+  if (res.status === 410) throw new Error("token expired");
+  if (!res.ok) throw new Error(`resolve failed: ${res.status}`);
+  return res.json();
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

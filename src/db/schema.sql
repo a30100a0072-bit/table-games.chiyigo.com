@@ -147,3 +147,21 @@ CREATE TABLE IF NOT EXISTS friendships (
 );
 
 CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships (b_id);
+
+-- ── room_tokens ──────────────────────────────────────────────────────────
+-- Private rooms: capability token grants WS-join to a specific game_id.
+-- The token IS the access control — anyone holding it can join until
+-- it expires. game_id is a v4 UUID so direct guessing without the token
+-- is practically infeasible.
+CREATE TABLE IF NOT EXISTS room_tokens (
+  token       TEXT    PRIMARY KEY,
+  game_id     TEXT    NOT NULL,
+  game_type   TEXT    NOT NULL,                 -- bigTwo | mahjong | texas
+  capacity    INTEGER NOT NULL,
+  created_by  TEXT    NOT NULL,                 -- creator's playerId
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL                  -- Unix ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_tokens_game    ON room_tokens (game_id);
+CREATE INDEX IF NOT EXISTS idx_room_tokens_expires ON room_tokens (expires_at);

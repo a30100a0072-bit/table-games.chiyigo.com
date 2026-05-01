@@ -25,6 +25,14 @@ export default function App() {
   const [offline, setOffline] = useState(typeof navigator !== "undefined" && !navigator.onLine);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [copied, setCopied] = useState(false);
+  // If the user landed via a `?join=<token>` deeplink, hold the token
+  // until they're logged in (token resolution requires a JWT) and pass
+  // it into GameSelectScreen so the private-room modal can pop open.
+  const [pendingJoinToken, setPendingJoinToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const u = new URL(window.location.href);
+    return u.searchParams.get("join");
+  });
 
   async function copyRoomId(id: string) {
     try { await navigator.clipboard.writeText(id); }
@@ -131,6 +139,27 @@ export default function App() {
             spectator: true,
           })
         }
+        onPrivateEnter={(roomId, gameType) => {
+          // Strip the deeplink param after consuming it so a future
+          // logout-login cycle doesn't rehydrate the same modal.
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            if (url.searchParams.has("join")) {
+              url.searchParams.delete("join");
+              window.history.replaceState(null, "", url.toString());
+            }
+          }
+          setPendingJoinToken(null);
+          setScreen({
+            name: "game",
+            playerId: screen.playerId,
+            token: screen.token,
+            roomId,
+            wsUrl: `${wsBase}/rooms/${roomId}/join`,
+            gameType,
+          });
+        }}
+        initialJoinToken={pendingJoinToken}
         onLogout={() => setScreen({ name: "login" })}
       />
     );
