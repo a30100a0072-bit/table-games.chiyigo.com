@@ -35,8 +35,9 @@ const SK = {
 } as const;
 
 interface WsAttachment {
-  playerId:  PlayerId;
-  sessionId: string;
+  playerId:    PlayerId;
+  sessionId:   string;
+  isSpectator?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────── L3_架構含防禦觀測
@@ -155,10 +156,28 @@ export class GameRoomDO implements DurableObject {
     const playerId = url.searchParams.get("playerId");
     if (!playerId)
       return new Response("missing playerId", { status: 400 });
+    const isSpectator = url.searchParams.get("spectator") === "1";
 
-    // Tournament rooms only let registered participants in.
+    // Tournament rooms only let registered participants in (spectators included
+    // for now — keeps the gate strict; we can relax if requested).
     if (this.room.allowedPlayers && !this.room.allowedPlayers.includes(playerId))
       return new Response("not a tournament participant", { status: 403 });
+
+    if (isSpectator) {
+      // Spectators don't take seats and can attach at any phase ≠ settled.
+      // Reject if room hasn't started yet — nothing to watch.
+      if (this.room.phase !== "playing")
+        return new Response("game has not started yet", { status: 409 });
+      const { 0: c, 1: s } = new WebSocketPair();
+      const att: WsAttachment = { playerId, sessionId: crypto.randomUUID(), isSpectator: true };
+      // Tag with a synthetic id so we can target spectators in broadcasts
+      // without colliding with real player tags used for player WS routing.
+      this.state.acceptWebSocket(s, [`spec:${att.sessionId}`]);
+      s.serializeAttachment(att);
+      if (this.engine)
+        s.send(JSON.stringify({ type: "state", payload: this.engine.getSpectatorView() }));
+      return new Response(null, { status: 101, webSocket: c });
+    }
 
     const { phase, playerIds, capacity } = this.room;
     const isKnown        = playerIds.includes(playerId);
@@ -230,7 +249,16 @@ export class GameRoomDO implements DurableObject {
 
     if (result.frame.kind === "sync") {
       if (this.engine)
-        ws.send(JSON.stringify({ type: "state", payload: this.engine.getView(playerId) }));
+        ws.send(JSON.stringify({
+          type: "state",
+          payload: att.isSpectator ? this.engine.getSpectatorView() : this.engine.getView(playerId),
+        }));
+      return;
+    }
+
+    // Spectators are read-only — silently drop any action frames.
+    if (att.isSpectator) {
+      ws.send(JSON.stringify({ error: "spectators cannot send actions" }));
       return;
     }
 
@@ -273,12 +301,12 @@ export class GameRoomDO implements DurableObject {
 
   async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
     const att = ws.deserializeAttachment() as WsAttachment | null;
-    if (att) await this.onDisconnect(att.playerId);
+    if (att && !att.isSpectator) await this.onDisconnect(att.playerId);
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
     const att = ws.deserializeAttachment() as WsAttachment | null;
-    if (att) await this.onDisconnect(att.playerId);
+    if (att && !att.isSpectator) await this.onDisconnect(att.playerId);
   }
 
   // ── 60-second disconnect buffer ───────────────────────────────────────── L3_架構含防禦觀測
@@ -522,10 +550,19 @@ export class GameRoomDO implements DurableObject {
 
   private broadcastViews(): void {
     if (!this.engine) return;
+    let cachedSpec: unknown = null;
     for (const ws of this.state.getWebSockets()) {
       const att  = ws.deserializeAttachment() as WsAttachment | null;
       if (!att) continue;
-      const view = this.engine.getView(att.playerId);
+      let view: unknown;
+      if (att.isSpectator) {
+        // Compute the redacted view once per broadcast — every spectator
+        // gets the identical payload, so caching saves N-1 builds.
+        cachedSpec ??= this.engine.getSpectatorView();
+        view = cachedSpec;
+      } else {
+        view = this.engine.getView(att.playerId);
+      }
       if (!view) continue;
       try { ws.send(JSON.stringify({ type: "state", payload: view })); } catch {}
     }

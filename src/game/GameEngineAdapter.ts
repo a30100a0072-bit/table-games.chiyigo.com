@@ -12,7 +12,12 @@ import { getBigTwoBotAction, getMahjongBotAction } from "./BotAI";
 
 import type {
   GameType, PlayerId, PlayerAction, SettlementResult, SettlementReason,
+  GameStateView, MahjongStateView, PokerStateView,
 } from "../types/game";
+
+/** Sentinel playerId used in spectator views — guaranteed not collidable
+ *  with real player ids since user-supplied ids never start with `__`.   */
+export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
 // ──────────────────────────────────────────────
 //  統一介面  (L3_架構)
@@ -34,6 +39,11 @@ export interface IGameEngine {
 
   /** 該玩家的隔離視角；DO 直接透傳給對應 WebSocket。                          // L2_隔離 */
   getView(playerId: PlayerId): unknown;
+
+  /** Spectator view: self is phantom (no hand / no holeCards / no flowers),
+   *  every real seat appears as an opponent. DO sends this to read-only
+   *  spectator WebSockets.                                                     // L2_隔離 */
+  getSpectatorView(): unknown;
 
   /** Hibernation 持久化快照；型別為 `unknown` 由各實作自我描述。              // L3_架構含防禦觀測 */
   snapshot(): unknown;
@@ -77,6 +87,18 @@ class BigTwoEngine implements IGameEngine {
     return { settlement: r.settlement ?? null };
   }
   getView(playerId: PlayerId)             { return this.m.getView(playerId); }
+  getSpectatorView(): GameStateView {
+    const ids   = (this.m.snapshot() as MachineSnapshot).playerIds;
+    const seat  = this.m.getView(ids[0]!);
+    return {
+      ...seat,
+      self: { playerId: SPECTATOR_PLAYER_ID, hand: [], cardCount: 0 },
+      opponents: [
+        { playerId: seat.self.playerId, cardCount: seat.self.cardCount },
+        ...seat.opponents,
+      ],
+    };
+  }
   snapshot()                              { return this.m.snapshot(); }
   currentTurn(): PlayerId                 {
     // Big Two 視角的 currentTurn 對所有玩家相同；隨手取首位查詢即可。         // L2_模組
@@ -125,6 +147,26 @@ class MahjongEngine implements IGameEngine {
     return { settlement: r.settlement ?? null };
   }
   getView(playerId: PlayerId)             { return this.m.viewFor(playerId); }
+  getSpectatorView(): MahjongStateView {
+    const snap = this.m.snapshot() as MahjongSnapshot;
+    const seat = this.m.viewFor(snap.players[0]!.playerId);
+    return {
+      ...seat,
+      self: {
+        playerId: SPECTATOR_PLAYER_ID,
+        hand: [], exposed: [], flowers: [],
+      },
+      opponents: [
+        {
+          playerId: seat.self.playerId,
+          handCount: seat.self.hand.length,
+          exposed: seat.self.exposed,
+          flowersCount: seat.self.flowers.length,
+        },
+        ...seat.opponents,
+      ],
+    };
+  }
   snapshot()                              { return this.m.snapshot(); }
   currentTurn(): PlayerId                 { return this.m.currentTurn(); }
   forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
@@ -178,6 +220,34 @@ class TexasEngine implements IGameEngine {
     return { settlement: r.settlement ?? null };
   }
   getView(playerId: PlayerId)             { return this.m.viewFor(playerId); }
+  getSpectatorView(): PokerStateView {
+    const snap = this.m.snapshot() as TexasSnapshot;
+    const seat = this.m.viewFor(snap.seats[0]!.playerId);
+    const isShowdown = seat.street === "showdown" || seat.street === "settled";
+    return {
+      ...seat,
+      // Phantom self with empty hole cards. The zero-stack / zero-bet
+      // values keep the wire shape stable; UI keys off SPECTATOR_PLAYER_ID.
+      self: {
+        playerId: SPECTATOR_PLAYER_ID,
+        holeCards: [{ suit: "spades", rank: "2" }, { suit: "spades", rank: "2" }],
+        stack: 0, betThisStreet: 0, totalCommitted: 0,
+        hasFolded: false, isAllIn: false,
+      },
+      opponents: [
+        {
+          playerId: seat.self.playerId,
+          stack: seat.self.stack,
+          betThisStreet: seat.self.betThisStreet,
+          totalCommitted: seat.self.totalCommitted,
+          hasFolded: seat.self.hasFolded,
+          isAllIn: seat.self.isAllIn,
+          ...(isShowdown && !seat.self.hasFolded ? { holeCards: seat.self.holeCards } : {}),
+        },
+        ...seat.opponents,
+      ],
+    };
+  }
   snapshot()                              { return this.m.snapshot(); }
   currentTurn(): PlayerId                 { return this.m.currentTurn(); }
   forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {

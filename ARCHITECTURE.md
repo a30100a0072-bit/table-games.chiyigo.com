@@ -316,10 +316,12 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **音效接 Mahjong + Texas**（`MahjongGameScreen.tsx` / `TexasHoldemGameScreen.tsx`）：myTurn / cardPlay / pass / win / lose 全 cue；BigTwo 既有實作不變
 - **WS 訊框信封驗證**（`src/utils/wsFrame.ts` + `test/wsFrame.test.ts` 10 案）：信封層守 gameId / playerId / seq（非負整數）/ action.type 白名單；per-action 細節仍由各狀態機防禦。零新依賴（純 TS validator，不拉 zod）
 - **DO alarm 時序 + Hibernation eviction 測試**（`test/gameRoomDO.test.ts` 4 案）：startGame 排 turn alarm、alarm() FUDGE 視窗、JSON-roundtrip safe、eviction 後新實例從同一 storage 重建並對 `/init` 回 409
+- **wrangler 3 → 4.87** + Node 22 CI runner（`package.json` / `.github/workflows/cloudflare-deploy.yml`）：`npm audit` 從 1 high + 3 mod → 0
+- **觀戰後端**（`src/game/GameEngineAdapter.ts` / `src/do/GameRoomDO.ts` / `src/workers/gateway.ts` / `test/spectatorView.test.ts` 3 案）：每引擎加 `getSpectatorView()` 把 self phantom 化、所有真玩家進 opponents（BigTwo 不外洩 hand、Mahjong 不外洩 exposed/flowers/hand、Texas 攤牌前不外洩 holeCards）；DO `?spectator=1` 走分支不佔座位、不觸發 startGame、丟掉 spectator 送的 action frame、斷線不算 forfeit；廣播時 spectator view per-broadcast 算一次後快取重用
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 11 檔 / 124 案 + Workers 整合 2 檔 / 6 案 = 130 全綠**。
+測試矩陣現況：**Node 單元 12 檔 / 127 案 + Workers 整合 2 檔 / 6 案 = 133 全綠**。
 
 ---
 

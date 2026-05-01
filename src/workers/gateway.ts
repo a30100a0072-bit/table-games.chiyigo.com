@@ -641,6 +641,10 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
   const stub  = env.GAME_ROOM.get(env.GAME_ROOM.idFromName(gameId));
   const doUrl = new URL("https://gameroom.internal/join");
   doUrl.searchParams.set("playerId", playerId);
+  // Read-only spectator path: client passes `?spectator=1` and the DO
+  // accepts the WS without taking a seat. Token auth still applies.
+  if (url.searchParams.get("spectator") === "1")
+    doUrl.searchParams.set("spectator", "1");
 
   return stub.fetch(new Request(doUrl.toString(), { headers: request.headers }));
 }
