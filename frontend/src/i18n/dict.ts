@@ -203,6 +203,15 @@ const ZH = {
   "rep.versionOld":          "（舊版本，僅顯示結果）",
   "rep.versionOldDetail":    "對局以引擎 v{saved} 紀錄；目前是 v{current}。演算法已更新，無法逐步重播；只顯示結算。",
   "rep.noEvents":            "（無事件）",
+  "rep.startPrompt":         "按 ▶ 開始播放，或拖動滑桿任意跳轉",
+  "rep.play":                "播放",
+  "rep.pause":               "暫停",
+  "rep.reset":               "重來",
+  "rep.fullLog":             "完整事件清單（點擊跳轉）",
+
+  // orientation gate
+  "orient.rotate":           "請將設備轉為橫向",
+  "orient.why":              "本遊戲為橫向五區塊版面設計，直立會擠壓手牌與底池。",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -382,6 +391,14 @@ const EN: Partial<Record<DictKey, string>> = {
   "rep.versionOld":           "(older version — result only)",
   "rep.versionOldDetail":     "Recorded with engine v{saved}; current is v{current}. The algorithm has changed, so step-by-step replay is disabled — only the final result is shown.",
   "rep.noEvents":             "(no events)",
+  "rep.startPrompt":          "Press ▶ to play, or drag the slider to jump anywhere",
+  "rep.play":                 "Play",
+  "rep.pause":                "Pause",
+  "rep.reset":                "Reset",
+  "rep.fullLog":              "Full event list (click to jump)",
+
+  "orient.rotate":            "Please rotate to landscape",
+  "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

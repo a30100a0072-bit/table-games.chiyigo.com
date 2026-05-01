@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { getToken, FrozenAccountError } from "../api/http";
 import { useT } from "../i18n/useT";
+import { unlockAudio } from "../shared/sound";
 import LocaleToggle from "./LocaleToggle";
 
 interface Props {
@@ -18,6 +19,10 @@ export default function LoginScreen({ onLoggedIn }: Props) {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
+    // Submit is the user's first deliberate gesture in the app — flip the
+    // AudioContext to "running" now so opponent-driven sfx aren't silent
+    // on iOS Safari later.
+    unlockAudio();
     setLoading(true); setError(""); setFrozen(null);
     try {
       const { token, playerId, dailyBonus } = await getToken(trimmed);

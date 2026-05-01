@@ -6,6 +6,7 @@ import type { QuickComboType } from "../shared/bigTwoCombos";
 import { useT } from "../i18n/useT";
 import type { DictKey } from "../i18n/dict";
 import { sfx } from "../shared/sound";
+import RotateHint from "./RotateHint";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────  L2_實作
 
@@ -282,11 +283,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
 
   return (
     <>
-      {/* ─── Portrait 強制鎖定 (L3_邏輯安防 / Tailwind portrait variant) ─── */}
-      <div className="hidden portrait:fixed portrait:inset-0 portrait:z-[9999] portrait:flex portrait:flex-col portrait:items-center portrait:justify-center portrait:bg-black portrait:text-yellow-300">
-        <div className="animate-spin text-7xl">⟳</div>
-        <div className="mt-6 text-xl tracking-widest">請將設備轉為橫向</div>
-      </div>
+      <RotateHint />
 
       {/* ─── 桌面：CSS Grid 5 區塊 (L2_模組) ─── */}
       <div

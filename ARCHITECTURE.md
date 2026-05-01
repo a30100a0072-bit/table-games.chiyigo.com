@@ -307,14 +307,19 @@ gateway.ts ──verifyJWT──► GameRoomDO
 1. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink；要 sentry DSN 或設 `tail_consumers`
 2. **OAuth 真登入**（Google / Apple）— 取代 guest token；要 IdP App credentials
 
-**產品決策**
-3. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
-4. **觀戰 live listings**（哪些房正在玩？）— 目前要靠分享房號；上線後若要做需設計列表 endpoint
+**產品決策（待規格確認）**
+3. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任 / 海底撈月 / 河底撈魚）— 需要你決定：要哪幾種、各幾台、是否與既有台數系統 stacking；對應演算法改動會 bump `ENGINE_VERSION`（舊 replay 變唯讀）
+4. **Texas blind escalation** — 需要你給 blind level table（例：每 5 分鐘升一級，10/20 → 15/30 → 20/40 …），以及是否只在賽事模式啟用；牽動 `lobby.ts` ANTE 與 settle 邏輯
+5. **觀戰 live listings**（哪些房正在玩？）— 目前要靠分享房號；上線後若要做需設計列表 endpoint
+6. **Friend DMs / chat** — 範圍多大？只能傳給好友？要不要訊息保留期？
 
 **自包含但 nice-to-have（隨時可動）**
-5. Replay 視覺化播放器（目前是文字事件流；要做動畫式步進播放需 ~1 天）
-6. Tournament UI 增強：bracket 視圖、進場提醒（目前只有列表 + 詳情 modal）
-7. 移動端橫向強制鎖定的 onboarding 提示（BigTwo 已有；其他遊戲未統一）
+5. Tournament UI 增強：bracket 視圖、進場提醒（目前只有列表 + 詳情 modal）
+
+### ✅ 後續補齊（2026-05-01 後續持續）
+- **Replay 視覺化播放器**（`frontend/src/components/ReplaysModal.tsx`）：每個事件渲染為帶卡牌/麻將牌符號 + badge 的 EventCard、Play/Pause/Step/Reset/Speed 1×–4× 控制、scrubber 任意跳轉、collapsed 完整事件清單可點擊跳轉
+- **移動端 onboarding 統一**（`frontend/src/components/RotateHint.tsx` + 套到三遊戲畫面）：抽出共用 RotateHint 元件含 i18n 旋轉提示與「為什麼要橫向」說明；BigTwo / Mahjong / Texas 三家統一掛載
+- **iOS Safari AudioContext unlock**（`frontend/src/shared/sound.ts` `unlockAudio` + LoginScreen 觸發）：登入按鈕 click handler 主動 resume() AudioContext + 零增益 blip 喚醒，避免後續對手動作觸發音效在 iOS 靜默
 
 ### ✅ 本次補齊（2026-05-01 後續）
 - **音效接 Mahjong + Texas**（`MahjongGameScreen.tsx` / `TexasHoldemGameScreen.tsx`）：myTurn / cardPlay / pass / win / lose 全 cue；BigTwo 既有實作不變

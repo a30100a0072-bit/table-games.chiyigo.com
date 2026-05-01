@@ -4,6 +4,28 @@
 let ctx: AudioContext | null = null;
 const STORAGE_KEY = "chiyigo.muted";
 
+/** iOS Safari (and some Chrome variants) leave a fresh AudioContext in
+ *  the "suspended" state until the SAME tick as a user gesture. If the
+ *  first sfx call happens later on a state push (opponent's move), it
+ *  silently fails. Call this from a click handler at app entry to
+ *  flip the context to "running" before any incoming events need it.   */
+export function unlockAudio(): void {
+  if (isMuted()) return;
+  const c = getCtx(); if (!c) return;
+  if (c.state !== "suspended") return;
+  try {
+    c.resume().catch(() => {});
+    // A zero-gain blip — required on some WebKit builds where resume()
+    // alone isn't enough; the context needs a real source to start.
+    const osc = c.createOscillator();
+    const g   = c.createGain();
+    g.gain.value = 0;
+    osc.connect(g); g.connect(c.destination);
+    osc.start();
+    osc.stop(c.currentTime + 0.01);
+  } catch { /* best effort; gameplay still works without sound */ }
+}
+
 function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (!ctx) {

@@ -5,6 +5,7 @@ import type {
 import { GameSocket } from "../shared/GameSocket";
 import { useT } from "../i18n/useT";
 import { sfx } from "../shared/sound";
+import RotateHint from "./RotateHint";
 
 // 給定手牌與對手剛打出的牌，回傳所有可吃的 [t1, t2, discard] 三張組合。 // L2_實作
 // 規則：discard 只能在 m/p/s（萬筒條），三張連號同花色。
@@ -263,6 +264,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
 
   return (
     <div className="flex h-full flex-col bg-green-950 text-white">
+      <RotateHint />
       {(connMsg || sysMsg) && (
         <div className="bg-yellow-700 px-4 py-1 text-center text-xs text-yellow-100">
           {connMsg || sysMsg}

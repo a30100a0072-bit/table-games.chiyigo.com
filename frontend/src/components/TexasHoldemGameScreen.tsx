@@ -5,6 +5,7 @@ import type {
 import { GameSocket } from "../shared/GameSocket";
 import { useT } from "../i18n/useT";
 import { sfx } from "../shared/sound";
+import RotateHint from "./RotateHint";
 
 const SUIT_SYMBOL: Record<string, string> = { spades: "♠", hearts: "♥", clubs: "♣", diamonds: "♦" };
 const SUIT_COLOR:  Record<string, string> = { spades: "text-gray-900", clubs: "text-gray-900", hearts: "text-red-600", diamonds: "text-red-600" };
@@ -95,6 +96,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
 
   return (
     <div className="flex h-full flex-col bg-green-950 text-white">
+      <RotateHint />
       {(connMsg || sysMsg) && (
         <div className="bg-yellow-700 px-4 py-1 text-center text-xs text-yellow-100">
           {connMsg || sysMsg}
