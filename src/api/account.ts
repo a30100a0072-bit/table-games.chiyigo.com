@@ -97,3 +97,63 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
   log("info", "account_deleted", { playerId: me, tombstone: tomb });
   return Response.json({ ok: true, tombstone: tomb });
 }
+
+// ── GET /api/me/export ───────────────────────────────────────────────────
+// GDPR right-to-portability sibling of DELETE. Returns a single JSON blob
+// with everything we hold *about you* — wallet, ledger, settlement
+// history, friendships, DMs, tournament entries, your replay rows. The
+// payload is meant to be downloaded as a file by the browser; we set
+// content-disposition so a fetch + click flow lands on disk cleanly.
+export async function exportAccount(request: Request, env: AccountEnv): Promise<Response> {
+  const me = await authPlayer(request, env);
+  if (me instanceof Response) return me;
+
+  // Run reads in parallel — they're independent and the smallest tables
+  // dominate latency anyway. Each falls back to [] on error so a single
+  // bad query doesn't tank the export.                                    // L2_實作
+  const [user, ledger, settlements, friendships, dmsSent, dmsRcv, tEntries, replays] =
+    await Promise.all([
+      env.DB.prepare("SELECT player_id, display_name, chip_balance, created_at, updated_at FROM users WHERE player_id = ?")
+        .bind(me).first<unknown>().catch(() => null),
+      env.DB.prepare("SELECT ledger_id, game_id, delta, reason, created_at FROM chip_ledger WHERE player_id = ? ORDER BY ledger_id")
+        .bind(me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT game_id, final_rank, score_delta FROM player_settlements WHERE player_id = ? ORDER BY game_id")
+        .bind(me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT a_id, b_id, requester, status, created_at, responded_at FROM friendships WHERE a_id = ? OR b_id = ?")
+        .bind(me, me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT id, recipient AS counterparty, body, created_at FROM dms WHERE sender = ? ORDER BY id")
+        .bind(me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT id, sender AS counterparty, body, created_at, read_at FROM dms WHERE recipient = ? ORDER BY id")
+        .bind(me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT tournament_id, registered_at, agg_score, final_rank FROM tournament_entries WHERE player_id = ?")
+        .bind(me).all<unknown>().catch(() => ({ results: [] })),
+      env.DB.prepare(
+        "SELECT game_id, game_type, started_at, finished_at, winner_id, reason FROM replay_meta" +
+        " WHERE player_ids LIKE ? ORDER BY finished_at DESC LIMIT 500",
+      ).bind(`%${JSON.stringify(me)}%`).all<unknown>().catch(() => ({ results: [] })),
+    ]);
+
+  type Bag = { results?: unknown[] };
+  const payload = {
+    schema:      "big-two-export-v1",
+    exportedAt:  Date.now(),
+    playerId:    me,
+    profile:     user ?? null,
+    chipLedger:  (ledger      as Bag).results ?? [],
+    settlements: (settlements as Bag).results ?? [],
+    friendships: (friendships as Bag).results ?? [],
+    dmsSent:     (dmsSent     as Bag).results ?? [],
+    dmsReceived: (dmsRcv      as Bag).results ?? [],
+    tournaments: (tEntries    as Bag).results ?? [],
+    replays:     (replays     as Bag).results ?? [],
+  };
+
+  log("info", "account_exported", { playerId: me });
+  return new Response(JSON.stringify(payload, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type":        "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="big-two-export-${me}.json"`,
+    },
+  });
+}

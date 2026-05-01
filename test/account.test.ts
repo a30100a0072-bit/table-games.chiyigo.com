@@ -4,7 +4,7 @@
 // in the right order.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { deleteAccount, TOMBSTONE_PREFIX } from "../src/api/account";
+import { deleteAccount, exportAccount, TOMBSTONE_PREFIX } from "../src/api/account";
 import type { AccountEnv } from "../src/api/account";
 import { signJWT } from "../src/utils/auth";
 
@@ -12,6 +12,9 @@ type Stmt = { sql: string; args: unknown[] };
 
 class MockDb {
   statements: Stmt[] = [];
+  // Read fixtures keyed by table name (probed by `FROM <name>`).
+  fixtures: Record<string, unknown[]> = {};
+  firstFixture: Record<string, unknown> = {};
   prepare(sql: string) { return new MockStmt(this, sql); }
   async batch(stmts: MockStmt[]) {
     for (const s of stmts) this.statements.push({ sql: s.sql, args: s.args });
@@ -22,7 +25,18 @@ class MockStmt {
   args: unknown[] = [];
   constructor(public db: MockDb, public sql: string) {}
   bind(...a: unknown[]) { this.args = a; return this; }
-  async first() { return null; }
+  private table(): string {
+    const m = this.sql.match(/FROM\s+(\w+)/i);
+    return m?.[1] ?? "";
+  }
+  async first<T = unknown>(): Promise<T | null> {
+    const t = this.table();
+    return (this.db.firstFixture[t] ?? null) as T | null;
+  }
+  async all<T = unknown>(): Promise<{ results: T[] }> {
+    const t = this.table();
+    return { results: (this.db.fixtures[t] ?? []) as T[] };
+  }
   async run() { return { success: true, meta: { changes: 1 } }; }
 }
 
@@ -114,6 +128,54 @@ describe("DELETE /api/me", () => {
     expect(body.ok).toBe(true);
     expect(body.tombstone.startsWith(TOMBSTONE_PREFIX)).toBe(true);
     expect(body.tombstone.length).toBeGreaterThan(TOMBSTONE_PREFIX.length);
+  });
+
+  it("export rejects without a JWT", async () => {
+    const r = await exportAccount(new Request("https://gw.local/api/me/export"), env);
+    expect(r.status).toBe(401);
+  });
+
+  it("export returns a JSON attachment with all sections present", async () => {
+    db.firstFixture["users"]    = { player_id: "alice", display_name: "Alice", chip_balance: 1000, created_at: 1, updated_at: 2 };
+    db.fixtures["chip_ledger"]  = [{ ledger_id: 1, delta: 1000, reason: "signup" }];
+    db.fixtures["dms"]          = [{ id: 5, counterparty: "bob", body: "hi", created_at: 9 }];
+    db.fixtures["replay_meta"]  = [{ game_id: "g1", game_type: "bigTwo", started_at: 0, finished_at: 1, winner_id: "alice", reason: "lastCardPlayed" }];
+
+    const tok = await tokenFor("alice");
+    const r = await exportAccount(new Request("https://gw.local/api/me/export", {
+      headers: { Authorization: `Bearer ${tok}` },
+    }), env);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toMatch(/application\/json/);
+    expect(r.headers.get("content-disposition")).toMatch(/attachment.*alice/);
+
+    const body = await r.json() as Record<string, unknown>;
+    expect(body.schema).toBe("big-two-export-v1");
+    expect(body.playerId).toBe("alice");
+    expect(body.profile).toMatchObject({ player_id: "alice" });
+    expect(Array.isArray(body.chipLedger)).toBe(true);
+    expect((body.chipLedger as unknown[])).toHaveLength(1);
+    expect(Array.isArray(body.dmsReceived)).toBe(true);
+    expect(Array.isArray(body.replays)).toBe(true);
+  });
+
+  it("export survives a DB query failure with empty arrays for that section", async () => {
+    // Force chip_ledger.all() to throw to verify the catch fallback.
+    const orig = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      const stmt = orig(sql);
+      if (sql.includes("FROM chip_ledger")) {
+        return { ...stmt, bind: () => ({ all: async () => { throw new Error("d1 boom"); } }) } as unknown as MockStmt;
+      }
+      return stmt;
+    };
+    const tok = await tokenFor("alice");
+    const r = await exportAccount(new Request("https://gw.local/api/me/export", {
+      headers: { Authorization: `Bearer ${tok}` },
+    }), env);
+    expect(r.status).toBe(200);
+    const body = await r.json() as Record<string, unknown>;
+    expect(body.chipLedger).toEqual([]);            // graceful degradation
   });
 
   it("replay_meta UPDATE uses JSON-quoted IDs to avoid substring collisions", async () => {

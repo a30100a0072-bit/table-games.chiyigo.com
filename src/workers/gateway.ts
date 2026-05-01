@@ -15,7 +15,7 @@ import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
 import { listMyReplays, getReplay } from "../api/replays";
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
-import { deleteAccount } from "../api/account";
+import { deleteAccount, exportAccount } from "../api/account";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -140,9 +140,11 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "POST" && invDecline)
     return cors(await declineInvite(request, env, invDecline[1]!));
 
-  // ── Account deletion (GDPR) ─────────────────────────────────────────
+  // ── Account deletion / export (GDPR) ────────────────────────────────
   if (request.method === "DELETE" && url.pathname === "/api/me")
     return cors(await deleteAccount(request, env));
+  if (request.method === "GET"    && url.pathname === "/api/me/export")
+    return cors(await exportAccount(request, env));
 
   // ── Direct messages ─────────────────────────────────────────────────
   if (request.method === "POST" && url.pathname === "/api/dm/send")

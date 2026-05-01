@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getWallet, claimBailout, BailoutError, deleteAccountApi } from "../api/http";
+import { getWallet, claimBailout, BailoutError, deleteAccountApi, exportAccountApi } from "../api/http";
 import type { WalletResponse, LedgerEntry } from "../api/http";
 import { useT } from "../i18n/useT";
 
@@ -64,6 +64,15 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
     } finally {
       setClaiming(false);
     }
+  }
+
+  const [exporting, setExporting] = useState(false);
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true); setError(null);
+    try { await exportAccountApi(token); }
+    catch (e) { setError(e instanceof Error ? e.message : "匯出失敗"); }
+    finally { setExporting(false); }
   }
 
   async function confirmDelete() {
@@ -133,14 +142,21 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
             </ul>
           )}
 
-          {/* Account deletion — three-step gate so a misclick can't wipe data */}
-          <div className="mt-3 border-t border-red-900/60 pt-2">
+          {/* Data export + account deletion — small footer */}
+          <div className="mt-3 flex items-center justify-between border-t border-green-800/60 pt-2 text-[10px]">
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="text-yellow-300/80 hover:text-yellow-200 disabled:opacity-50"
+            >{exporting ? "匯出中…" : "匯出資料"}</button>
             {deleteStep === 0 && (
               <button
                 onClick={() => setDeleteStep(1)}
-                className="w-full text-[10px] text-red-400/70 hover:text-red-300"
+                className="text-red-400/70 hover:text-red-300"
               >刪除帳號</button>
             )}
+          </div>
+          <div className={deleteStep === 0 ? "hidden" : "mt-2 border-t border-red-900/60 pt-2"}>
             {deleteStep === 1 && (
               <div className="text-[11px] text-red-200">
                 <p className="mb-2">刪除後好友 / 訊息 / 邀請會清空，籌碼帳本會匿名化（無法復原）。</p>

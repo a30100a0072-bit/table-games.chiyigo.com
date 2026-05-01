@@ -437,6 +437,28 @@ export async function listLiveRoomsApi(): Promise<{ rooms: LiveRoom[] }> {
   return res.json();
 }
 
+/** Triggers a browser download of the user's full data export.
+ *  Resolves once the file is offered (no ack from the user). */
+export async function exportAccountApi(token: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/me/export`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`account export failed: ${res.status}`);
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  // Server set Content-Disposition; browsers honour it for blob downloads
+  // when we forward the suggested filename via a manual anchor.
+  a.href     = url;
+  const cd   = res.headers.get("content-disposition") ?? "";
+  const m    = cd.match(/filename="?([^"]+)"?/);
+  a.download = m?.[1] ?? "big-two-export.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function deleteAccountApi(token: string): Promise<{ tombstone: string }> {
   const res = await fetch(`${BASE}/api/me`, {
     method: "DELETE",
