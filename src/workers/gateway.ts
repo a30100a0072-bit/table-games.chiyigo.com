@@ -11,6 +11,7 @@ import {
   requestFriend, acceptFriend, declineFriend, unfriend, listFriends,
 } from "../api/friends";
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
+import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -115,6 +116,17 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   const tokenJoin = url.pathname.match(/^\/api\/rooms\/by-token\/([^/]+)$/);
   if (request.method === "GET" && tokenJoin)
     return cors(await resolvePrivateRoom(request, env, decodeURIComponent(tokenJoin[1]!)));
+
+  // ── Room invites ────────────────────────────────────────────────────
+  if (request.method === "POST" && url.pathname === "/api/rooms/invite")
+    return cors(await inviteToRoom(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/rooms/invites")
+    return cors(await listInvites(request, env));
+
+  const invDecline = url.pathname.match(/^\/api\/rooms\/invites\/(\d+)\/decline$/);
+  if (request.method === "POST" && invDecline)
+    return cors(await declineInvite(request, env, invDecline[1]!));
 
   const wsMatch = url.pathname.match(/^\/rooms\/([^/]+)\/join$/);
   if (request.method === "GET" && wsMatch)

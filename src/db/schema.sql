@@ -165,3 +165,24 @@ CREATE TABLE IF NOT EXISTS room_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_room_tokens_game    ON room_tokens (game_id);
 CREATE INDEX IF NOT EXISTS idx_room_tokens_expires ON room_tokens (expires_at);
+
+-- ── room_invites ─────────────────────────────────────────────────────────
+-- One row per (inviter, invitee, token). Pending invites are surfaced to
+-- the invitee as in-app notifications. Accepting an invite is implicit —
+-- the invitee just uses the token to join — so we don't track an
+-- "accepted" state, only pending → declined or pending → expired.
+CREATE TABLE IF NOT EXISTS room_invites (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  inviter       TEXT    NOT NULL,
+  invitee       TEXT    NOT NULL,
+  token         TEXT    NOT NULL,           -- room_tokens.token
+  game_type     TEXT    NOT NULL,           -- denormalised for listing
+  created_at    INTEGER NOT NULL,
+  expires_at    INTEGER NOT NULL,
+  status        TEXT    NOT NULL,           -- pending | declined
+  responded_at  INTEGER,
+  CHECK (status IN ('pending', 'declined')),
+  UNIQUE (inviter, invitee, token)          -- one invite per pair-per-room
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_invites_invitee ON room_invites (invitee, status);

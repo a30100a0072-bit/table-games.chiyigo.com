@@ -184,6 +184,17 @@ const ZH = {
   "priv.join":               "加入",
   "priv.joining":            "加入中…",
   "priv.invalid":            "連結格式不正確",
+  "priv.inviteFriends":      "邀請好友",
+  "priv.inviteOne":          "邀請",
+  "priv.invited":            "已邀請",
+  "priv.noFriends":          "還沒加任何好友",
+
+  // room invites
+  "inv.title":               "房間邀請",
+  "inv.empty":               "目前沒有邀請",
+  "inv.fromInviter":         "{p} 邀請你",
+  "inv.expiresAt":           "{ts} 之前",
+  "inv.enter":               "進場",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -346,6 +357,16 @@ const EN: Partial<Record<DictKey, string>> = {
   "priv.join":                "Join",
   "priv.joining":             "Joining…",
   "priv.invalid":             "Invalid link",
+  "priv.inviteFriends":       "Invite friends",
+  "priv.inviteOne":           "Invite",
+  "priv.invited":             "Invited",
+  "priv.noFriends":           "No friends yet",
+
+  "inv.title":                "Room invites",
+  "inv.empty":                "No pending invites",
+  "inv.fromInviter":          "{p} invited you",
+  "inv.expiresAt":            "until {ts}",
+  "inv.enter":                "Enter",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

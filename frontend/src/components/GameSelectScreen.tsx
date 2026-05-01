@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GAME_TYPES } from "../shared/types";
 import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
@@ -6,8 +6,10 @@ import StatsModal  from "./StatsModal";
 import TournamentModal from "./TournamentModal";
 import FriendsModal from "./FriendsModal";
 import PrivateRoomModal from "./PrivateRoomModal";
+import InvitesModal from "./InvitesModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
+import { listInvitesApi } from "../api/http";
 import { useT } from "../i18n/useT";
 
 const ICON: Record<GameType, string> = {
@@ -56,9 +58,27 @@ export default function GameSelectScreen({
   const [tour,     setTour]     = useState(false);
   const [friends,  setFriends]  = useState(false);
   const [priv,     setPriv]     = useState<boolean>(!!initialJoinToken);
+  const [invites,  setInvites]  = useState(false);
+  const [inviteCount, setInviteCount] = useState(0);
   const [specOpen, setSpecOpen] = useState(false);
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
+
+  // Poll incoming invites every 30 s so the badge stays roughly current
+  // without us having to wire WS notifications. The cost is one D1 query
+  // per minute per logged-in tab — fine at our scale.
+  useEffect(() => {
+    let alive = true;
+    async function tick() {
+      try {
+        const r = await listInvitesApi(token);
+        if (alive) setInviteCount(r.invites.length);
+      } catch { /* ignore network blips; badge just won't update this tick */ }
+    }
+    void tick();
+    const id = setInterval(tick, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token, invites, priv]);   // refresh after closing related modals
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950 p-6">
       <div className="absolute left-4 top-4 flex items-center gap-2">
@@ -90,6 +110,20 @@ export default function GameSelectScreen({
             🔒
           </button>
         )}
+        {onPrivateEnter && (
+          <button
+            onClick={() => setInvites(true)}
+            title={t("inv.title")}
+            className="relative rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+          >
+            📨
+            {inviteCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white shadow">
+                {inviteCount > 9 ? "9+" : inviteCount}
+              </span>
+            )}
+          </button>
+        )}
         {onSpectate && (
           <button
             onClick={() => setSpecOpen(true)}
@@ -112,6 +146,13 @@ export default function GameSelectScreen({
           token={token}
           onClose={() => setPriv(false)}
           onEnter={(roomId, gameType) => { setPriv(false); onPrivateEnter(roomId, gameType); }}
+        />
+      )}
+      {invites && onPrivateEnter && (
+        <InvitesModal
+          token={token}
+          onClose={() => setInvites(false)}
+          onEnter={(roomId, gameType) => { setInvites(false); onPrivateEnter(roomId, gameType); }}
         />
       )}
       {specOpen && onSpectate && (

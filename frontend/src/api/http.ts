@@ -274,6 +274,46 @@ export async function resolvePrivateRoomApi(
   return res.json();
 }
 
+// ── Room invites ────────────────────────────────────────────────────
+export interface RoomInvite {
+  id:        number;
+  inviter:   string;
+  joinToken: string;
+  gameType:  GameType;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export async function inviteFriendToRoomApi(
+  token: string, friendPlayerId: string, joinToken: string,
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/rooms/invite`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ friendPlayerId, joinToken }),
+  });
+  if (res.status === 403) throw new Error("not friends");
+  if (res.status === 404) throw new Error("token not found");
+  if (res.status === 410) throw new Error("token expired");
+  if (!res.ok) throw new Error(`invite failed: ${res.status}`);
+}
+
+export async function listInvitesApi(token: string): Promise<{ invites: RoomInvite[] }> {
+  const res = await fetch(`${BASE}/api/rooms/invites`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`list invites failed: ${res.status}`);
+  return res.json();
+}
+
+export async function declineInviteApi(token: string, id: number): Promise<void> {
+  const res = await fetch(`${BASE}/api/rooms/invites/${id}/decline`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`decline failed: ${res.status}`);
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

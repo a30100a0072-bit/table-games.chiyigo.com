@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GAME_TYPES } from "../shared/types";
 import type { GameType } from "../shared/types";
-import { createPrivateRoomApi, resolvePrivateRoomApi } from "../api/http";
+import {
+  createPrivateRoomApi, resolvePrivateRoomApi,
+  listFriendsApi, inviteFriendToRoomApi,
+} from "../api/http";
 import { useT } from "../i18n/useT";
 
 interface Props {
@@ -36,16 +39,34 @@ export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
   const [gameType, setGameType] = useState<GameType>("bigTwo");
   const [busy,     setBusy]     = useState(false);
   const [err,      setErr]      = useState<string | null>(null);
-  const [created,  setCreated]  = useState<{ url: string; gameType: GameType; roomId: string; expiresAt: number } | null>(null);
+  const [created,  setCreated]  = useState<{ url: string; gameType: GameType; roomId: string; expiresAt: number; joinToken: string } | null>(null);
   const [copied,   setCopied]   = useState(false);
   const [joinIn,   setJoinIn]   = useState("");
+  // Friend list loaded after creating a room — drives the "邀請好友" section.
+  const [friends,  setFriends]  = useState<{ playerId: string }[] | null>(null);
+  const [invited,  setInvited]  = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!created) return;
+    listFriendsApi(token).then(d => setFriends(d.accepted)).catch(() => setFriends([]));
+  }, [created, token]);
+
+  async function inviteFriend(friendPlayerId: string) {
+    if (!created) return;
+    try {
+      await inviteFriendToRoomApi(token, friendPlayerId, created.joinToken);
+      setInvited(prev => { const n = new Set(prev); n.add(friendPlayerId); return n; });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "invite failed");
+    }
+  }
 
   async function handleCreate() {
     setBusy(true); setErr(null);
     try {
       const r = await createPrivateRoomApi(token, gameType);
       const url = `${location.origin}${location.pathname}?join=${r.joinToken}`;
-      setCreated({ url, gameType: r.gameType, roomId: r.roomId, expiresAt: r.expiresAt });
+      setCreated({ url, gameType: r.gameType, roomId: r.roomId, expiresAt: r.expiresAt, joinToken: r.joinToken });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed");
     } finally { setBusy(false); }
@@ -145,6 +166,30 @@ export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
                 <p className="text-[10px] text-green-500">
                   {t("priv.expiresAt", { ts: new Date(created.expiresAt).toLocaleString() })}
                 </p>
+
+                <div className="mt-2 border-t border-green-800 pt-3">
+                  <p className="text-xs font-bold text-yellow-200">{t("priv.inviteFriends")}</p>
+                  {friends === null && <p className="text-[10px] text-green-500">{t("friends.loading")}</p>}
+                  {friends && friends.length === 0 && (
+                    <p className="text-[10px] text-green-500">{t("priv.noFriends")}</p>
+                  )}
+                  {friends && friends.length > 0 && (
+                    <ul className="mt-1 max-h-40 overflow-y-auto">
+                      {friends.map(f => (
+                        <li key={f.playerId} className="flex items-center justify-between py-1 text-xs">
+                          <span className="text-yellow-100">{f.playerId}</span>
+                          {invited.has(f.playerId)
+                            ? <span className="text-[10px] text-green-400">✓ {t("priv.invited")}</span>
+                            : <button
+                                onClick={() => inviteFriend(f.playerId)}
+                                className="rounded bg-yellow-600 px-2 py-0.5 text-[10px] font-bold text-yellow-50 hover:bg-yellow-500"
+                              >{t("priv.inviteOne")}</button>
+                          }
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </>
             )}
           </div>
