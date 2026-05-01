@@ -92,6 +92,7 @@ function makeEnv(): { env: Env; queueSends: unknown[]; kvDeletes: string[]; dbIn
   const env: Env = {
     GAME_ROOM:        {} as DurableObjectNamespace,
     TOURNAMENT_DO:    {} as DurableObjectNamespace,
+    LOBBY_DO:         { idFromName: () => ({}), get: () => ({ fetch: async () => new Response("{}") }) } as unknown as DurableObjectNamespace,
     SETTLEMENT_QUEUE: { send: async (m: unknown) => { queueSends.push(m); } } as unknown as Queue,
     MATCH_KV:         {
       delete: async (k: string) => { kvDeletes.push(k); },
