@@ -437,6 +437,18 @@ export async function listLiveRoomsApi(): Promise<{ rooms: LiveRoom[] }> {
   return res.json();
 }
 
+export async function deleteAccountApi(token: string): Promise<{ tombstone: string }> {
+  const res = await fetch(`${BASE}/api/me`, {
+    method: "DELETE",
+    headers: {
+      "Authorization":     `Bearer ${token}`,
+      "X-Confirm-Delete":  "yes",
+    },
+  });
+  if (!res.ok) throw new Error(`account delete failed: ${res.status}`);
+  return res.json();
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

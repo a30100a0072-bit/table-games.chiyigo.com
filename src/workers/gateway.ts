@@ -15,6 +15,7 @@ import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
 import { listMyReplays, getReplay } from "../api/replays";
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
+import { deleteAccount } from "../api/account";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -139,6 +140,10 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "POST" && invDecline)
     return cors(await declineInvite(request, env, invDecline[1]!));
 
+  // ── Account deletion (GDPR) ─────────────────────────────────────────
+  if (request.method === "DELETE" && url.pathname === "/api/me")
+    return cors(await deleteAccount(request, env));
+
   // ── Direct messages ─────────────────────────────────────────────────
   if (request.method === "POST" && url.pathname === "/api/dm/send")
     return cors(await sendDm(request, env));
@@ -197,6 +202,11 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
     return Response.json({ error: "a-z A-Z 0-9 _ - only" }, { status: 400 });
 
   if (playerId.toUpperCase().startsWith("BOT_"))
+    return Response.json({ error: "reserved prefix" }, { status: 400 });
+
+  // Deletion tombstones look like `DELETED_<hex>`. Guard signup so a user
+  // can't recreate a tombstoned identity.                                 // L3_架構含防禦觀測
+  if (playerId.toUpperCase().startsWith("DELETED_"))
     return Response.json({ error: "reserved prefix" }, { status: 400 });
 
   // Lazy-create the user wallet on first login. Idempotent: returning users
@@ -738,7 +748,7 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
 function cors(res: Response): Response {
   const h = new Headers(res.headers);
   h.set("Access-Control-Allow-Origin",  "*");
-  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret, X-Confirm-Delete");
+  h.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   return new Response(res.body, { status: res.status, headers: h });
 }

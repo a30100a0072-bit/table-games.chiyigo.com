@@ -164,7 +164,7 @@ export default function GameSelectScreen({
         <MuteToggle />
       </div>
       <div className="absolute right-4 top-4">
-        <WalletBadge token={token} />
+        <WalletBadge token={token} onAccountDeleted={onLogout} />
       </div>
       {stats && <StatsModal playerId={playerId} token={token} onClose={() => setStats(false)} />}
       {friends && <FriendsModal token={token} onClose={() => setFriends(false)} />}

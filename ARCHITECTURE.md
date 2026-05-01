@@ -312,6 +312,9 @@ gateway.ts ──verifyJWT──► GameRoomDO
 4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；單局結算不適用
 5. **七搶一 / 八仙過海** — 需要 8 花直接終局與「第 8 花被搶」hook
 
+### ✅ 後續補齊（2026-05-01 第四批 — 上線前合規）
+- **帳號刪除 / GDPR**（`src/api/account.ts` + `src/workers/gateway.ts` 加 `DELETE /api/me` 路由 / CORS 允許 `DELETE` 與 `X-Confirm-Delete` header / `/auth/token` 加 `DELETED_` 前綴守關 / `frontend/src/api/http.ts` `deleteAccountApi` / `frontend/src/components/WalletBadge.tsx` 三段式刪除流程（連結 → 警告 → 輸入 `DELETE` 確認）/ `test/account.test.ts` 6 案）：混合策略——hard-delete `friendships/dms/room_invites/room_tokens/users`；anonymise `chip_ledger/player_settlements/games/tournament_entries/replay_meta` 為 `DELETED_<8-hex>` tombstone（保留會計與 replay 結構完整性，PII 蓋掉）；`replay_meta.player_ids` 用 JSON-quoted REPLACE 防 substring 誤撞；要求 `X-Confirm-Delete: yes` header 防 token 重放洗號
+
 ### ✅ 後續補齊（2026-05-01 第三批 — 觀測性）
 - **Tail forwarder worker**（`src/forwarder/index.ts` + `wrangler.forwarder.toml` + `wrangler.toml` 加 `tail_consumers` + `.github/workflows/cloudflare-deploy.yml` 加先部署 step + `test/forwarder.test.ts` 11 案）：純 self-contained，獨立 worker `big-two-log-forwarder` 收 tail events，過濾後 POST 到 webhook。過濾規則：所有 exception + console error/warn + structured log event ∈ ALWAYS_FORWARD_EVENTS（admin_*、settlement_failed、bailout_granted、rate_limited、tournament_*_failed、match_blocked_frozen 等審計或異常事件）。Discord / Slack 同包（送 `{content, text}` 雙鍵），body 截 1500 字防超 Discord 2000 上限。secret 沒設 → no-op；不影響主 worker。
 
@@ -340,7 +343,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 19 檔 / 199 案 + Workers 整合 2 檔 / 6 案 = 205 全綠**。`npm audit` 0 漏洞。
+測試矩陣現況：**Node 單元 20 檔 / 205 案 + Workers 整合 2 檔 / 6 案 = 211 全綠**。`npm audit` 0 漏洞。
 
 ---
 
