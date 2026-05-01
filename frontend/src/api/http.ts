@@ -388,6 +388,55 @@ export async function getReplayApi(token: string, gameId: string): Promise<Repla
   return res.json();
 }
 
+export interface DmMessage {
+  id:         number;
+  sender:     string;
+  recipient:  string;
+  body:       string;
+  created_at: number;
+  read_at:    number | null;
+}
+
+export async function sendDmApi(token: string, to: string, body: string): Promise<{ id: number; createdAt: number }> {
+  const res = await fetch(`${BASE}/api/dm/send`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ to, body }),
+  });
+  if (!res.ok) throw new Error(`dm send failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listDmConversationApi(token: string, peer: string): Promise<{ messages: DmMessage[] }> {
+  const res = await fetch(`${BASE}/api/dm/inbox?with=${encodeURIComponent(peer)}`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) return { messages: [] };
+  return res.json();
+}
+
+export async function unreadDmCountApi(token: string): Promise<{ unread: number }> {
+  const res = await fetch(`${BASE}/api/dm/unread`, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) return { unread: 0 };
+  return res.json();
+}
+
+export interface LiveRoom {
+  roomId:      string;
+  gameType:    GameType;
+  playerCount: number;
+  capacity:    number;
+  startedAt:   number;
+}
+
+export async function listLiveRoomsApi(): Promise<{ rooms: LiveRoom[] }> {
+  const res = await fetch(`${BASE}/api/rooms/live`);
+  if (!res.ok) return { rooms: [] };
+  return res.json();
+}
+
 export async function claimBailout(token: string): Promise<BailoutResponse> {
   const res = await fetch(`${BASE}/api/me/bailout`, {
     method:  "POST",

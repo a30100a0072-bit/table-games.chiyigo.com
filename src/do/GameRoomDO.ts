@@ -21,6 +21,7 @@ import { parseIncomingFrame } from "../utils/wsFrame";
 export interface Env {
   GAME_ROOM:        DurableObjectNamespace;
   TOURNAMENT_DO:    DurableObjectNamespace;     // notify on settle when room is part of a tournament
+  LOBBY_DO:         DurableObjectNamespace;     // live-room registry for spectator listings
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   MATCH_KV:         KVNamespace;       // cleared on cleanup so players can rejoin // L2_隔離
   DB:               D1Database;        // replay_meta append at settle           // L3_架構
@@ -76,6 +77,9 @@ interface RoomMeta {
   capacity:     number;
   tournamentId?:    string;                         // set if this room is part of a tournament round
   allowedPlayers?:  PlayerId[];                     // tournament gate: only these IDs may WS-join
+  /** Texas-only — overrides default 10/20 (tournament rounds escalate). */
+  smallBlind?:      number;
+  bigBlind?:        number;
 }
 
 const RECONNECT_MS  = 60_000;
@@ -136,9 +140,11 @@ export class GameRoomDO implements DurableObject {
     const {
       gameId, roundId, gameType, capacity,
       botIds = [], prefilledPlayerIds, tournamentId,
+      smallBlind, bigBlind,
     } = await request.json<{
       gameId: string; roundId: string; gameType?: string; capacity: number;
       botIds?: string[]; prefilledPlayerIds?: string[]; tournamentId?: string;
+      smallBlind?: number; bigBlind?: number;
     }>();
     if (capacity < 2 || capacity > 4)
       return new Response("capacity must be 2–4", { status: 400 });
@@ -151,11 +157,23 @@ export class GameRoomDO implements DurableObject {
     // For tournament rooms, prefilledPlayerIds becomes an allow-list:
     // only those four IDs may WS-connect. The room still uses the
     // existing "first-N-to-connect fills the seats" path — no auto-start. // L2_實作
+    // Validate blinds before persisting: SB > 0 and BB ≥ 2·SB matches the
+    // engine's INVALID_BLINDS guard so a bad init fails fast at /init.
+    if (smallBlind !== undefined || bigBlind !== undefined) {
+      if (gt !== "texas")
+        return new Response("blinds only valid for texas", { status: 400 });
+      if (!Number.isInteger(smallBlind) || !Number.isInteger(bigBlind) ||
+          (smallBlind as number) <= 0 || (bigBlind as number) < (smallBlind as number) * 2)
+        return new Response("invalid blinds", { status: 400 });
+    }
+
     this.room = {
       gameId, roundId, gameType: gt, phase: "waiting",
       playerIds: [...botIds], capacity,
       ...(tournamentId    ? { tournamentId } : {}),
       ...(prefilledPlayerIds ? { allowedPlayers: prefilledPlayerIds } : {}),
+      ...(smallBlind !== undefined ? { smallBlind } : {}),
+      ...(bigBlind   !== undefined ? { bigBlind }   : {}),
     };
     await this.state.storage.put(SK.ROOM, this.room);
 
@@ -241,6 +259,8 @@ export class GameRoomDO implements DurableObject {
       gameId:    this.room.gameId,
       roundId:   this.room.roundId,
       playerIds: this.room.playerIds,
+      ...(this.room.smallBlind !== undefined ? { smallBlind: this.room.smallBlind } : {}),
+      ...(this.room.bigBlind   !== undefined ? { bigBlind:   this.room.bigBlind   } : {}),
     });
     // Capture the post-deal snapshot so a replay can restoreEngine()
     // with identical state and reapply events deterministically.        // L3_架構
@@ -259,6 +279,44 @@ export class GameRoomDO implements DurableObject {
     await this.scheduleNextDeadline();
     // If the seat that should act is a bot, schedule bot action.          // L2_實作
     await this.checkBotTurn();
+    // Register with the LobbyDO live-room registry so spectators can list. // L2_實作
+    await this.registerLive();
+  }
+
+  private async registerLive(): Promise<void> {
+    if (!this.room) return;
+    // Only register rooms with at least one real player — pure-bot tables
+    // shouldn't be advertised as something humans can spectate.
+    const humans = this.room.playerIds.filter(id => !isBot(id));
+    if (humans.length === 0) return;
+    try {
+      const stub = this.env.LOBBY_DO.get(this.env.LOBBY_DO.idFromName("registry"));
+      await stub.fetch(new Request("https://lobby.internal/register-live", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          roomId:      this.room.gameId,
+          gameType:    this.room.gameType,
+          playerCount: humans.length,
+          capacity:    this.room.capacity,
+          startedAt:   Date.now(),
+        }),
+      }));
+    } catch {
+      // Registry is observability-only; never block gameplay on it.
+    }
+  }
+
+  private async unregisterLive(): Promise<void> {
+    if (!this.room) return;
+    try {
+      const stub = this.env.LOBBY_DO.get(this.env.LOBBY_DO.idFromName("registry"));
+      await stub.fetch(new Request("https://lobby.internal/unregister-live", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ roomId: this.room.gameId }),
+      }));
+    } catch { /* swallowed — same rationale as registerLive */ }
   }
 
   // ── WebSocket Hibernation API ─────────────────────────────────────────── L3_架構含防禦觀測
@@ -712,6 +770,9 @@ export class GameRoomDO implements DurableObject {
   }
 
   private async cleanup(): Promise<void> {
+    // Drop from spectator registry before tearing down — humanIds and gameId
+    // are still readable here. Failures are non-fatal (registry is best-effort). // L2_實作
+    await this.unregisterLive();
     // Clear MATCH_KV `room:{pid}` for every human player so they can rejoin a new lobby. // L2_隔離
     // Bots never make match requests so they have no KV entries.
     const humanIds = (this.room?.playerIds ?? []).filter(id => !isBot(id));

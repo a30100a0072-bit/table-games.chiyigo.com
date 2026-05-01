@@ -14,6 +14,7 @@ import {
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
 import { listMyReplays, getReplay } from "../api/replays";
+import { sendDm, listInbox, unreadDmCount } from "../api/dms";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -122,6 +123,11 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "GET" && tokenJoin)
     return cors(await resolvePrivateRoom(request, env, decodeURIComponent(tokenJoin[1]!)));
 
+  // Spectator: list currently-running rooms (no auth required — privacy is
+  // covered by not exposing player IDs, only counts + gameType + age).      // L2_實作
+  if (request.method === "GET" && url.pathname === "/api/rooms/live")
+    return cors(await listLiveRooms(env));
+
   // ── Room invites ────────────────────────────────────────────────────
   if (request.method === "POST" && url.pathname === "/api/rooms/invite")
     return cors(await inviteToRoom(request, env));
@@ -132,6 +138,14 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   const invDecline = url.pathname.match(/^\/api\/rooms\/invites\/(\d+)\/decline$/);
   if (request.method === "POST" && invDecline)
     return cors(await declineInvite(request, env, invDecline[1]!));
+
+  // ── Direct messages ─────────────────────────────────────────────────
+  if (request.method === "POST" && url.pathname === "/api/dm/send")
+    return cors(await sendDm(request, env));
+  if (request.method === "GET"  && url.pathname === "/api/dm/inbox")
+    return cors(await listInbox(request, env));
+  if (request.method === "GET"  && url.pathname === "/api/dm/unread")
+    return cors(await unreadDmCount(request, env));
 
   // ── Replays ─────────────────────────────────────────────────────────
   if (request.method === "GET" && url.pathname === "/api/me/replays")
@@ -648,6 +662,20 @@ function jwksResponse(env: GatewayEnv): Response {
 }
 
 // ── POST /rooms — create a new GameRoomDO ─────────────────────��──────────
+
+async function listLiveRooms(env: GatewayEnv): Promise<Response> {
+  // Single-instance registry — one fetch returns the global view across all
+  // game types. Keep the response shape stable for the SpectatorModal.    // L2_實作
+  try {
+    const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName("registry"));
+    const r = await stub.fetch(new Request("https://lobby.internal/live", { method: "GET" }));
+    if (!r.ok) return Response.json({ rooms: [] });
+    const body = await r.json<{ rooms: unknown }>();
+    return Response.json(body);
+  } catch {
+    return Response.json({ rooms: [] });
+  }
+}
 
 async function createRoom(request: Request, env: GatewayEnv): Promise<Response> {
   let capacity = 4;

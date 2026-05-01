@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   listFriendsApi, requestFriendApi, respondFriendApi, unfriendApi,
+  listDmConversationApi, sendDmApi,
 } from "../api/http";
-import type { FriendsResponse } from "../api/http";
+import type { FriendsResponse, DmMessage } from "../api/http";
 import { useT } from "../i18n/useT";
 
 interface Props {
@@ -12,6 +13,91 @@ interface Props {
 
 type Tab = "accepted" | "incoming" | "outgoing";
 
+function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack: () => void }) {
+  const [msgs, setMsgs] = useState<DmMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  async function refresh() {
+    try {
+      const r = await listDmConversationApi(token, peer);
+      setMsgs(r.messages);
+    } catch { /* keep last view */ }
+  }
+  useEffect(() => {
+    void refresh();
+    const id = setInterval(refresh, 5_000);
+    return () => clearInterval(id);
+  }, [peer]);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [msgs.length]);
+
+  async function send() {
+    const body = draft.trim();
+    if (body.length === 0 || body.length > 500) return;
+    setBusy(true); setErr(null);
+    try {
+      await sendDmApi(token, peer, body);
+      setDraft("");
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex items-center gap-2">
+        <button
+          onClick={onBack}
+          className="rounded bg-green-800 px-2 py-1 text-[10px] text-green-200 hover:bg-green-700"
+        >← back</button>
+        <span className="text-sm font-bold text-yellow-200">💬 {peer}</span>
+      </div>
+      <div ref={scrollRef} className="flex-1 space-y-1 overflow-y-auto rounded-md bg-green-950/60 p-2 text-xs">
+        {msgs.length === 0 && <p className="text-center text-green-500">no messages yet</p>}
+        {msgs.map(m => (
+          <div
+            key={m.id}
+            className={[
+              "max-w-[80%] rounded-lg px-2 py-1",
+              m.sender === peer
+                ? "self-start bg-green-800 text-yellow-100"
+                : "ml-auto bg-yellow-700/80 text-yellow-50",
+            ].join(" ")}
+          >
+            <div className="break-words">{m.body}</div>
+            <div className="mt-0.5 text-[9px] text-green-300">
+              {new Date(m.created_at).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+      </div>
+      {err && <p className="mt-1 text-[10px] text-red-300">{err}</p>}
+      <div className="mt-2 flex gap-1">
+        <input
+          type="text"
+          value={draft}
+          maxLength={500}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") void send(); }}
+          disabled={busy}
+          placeholder="say something (≤500)"
+          className="flex-1 rounded-lg bg-green-800 px-2 py-1.5 text-xs text-yellow-100 placeholder:text-green-500"
+        />
+        <button
+          onClick={send}
+          disabled={busy || draft.trim().length === 0}
+          className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-bold text-green-950 disabled:bg-gray-700 disabled:text-gray-500"
+        >send</button>
+      </div>
+    </div>
+  );
+}
+
 export default function FriendsModal({ token, onClose }: Props) {
   const { t } = useT();
   const [data,    setData]    = useState<FriendsResponse | null>(null);
@@ -19,6 +105,7 @@ export default function FriendsModal({ token, onClose }: Props) {
   const [target,  setTarget]  = useState("");
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState<string | null>(null);
+  const [dmPeer,  setDmPeer]  = useState<string | null>(null);
 
   async function refresh() {
     try { setData(await listFriendsApi(token)); }
@@ -68,6 +155,12 @@ export default function FriendsModal({ token, onClose }: Props) {
           >{t("common.close")}</button>
         </div>
 
+        {dmPeer && (
+          <div className="mt-3 flex flex-1 flex-col">
+            <DmPanel token={token} peer={dmPeer} onBack={() => setDmPeer(null)} />
+          </div>
+        )}
+        {!dmPeer && (<>
         <div className="mt-4 flex gap-2">
           <input
             type="text"
@@ -109,11 +202,19 @@ export default function FriendsModal({ token, onClose }: Props) {
                   {data.accepted.map(f => (
                     <li key={f.playerId} className="flex items-center justify-between rounded-md bg-green-800/60 px-3 py-2">
                       <span className="text-sm text-yellow-100">{f.playerId}</span>
-                      <button
-                        onClick={() => remove(f.playerId)}
-                        disabled={busy}
-                        className="rounded bg-red-700 px-2 py-1 text-[10px] font-bold text-red-50 hover:bg-red-600 disabled:opacity-50"
-                      >{t("friends.unfriend")}</button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setDmPeer(f.playerId)}
+                          disabled={busy}
+                          className="rounded bg-yellow-600 px-2 py-1 text-[10px] font-bold text-yellow-50 hover:bg-yellow-500 disabled:opacity-50"
+                          title="DM"
+                        >💬</button>
+                        <button
+                          onClick={() => remove(f.playerId)}
+                          disabled={busy}
+                          className="rounded bg-red-700 px-2 py-1 text-[10px] font-bold text-red-50 hover:bg-red-600 disabled:opacity-50"
+                        >{t("friends.unfriend")}</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -158,6 +259,7 @@ export default function FriendsModal({ token, onClose }: Props) {
                 </ul>
           )}
         </div>
+        </>)}
       </div>
     </div>
   );

@@ -15,6 +15,16 @@ const PRIZE_RAKE_PCT = 5;        // 5% house rake on prize pool
 const ROUNDS         = 3;        // best-of-3
 const REQUIRED       = 4;        // single tournament size for MVP
 
+/** Texas-only blind escalation per round (SB / BB). Casual rooms keep
+ *  10 / 20; tournaments ramp so the bubble has real pressure. R3 is 5×
+ *  the BB of R1 — aggressive but the buy-in is fixed (200) so 100/200
+ *  isn't pot-committing the table on the first hand.                       // L2_實作 */
+const TEXAS_TOURNAMENT_BLINDS: Array<{ smallBlind: number; bigBlind: number }> = [
+  { smallBlind: 10, bigBlind: 20  },
+  { smallBlind: 20, bigBlind: 40  },
+  { smallBlind: 50, bigBlind: 100 },
+];
+
 export interface TournamentEnv {
   GAME_ROOM:        DurableObjectNamespace;
   TOURNAMENT_DO:    DurableObjectNamespace;
@@ -194,6 +204,12 @@ export class TournamentDO implements DurableObject {
     const roundId = crypto.randomUUID();
     const stub    = this.env.GAME_ROOM.get(this.env.GAME_ROOM.idFromName(roomId));
 
+    // Texas tournaments escalate blinds per round; index by roundsDone (0-based
+    // before this round runs). Last entry is reused if rounds_total > table.   // L2_實作
+    const blinds = this.s.gameType === "texas"
+      ? TEXAS_TOURNAMENT_BLINDS[Math.min(this.s.roundsDone, TEXAS_TOURNAMENT_BLINDS.length - 1)]!
+      : null;
+
     // Hand the room our tournament_id so its post-settle hook can reach
     // back into this DO.                                                  // L2_實作
     const init = await stub.fetch(new Request("https://gameroom.internal/init", {
@@ -206,6 +222,7 @@ export class TournamentDO implements DurableObject {
         capacity:     REQUIRED,
         tournamentId: this.s.tournamentId,
         prefilledPlayerIds: this.s.entries.map(e => e.playerId),
+        ...(blinds ? { smallBlind: blinds.smallBlind, bigBlind: blinds.bigBlind } : {}),
       }),
     }));
 

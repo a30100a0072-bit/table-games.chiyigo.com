@@ -133,6 +133,11 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
               <div className="text-xs text-green-300">
                 Best-of-{detail.tournament.rounds_total} · 已完成 {detail.tournament.rounds_done} 局
               </div>
+              {detail.tournament.game_type === "texas" && (
+                <div className="mt-1 text-[11px] text-green-400">
+                  盲注：R1 10/20 · R2 20/40 · R3 50/100
+                </div>
+              )}
             </div>
 
             <div className="mb-3 max-h-64 overflow-y-auto">

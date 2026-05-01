@@ -207,3 +207,22 @@ CREATE TABLE IF NOT EXISTS replay_meta (
 );
 
 CREATE INDEX IF NOT EXISTS idx_replay_meta_finished ON replay_meta (finished_at DESC);
+
+-- ── dms ──────────────────────────────────────────────────────────────────
+-- Friend-only direct messages. Sender and recipient must already be in an
+-- accepted friendship (enforced at the API layer). Retention is 7 days —
+-- the inbox endpoint filters on (created_at > now - 7d), and an out-of-band
+-- prune is left to a manual cron / wrangler call (see ARCHITECTURE.md).
+-- `body` is plain text only (no markdown, no HTML); 500 char ceiling.
+CREATE TABLE IF NOT EXISTS dms (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender      TEXT    NOT NULL,
+  recipient   TEXT    NOT NULL,
+  body        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,           -- Unix ms
+  read_at     INTEGER                     -- NULL until recipient calls /inbox or /read
+);
+
+CREATE INDEX IF NOT EXISTS idx_dms_inbox    ON dms (recipient, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dms_outbox   ON dms (sender,    created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dms_purgable ON dms (created_at);

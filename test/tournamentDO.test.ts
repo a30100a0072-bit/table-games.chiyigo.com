@@ -190,6 +190,34 @@ describe("TournamentDO lifecycle", () => {
     expect(r.status).toBe(400);
   });
 
+  it("texas tournaments escalate blinds 10/20 → 20/40 → 50/100 across rounds", async () => {
+    const t = makeDO();
+    await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType: "texas", buyIn: 200 }));
+    for (const pid of ["alice", "bob", "carol", "dave"]) {
+      await t.fetch(req("POST", "/join", { playerId: pid }));
+    }
+    // Round 1 init
+    expect((gameRoomCalls[0]!.body as Record<string, unknown>).smallBlind).toBe(10);
+    expect((gameRoomCalls[0]!.body as Record<string, unknown>).bigBlind).toBe(20);
+    await t.fetch(req("POST", "/round-result", { settlement: settlement({ alice: 30, bob: -10, carol: -10, dave: -10 }) }));
+    expect((gameRoomCalls[1]!.body as Record<string, unknown>).smallBlind).toBe(20);
+    expect((gameRoomCalls[1]!.body as Record<string, unknown>).bigBlind).toBe(40);
+    await t.fetch(req("POST", "/round-result", { settlement: settlement({ alice: 30, bob: -10, carol: -10, dave: -10 }) }));
+    expect((gameRoomCalls[2]!.body as Record<string, unknown>).smallBlind).toBe(50);
+    expect((gameRoomCalls[2]!.body as Record<string, unknown>).bigBlind).toBe(100);
+  });
+
+  it("non-texas tournaments do not include blind fields in init", async () => {
+    const t = makeDO();
+    await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType: "bigTwo", buyIn: 200 }));
+    for (const pid of ["alice", "bob", "carol", "dave"]) {
+      await t.fetch(req("POST", "/join", { playerId: pid }));
+    }
+    const body = gameRoomCalls[0]!.body as Record<string, unknown>;
+    expect(body.smallBlind).toBeUndefined();
+    expect(body.bigBlind).toBeUndefined();
+  });
+
   it("ties broken by registration order", async () => {
     const t = makeDO();
     await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType: "bigTwo", buyIn: 200 }));

@@ -118,19 +118,28 @@ function canFormMelds(counts: Counts, need: number): boolean {
 }
 
 // ──────────────────────────────────────────────
-//  台數計算（MVP — 平胡 / 自摸 / 門清）  (L2_待辦：大四喜/字一色/清一色精算)
+//  台數計算 — 大眾規則 (engine_version 2)
+//  涵蓋：平胡 / 自摸 / 門前清 / 清一色 / 字一色 / 大三元 / 大四喜 /
+//        小三元 / 小四喜 / 槓上開花 / 三/四/五暗刻 / 全求人 / 花牌 /
+//        海底撈月 / 河底撈魚 / 莊家。                                    // L3_架構
+//  未實作（需狀態機改動或多局上下文）：搶槓、連莊 N、七搶一、八仙過海。
 // ──────────────────────────────────────────────
 export interface FanResult {
   base: number;            // 底
   fan: number;             // 台
   detail: string[];
 }
-function calcFan(opts: {
+export function calcFan(opts: {
   selfDrawn: boolean;
   menqing: boolean;        // 門前清（未吃碰）
   exposed: ExposedMeld[];
   hand: MahjongTile[];     // 含胡牌
+  winningTile: MahjongTile; // 用來判定食胡的明刻不算暗刻
+  isBanker: boolean;        // 莊家
+  flowerCount: number;      // 開局以來收的花牌數
   drewFromKongReplacement?: boolean;
+  lastWallDraw?: boolean;   // 海底撈月：自摸取自牌牆最後一張
+  lastRiverHu?: boolean;    // 河底撈魚：食胡的牌是牆空後最後一張被打出
 }): FanResult {
   const detail: string[] = ["平胡"];
   let fan = 0;
@@ -138,34 +147,89 @@ function calcFan(opts: {
   // 完整牌組（手牌 + 對外副露）— 所有結構性台用得上                       // L2_實作
   const all: MahjongTile[] = [...opts.hand, ...opts.exposed.flatMap(m => m.tiles)];
 
-  // 清一色：全 m / p / s 同花色，無字牌
-  // 字一色：全字牌
+  // 清一色 / 字一色
   const suits = new Set(all.map(t => t.suit));
   if (suits.size === 1) {
     if (suits.has("z")) { fan += 16; detail.push("字一色"); }
     else                { fan += 8;  detail.push("清一色"); }
   }
 
-  // 大三元：中(z5) / 發(z6) / 白(z7) 三組刻子（≥3 張即視為刻子，含明刻 / 暗刻 / 槓）
+  // ─ 三元台（大三元 / 小三元）
   const honorCount = (rank: number) =>
     all.filter(t => t.suit === "z" && t.rank === rank).length;
-  if (honorCount(5) >= 3 && honorCount(6) >= 3 && honorCount(7) >= 3) {
+  const dragonRanks = [5, 6, 7];                    // 中 / 發 / 白
+  const dragonTriplets = dragonRanks.filter(r => honorCount(r) >= 3).length;
+  const dragonPair     = dragonRanks.some(r => honorCount(r) === 2);
+  if (dragonTriplets === 3) {
     fan += 8; detail.push("大三元");
+  } else if (dragonTriplets === 2 && dragonPair) {
+    fan += 4; detail.push("小三元");
   }
 
-  // 大四喜：東(z1) / 南(z2) / 西(z3) / 北(z4) 四組刻子
-  if (honorCount(1) >= 3 && honorCount(2) >= 3 && honorCount(3) >= 3 && honorCount(4) >= 3) {
+  // ─ 四喜（大四喜 / 小四喜）
+  const windRanks = [1, 2, 3, 4];                   // 東 / 南 / 西 / 北
+  const windTriplets = windRanks.filter(r => honorCount(r) >= 3).length;
+  const windPair     = windRanks.some(r => honorCount(r) === 2);
+  if (windTriplets === 4) {
     fan += 16; detail.push("大四喜");
+  } else if (windTriplets === 3 && windPair) {
+    fan += 8; detail.push("小四喜");
   }
 
-  // 槓上開花：開槓後從牌牆尾補一張，補到的牌正好胡（state machine 標記）   // L3_架構
+  // ─ 暗刻（三/四/五暗刻）
+  // hand 內部 ≥3 同牌 = 暗刻；但若食胡且 winningTile 進到該刻子裡，
+  // 該刻子降級為明刻。kong_concealed 永遠算暗刻。                        // L2_實作
+  const handCounts = new Map<string, number>();
+  for (const t of opts.hand) {
+    const k = `${t.suit}-${t.rank}`;
+    handCounts.set(k, (handCounts.get(k) ?? 0) + 1);
+  }
+  const winKey = `${opts.winningTile.suit}-${opts.winningTile.rank}`;
+  let concealedTriplets = 0;
+  for (const [k, n] of handCounts) {
+    if (n >= 3) {
+      // 食胡且贏牌就是這張 → 明刻，不算
+      if (!opts.selfDrawn && k === winKey) continue;
+      concealedTriplets += 1;
+    }
+  }
+  concealedTriplets += opts.exposed.filter(m => m.kind === "kong_concealed").length;
+  if (concealedTriplets === 5)      { fan += 8; detail.push("五暗刻"); }
+  else if (concealedTriplets === 4) { fan += 5; detail.push("四暗刻"); }
+  else if (concealedTriplets === 3) { fan += 2; detail.push("三暗刻"); }
+
+  // ─ 全求人：所有 meld 都來自副露（無暗槓）+ 食胡 + 手牌僅剩對子+贏牌
+  // 4 副露 + (2 對子 + 1 贏牌) = 12 + 3 = 15... 實際 16+1=17 含贏牌；
+  // 對子 2 + 贏牌 1 = 3，配 4 個 exposed 共 15 不足。標準 16 張 5 副+1 對 =
+  // 17 含贏牌；4 副露=12，hand 僅 5 張（4+winning），其中要含 1 對 + 贏牌
+  // 進場成第 5 副(刻/順)。換句話說 hand.length === 5 含贏牌、exposed.length === 4、
+  // !selfDrawn、無暗槓。                                                  // L2_實作
+  const hasConcealedKong = opts.exposed.some(m => m.kind === "kong_concealed");
+  if (!opts.selfDrawn && opts.exposed.length === 4 && !hasConcealedKong &&
+      opts.hand.length <= 5) {
+    fan += 4; detail.push("全求人");
+  }
+
+  // ─ 海底 / 河底
+  if (opts.selfDrawn  && opts.lastWallDraw) { fan += 1; detail.push("海底撈月"); }
+  if (!opts.selfDrawn && opts.lastRiverHu)  { fan += 1; detail.push("河底撈魚"); }
+
+  // ─ 槓上開花（既有）
   if (opts.drewFromKongReplacement && opts.selfDrawn) {
     fan += 1; detail.push("槓上開花");
   }
 
+  // ─ 自摸 / 門前清 / 門清自摸 / 莊家
   if (opts.selfDrawn) { fan += 1; detail.push("自摸"); }
   if (opts.menqing)   { fan += 1; detail.push("門前清"); }
   if (opts.menqing && opts.selfDrawn) { fan += 1; detail.push("門清自摸"); }
+  if (opts.isBanker)  { fan += 1; detail.push("莊家"); }
+
+  // ─ 花牌：每張 +1 台
+  if (opts.flowerCount > 0) {
+    fan += opts.flowerCount;
+    detail.push(`花牌×${opts.flowerCount}`);
+  }
 
   return { base: 1, fan, detail };
 }
@@ -197,12 +261,15 @@ interface InternalState {
   players: PlayerState[];                        // 固定 4 人，順時鐘
   wall: MahjongTile[];                           // 牌牆剩餘
   turnIdx: number;                               // 當前行動者索引
+  dealerIdx: number;                             // 莊家座位（單局簡化：開局即莊，預設 0） // L2_實作
   lastDiscard: { tile: MahjongTile; playerIdx: number } | null;
   pendingReactions: PendingReaction[];           // L3_架構
   reactionDeadlineMs: number;
   turnDeadlineMs: number;
   drawnThisTurn: MahjongTile | null;             // 本回合剛摸的牌（決定 menqing/自摸）
   drewFromKongReplacement: boolean;              // 補摸自槓尾，下一手胡計「槓上開花」 // L3_架構
+  drewLastWallTile: boolean;                     // 本手摸到的是牌牆最後一張 → 海底撈月候補 // L2_實作
+  lastDiscardOnEmptyWall: boolean;               // 上一手摸了最後一張後打出 → 河底撈魚候補 // L2_實作
 }
 
 export type ProcessResult =
@@ -249,12 +316,15 @@ export class MahjongStateMachine {
       players: playerStates,
       wall,
       turnIdx: banker,
+      dealerIdx: banker,
       lastDiscard: null,
       pendingReactions: [],
       reactionDeadlineMs: 0,
       turnDeadlineMs: Date.now() + TURN_WINDOW_MS,
       drawnThisTurn: drawn,
       drewFromKongReplacement: false,
+      drewLastWallTile: wall.length === 0,
+      lastDiscardOnEmptyWall: false,
     };
   }
 
@@ -326,6 +396,9 @@ export class MahjongStateMachine {
     me.hand.splice(ti, 1);
     this.s.lastDiscard = { tile: a.tile, playerIdx: idx };
     this.s.drawnThisTurn = null;
+    // 若這手是摸了牌牆最後一張之後打出 → 食胡此牌算「河底撈魚」候補。   // L2_實作
+    this.s.lastDiscardOnEmptyWall = this.s.drewLastWallTile;
+    this.s.drewLastWallTile = false;
 
     // 進入 PENDING_REACTIONS — 收集其他 3 人意圖   // L3_架構
     this.s.phase = "pending_reactions";
@@ -586,8 +659,10 @@ export class MahjongStateMachine {
   }
 
   private advanceToNextDraw(): ProcessResult {
+    // 進到下一摸 → 上一手「在空牆後打出」的河底候補也清掉。               // L2_實作
     this.s.lastDiscard = null;
     this.s.pendingReactions = [];
+    this.s.lastDiscardOnEmptyWall = false;
     this.s.turnIdx = (this.s.turnIdx + 1) % 4;
     const me = this.s.players[this.s.turnIdx]!;
     const tile = drawNonFlower(this.s.wall, me.flowers);
@@ -595,6 +670,7 @@ export class MahjongStateMachine {
     me.hand.push(tile);
     this.s.drawnThisTurn = tile;
     this.s.drewFromKongReplacement = false;       // 進入新一手 → 槓上開花失效
+    this.s.drewLastWallTile = this.s.wall.length === 0;  // 海底撈月候補：摸完後牆空 // L2_實作
     this.s.phase = "playing";
     this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
     return { ok: true };
@@ -627,12 +703,23 @@ export class MahjongStateMachine {
   private settle(winnerIdx: number, selfDrawn: boolean, payerIdx: number | null): SettlementResult {
     this.s.phase = "settled";
     const winner = this.s.players[winnerIdx]!;
+    // 自摸時贏牌即 drawnThisTurn；食胡時贏牌即 lastDiscard.tile。
+    const winningTile: MahjongTile = selfDrawn
+      ? (this.s.drawnThisTurn ?? winner.hand[winner.hand.length - 1]!)
+      : (this.s.lastDiscard?.tile ?? winner.hand[winner.hand.length - 1]!);
+    // 食胡時贏牌不在 hand；要把它加進去結構性台才算得對。               // L2_實作
+    const handForFan: MahjongTile[] = selfDrawn ? winner.hand : [...winner.hand, winningTile];
     const fan = calcFan({
       selfDrawn,
       menqing: winner.exposed.every(m => m.kind === "kong_concealed"),
       exposed: winner.exposed,
-      hand: winner.hand,
+      hand: handForFan,
+      winningTile,
+      isBanker: winnerIdx === this.s.dealerIdx,
+      flowerCount: winner.flowers.length,
       drewFromKongReplacement: this.s.drewFromKongReplacement,
+      lastWallDraw: this.s.drewLastWallTile,
+      lastRiverHu: this.s.lastDiscardOnEmptyWall,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
     return {

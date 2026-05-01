@@ -301,22 +301,24 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - `.gitattributes`：commit 不再噴 CRLF 警告
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
 
-### ⏳ 真正剩下的（小到中）
+### ⏳ 真正剩下的
 
 **需要外部資源**
-1. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink；要 sentry DSN 或設 `tail_consumers`
-2. **OAuth 真登入**（Google / Apple）— 取代 guest token；要 IdP App credentials
+1. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有；`wrangler.toml` 已留 `tail_consumers` 骨架註解，等決定走 Logpush（付費）或 tail forwarder worker（免費）後啟用
+2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**（2026-05-01 決議）：guest token + 帳號凍結 + ledger 已足夠跑 demo / 內測；待用戶量上來再啟動 IdP 申請
 
-**產品決策（待規格確認）**
-3. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任 / 海底撈月 / 河底撈魚）— 需要你決定：要哪幾種、各幾台、是否與既有台數系統 stacking；對應演算法改動會 bump `ENGINE_VERSION`（舊 replay 變唯讀）
-4. **Texas blind escalation** — 需要你給 blind level table（例：每 5 分鐘升一級，10/20 → 15/30 → 20/40 …），以及是否只在賽事模式啟用；牽動 `lobby.ts` ANTE 與 settle 邏輯
-5. **觀戰 live listings**（哪些房正在玩？）— 目前要靠分享房號；上線後若要做需設計列表 endpoint
-6. **Friend DMs / chat** — 範圍多大？只能傳給好友？要不要訊息保留期？
+**麻將進階台（需狀態機改動，2026-05-01 後續再做）**
+3. **搶槓** — 需要 `加槓` 加開反應視窗，目前只有 `kong/exposed` 與 `kong/concealed` 兩種未走 reaction window
+4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；單局結算不適用
+5. **七搶一 / 八仙過海** — 需要 8 花直接終局與「第 8 花被搶」hook
 
-**自包含但 nice-to-have**
-（清單已清空 — 上述項目皆已落地，見「後續補齊」段。）
+### ✅ 後續補齊（2026-05-01 第二批）
+- **Texas 賽事升盲**（`src/do/TournamentDO.ts` `TEXAS_TOURNAMENT_BLINDS` / `src/do/GameRoomDO.ts` 加 `smallBlind/bigBlind` 進 `RoomMeta` + `/init` 驗證 / `frontend/src/components/TournamentModal.tsx` 顯示 R1/R2/R3 盲注 / `test/tournamentDO.test.ts` +2）：3 輪 10/20 → 20/40 → 50/100；非 texas 賽事不帶 blind 欄位；GameRoomDO `/init` 鎖 `gt==="texas" && bb≥sb*2`
+- **觀戰 live listings**（`src/api/lobby.ts` LobbyDO 加 `liveRooms` Map + `idFromName("registry")` 走 `/register-live` `/unregister-live` `/live` / `src/do/GameRoomDO.ts` startGame 註冊 + cleanup 反註冊（純機器人房不上架）/ `src/workers/gateway.ts` 新 `GET /api/rooms/live`（無需 auth、不外洩玩家 id）/ `frontend/src/components/GameSelectScreen.tsx` 觀戰 modal 自動列表 + 10s 輪詢 / `test/liveRooms.test.ts` 5 案）
+- **Friend DM**（`src/db/schema.sql` `dms` 表 + 三索引 / `src/api/dms.ts` send/inbox/unread / `src/utils/rateLimit.ts` `dm` bucket 30/min/sender / `src/workers/gateway.ts` 路由 / `frontend/src/api/http.ts` 三 helper / `frontend/src/components/FriendsModal.tsx` 內嵌 `DmPanel`（5s 輪詢、Enter 送出、≤500 字、自動 mark-as-read）/ `test/dms.test.ts` 10 案）：好友限定（DB JOIN 守關）+ 1v1 + 7 天保留 + 無 WS 推送（v1 走 polling）
+- **麻將大眾規則 13 台 → bump `ENGINE_VERSION = 2`**（`src/game/MahjongStateMachine.ts` `calcFan` 重寫 / `src/game/GameEngineAdapter.ts` 版本+1 / `test/MahjongStateMachine.test.ts` +11 案）：補上 莊家 / 小三元 / 小四喜 / 三/四/五暗刻（食胡降級明刻）/ 全求人 / 花牌×N / 海底撈月 / 河底撈魚；state 加 `dealerIdx` `drewLastWallTile` `lastDiscardOnEmptyWall`；舊 replay row engine_version=1 自動標 `replayable=false`
 
-### ✅ 後續補齊（2026-05-01 後續持續）
+### ✅ 後續補齊（2026-05-01 第一批）
 - **Replay 視覺化播放器**（`frontend/src/components/ReplaysModal.tsx`）：每個事件渲染為帶卡牌/麻將牌符號 + badge 的 EventCard、Play/Pause/Step/Reset/Speed 1×–4× 控制、scrubber 任意跳轉、collapsed 完整事件清單可點擊跳轉
 - **移動端 onboarding 統一**（`frontend/src/components/RotateHint.tsx` + 套到三遊戲畫面）：抽出共用 RotateHint 元件含 i18n 旋轉提示與「為什麼要橫向」說明；BigTwo / Mahjong / Texas 三家統一掛載
 - **iOS Safari AudioContext unlock**（`frontend/src/shared/sound.ts` `unlockAudio` + LoginScreen 觸發）：登入按鈕 click handler 主動 resume() AudioContext + 零增益 blip 喚醒，避免後續對手動作觸發音效在 iOS 靜默
@@ -335,7 +337,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 16 檔 / 165 案 + Workers 整合 2 檔 / 6 案 = 171 全綠**。`npm audit` 0 漏洞。
+測試矩陣現況：**Node 單元 18 檔 / 188 案 + Workers 整合 2 檔 / 6 案 = 194 全綠**。`npm audit` 0 漏洞。
 
 ---
 

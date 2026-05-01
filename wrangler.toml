@@ -88,3 +88,19 @@ database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
 # Generate one with:  npm run gen:jwk
 # Then upload:        wrangler secret put JWT_PRIVATE_JWK --env production
 # The matching public key is published at /.well-known/jwks.json.
+
+# ── Logpush / Tail (skeleton, disabled until sink chosen) ─────────────── # L3_架構含防禦觀測
+# Structured JSON logs (utils/log.ts) emit token_issued / settlement_written /
+# tournament_* / admin_* / rate_limited events. To ship them off-platform:
+#
+#   Option A — Cloudflare Logpush (paid plan): configure via dashboard
+#     Workers & Pages → big-two-game-production → Logs → Logpush.
+#     No wrangler.toml change needed.
+#
+#   Option B — tail_consumers (free): forward console output to a worker
+#     that posts to Sentry / external sink. Uncomment + deploy that worker:
+#
+#   [[env.production.tail_consumers]]
+#   service = "big-two-log-forwarder"
+#
+# See docs/observability.md (TBD) for the forwarder template.

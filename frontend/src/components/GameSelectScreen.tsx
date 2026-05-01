@@ -10,7 +10,8 @@ import InvitesModal from "./InvitesModal";
 import ReplaysModal from "./ReplaysModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
-import { listInvitesApi } from "../api/http";
+import { listInvitesApi, listLiveRoomsApi } from "../api/http";
+import type { LiveRoom } from "../api/http";
 import { useT } from "../i18n/useT";
 
 const ICON: Record<GameType, string> = {
@@ -65,6 +66,23 @@ export default function GameSelectScreen({
   const [specOpen, setSpecOpen] = useState(false);
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
+  const [liveRooms, setLiveRooms] = useState<LiveRoom[]>([]);
+
+  // Refresh live rooms list whenever the spectator modal opens; cheap +
+  // accurate enough for an opt-in panel.                                  // L2_實作
+  useEffect(() => {
+    if (!specOpen) return;
+    let alive = true;
+    async function tick() {
+      try {
+        const r = await listLiveRoomsApi();
+        if (alive) setLiveRooms(r.rooms);
+      } catch { /* ignore — modal still allows manual roomId entry */ }
+    }
+    void tick();
+    const id = setInterval(tick, 10_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [specOpen]);
 
   // Poll incoming invites every 30 s so the badge stays roughly current
   // without us having to wire WS notifications. The cost is one D1 query
@@ -172,6 +190,32 @@ export default function GameSelectScreen({
             <p className="mt-1 text-center text-xs text-green-400">{t("spec.enterRoomId")}</p>
 
             <div className="mt-4 flex flex-col gap-3">
+              {liveRooms.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded-lg bg-green-950/60 p-2">
+                  <div className="mb-1 text-[11px] text-green-400">進行中（點擊進場）</div>
+                  <ul className="space-y-1">
+                    {liveRooms.map(r => {
+                      const ageMin = Math.floor((Date.now() - r.startedAt) / 60_000);
+                      return (
+                        <li key={r.roomId}>
+                          <button
+                            onClick={() => {
+                              setSpecOpen(false); setSpecRoom("");
+                              onSpectate(r.roomId, r.gameType);
+                            }}
+                            className="flex w-full items-center justify-between rounded-md bg-green-800/70 px-2 py-1 text-left text-[12px] text-yellow-100 hover:bg-green-700"
+                          >
+                            <span className="truncate">{ICON[r.gameType]} {r.roomId.slice(0, 8)}…</span>
+                            <span className="ml-2 shrink-0 text-[10px] text-green-300">
+                              {r.playerCount}/{r.capacity} · {ageMin}m
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               <select
                 value={specType}
                 onChange={e => setSpecType(e.target.value as GameType)}

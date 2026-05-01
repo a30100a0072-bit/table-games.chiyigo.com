@@ -48,6 +48,19 @@ interface LobbyJoinBody {
   gameType: GameType;
 }
 
+/** Live-room entry for spectator listings. Reach via the dedicated
+ *  `idFromName("registry")` instance — that one ignores the matchmaking
+ *  paths and is purely a global registry across all game types.          // L2_實作 */
+export interface LiveRoomEntry {
+  roomId:      string;
+  gameType:    GameType;
+  playerCount: number;
+  capacity:    number;
+  startedAt:   number;
+}
+
+export const LOBBY_REGISTRY_KEY = "registry";
+
 export class LobbyDO implements DurableObject {
 
   private readonly state: DurableObjectState;
@@ -57,19 +70,22 @@ export class LobbyDO implements DurableObject {
   private deadlines = new Map<string, number>();
   private botFillAt: number | null = null;        // epoch ms when bots should fill remainder // L2_實作
   private gameType:  GameType | null = null;      // bound on first join, immutable thereafter // L2_隔離
+  private liveRooms = new Map<string, LiveRoomEntry>();
 
   constructor(state: DurableObjectState, env: LobbyEnv) {
     this.state = state;
     this.env   = env;
     this.state.blockConcurrencyWhile(async () => {
-      const [saved, savedBotFill, savedType] = await Promise.all([
+      const [saved, savedBotFill, savedType, savedLive] = await Promise.all([
         this.state.storage.get<[string, number][]>("deadlines"),
         this.state.storage.get<number>("botFillAt"),
         this.state.storage.get<GameType>("gameType"),
+        this.state.storage.get<[string, LiveRoomEntry][]>("liveRooms"),
       ]);
       if (saved)        this.deadlines = new Map(saved);
       if (savedBotFill) this.botFillAt = savedBotFill;
       if (savedType)    this.gameType  = savedType;
+      if (savedLive)    this.liveRooms = new Map(savedLive);
     });
   }
 
@@ -77,7 +93,39 @@ export class LobbyDO implements DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/join" && request.method === "POST")
       return this.join(request);
+    if (url.pathname === "/register-live" && request.method === "POST")
+      return this.registerLive(request);
+    if (url.pathname === "/unregister-live" && request.method === "POST")
+      return this.unregisterLive(request);
+    if (url.pathname === "/live" && request.method === "GET")
+      return this.listLive();
     return new Response("not found", { status: 404 });
+  }
+
+  // ── Live-room registry (spectator listings) ────────────────────────── L2_實作
+  // Routed only on the `idFromName("registry")` instance; per-gameType
+  // matchmaking instances will never see these paths in practice but
+  // serving them is harmless.
+
+  private async registerLive(request: Request): Promise<Response> {
+    const body = await request.json<LiveRoomEntry>();
+    if (!body.roomId || !isGameType(body.gameType))
+      return new Response("bad payload", { status: 400 });
+    this.liveRooms.set(body.roomId, body);
+    await this.state.storage.put("liveRooms", [...this.liveRooms.entries()]);
+    return Response.json({ ok: true });
+  }
+
+  private async unregisterLive(request: Request): Promise<Response> {
+    const { roomId } = await request.json<{ roomId: string }>();
+    if (!roomId) return new Response("bad payload", { status: 400 });
+    this.liveRooms.delete(roomId);
+    await this.state.storage.put("liveRooms", [...this.liveRooms.entries()]);
+    return Response.json({ ok: true });
+  }
+
+  private listLive(): Response {
+    return Response.json({ rooms: [...this.liveRooms.values()] });
   }
 
   // ── Join queue ──────────────────────────────────────────────────────── L2_鎖定
