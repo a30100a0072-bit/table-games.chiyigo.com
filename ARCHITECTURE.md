@@ -303,14 +303,18 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 ### ⏳ 真正剩下的（小到中）
 
-**需要外部資源 / 我介入決策**
-1. **`npm audit` 高/中度漏洞** — `undici`（high，HTTP smuggling / WS DoS）+ `esbuild`（mod，dev-server 資料外洩），都在 wrangler/miniflare 的 dev deps，要升 `wrangler@4.x`（breaking，要驗 deploy）
-2. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink；要 sentry DSN 或設 `tail_consumers`
-3. **OAuth 真登入**（Google / Apple）— 取代 guest token；要 IdP App credentials
+**需要外部資源**
+1. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有，缺外部 sink；要 sentry DSN 或設 `tail_consumers`
+2. **OAuth 真登入**（Google / Apple）— 取代 guest token；要 IdP App credentials
 
-**規格 / 產品決策**
-4. **好友 / 私人房間 / 觀戰 / Replay** — 尚未開規格
-5. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
+**產品決策**
+3. **更多麻將台**（七對 / 純台 / 連莊 / 莊連任）/ Texas blind escalation
+4. **觀戰 live listings**（哪些房正在玩？）— 目前要靠分享房號；上線後若要做需設計列表 endpoint
+
+**自包含但 nice-to-have（隨時可動）**
+5. Replay 視覺化播放器（目前是文字事件流；要做動畫式步進播放需 ~1 天）
+6. Tournament UI 增強：bracket 視圖、進場提醒（目前只有列表 + 詳情 modal）
+7. 移動端橫向強制鎖定的 onboarding 提示（BigTwo 已有；其他遊戲未統一）
 
 ### ✅ 本次補齊（2026-05-01 後續）
 - **音效接 Mahjong + Texas**（`MahjongGameScreen.tsx` / `TexasHoldemGameScreen.tsx`）：myTurn / cardPlay / pass / win / lose 全 cue；BigTwo 既有實作不變
@@ -325,7 +329,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 12 檔 / 127 案 + Workers 整合 2 檔 / 6 案 = 133 全綠**。
+測試矩陣現況：**Node 單元 16 檔 / 165 案 + Workers 整合 2 檔 / 6 案 = 171 全綠**。`npm audit` 0 漏洞。
 
 ---
 
