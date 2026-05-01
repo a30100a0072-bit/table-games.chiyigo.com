@@ -150,6 +150,24 @@ describe("TournamentDO lifecycle", () => {
     expect(ranks.bob).toBe(2);                          // -10 + 25 + -5 = 10
   });
 
+  it("/state surfaces per-round deltas in roundResults for the bracket UI", async () => {
+    const t = makeDO();
+    await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType: "bigTwo", buyIn: 200 }));
+    for (const pid of ["alice", "bob", "carol", "dave"]) {
+      await t.fetch(req("POST", "/join", { playerId: pid }));
+    }
+    await t.fetch(req("POST", "/round-result", { settlement: settlement({ alice: 30, bob: -10, carol: -10, dave: -10 }) }));
+    await t.fetch(req("POST", "/round-result", { settlement: settlement({ alice: -5, bob: 25, carol: -10, dave: -10 }) }));
+
+    const live = await (await t.fetch(req("GET", "/state"))).json() as {
+      roundResults?: { round: number; deltas: Record<string, number> }[];
+    };
+    expect(live.roundResults).toHaveLength(2);
+    expect(live.roundResults![0]!.round).toBe(1);
+    expect(live.roundResults![0]!.deltas.alice).toBe(30);
+    expect(live.roundResults![1]!.deltas.bob).toBe(25);
+  });
+
   it("payout writes a 'tournament' ledger row to the winner", async () => {
     const t = makeDO();
     await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType: "bigTwo", buyIn: 200 }));

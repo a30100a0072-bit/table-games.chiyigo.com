@@ -212,6 +212,10 @@ const ZH = {
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
   "orient.why":              "本遊戲為橫向五區塊版面設計，直立會擠壓手牌與底池。",
+
+  // tournament round-start banner
+  "tour.roundReady":         "你報名的賽事下一局已開始",
+  "tour.enter":              "進場",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -399,6 +403,9 @@ const EN: Partial<Record<DictKey, string>> = {
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",
+
+  "tour.roundReady":          "Your tournament has started a new round",
+  "tour.enter":               "Enter",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

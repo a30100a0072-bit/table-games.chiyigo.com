@@ -141,6 +141,11 @@ export interface TournamentEntry {
   agg_score:  number;
   final_rank: number | null;
 }
+export interface TournamentRoundResult {
+  round:      number;
+  finishedAt: number;
+  deltas:     Record<string, number>;
+}
 export interface TournamentDetail {
   tournament: {
     tournament_id: string;
@@ -155,8 +160,31 @@ export interface TournamentDetail {
     finished_at:   number | null;
     winner_id:     string | null;
   };
-  entries:     TournamentEntry[];
-  currentRoom: string | null;
+  entries:      TournamentEntry[];
+  currentRoom:  string | null;
+  roundResults: TournamentRoundResult[];
+}
+
+export interface MyTournamentRow {
+  tournament_id: string;
+  game_type:     GameType;
+  buy_in:        number;
+  prize_pool:    number;
+  status:        "registering" | "running" | "settled";
+  rounds_total:  number;
+  rounds_done:   number;
+  created_at:    number;
+  finished_at:   number | null;
+  winner_id:     string | null;
+  currentRoom:   string | null;
+}
+
+export async function listMyTournamentsApi(token: string): Promise<{ rows: MyTournamentRow[] }> {
+  const res = await fetch(`${BASE}/api/me/tournaments`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`my tournaments failed: ${res.status}`);
+  return res.json();
 }
 
 export async function listTournaments(): Promise<{ rows: TournamentRow[]; required: number }> {

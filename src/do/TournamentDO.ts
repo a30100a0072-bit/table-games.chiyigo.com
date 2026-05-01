@@ -27,6 +27,15 @@ interface Entry {
   finalRank: number | null;
 }
 
+/** Per-round breakdown captured at handleRoundResult so the bracket UI
+ *  can show "X went +30 / -10 / +20 across rounds" instead of just
+ *  the rolling total.                                                  // L2_實作 */
+interface RoundResult {
+  round:   number;                          // 1-indexed
+  finishedAt: number;                       // Unix ms
+  deltas:  Record<string, number>;          // playerId -> scoreDelta
+}
+
 interface State {
   tournamentId: string;
   gameType:     GameType;
@@ -38,6 +47,9 @@ interface State {
   currentRoom:  string | null;
   winnerId:     string | null;
   createdAt:    number;
+  /** Length matches roundsDone. Optional in storage so legacy state
+   *  hydrates as []. Bumped after each /round-result.                  // L3_架構 */
+  roundResults?: RoundResult[];
 }
 
 const SK = "state";
@@ -95,6 +107,7 @@ export class TournamentDO implements DurableObject {
       currentRoom:  null,
       winnerId:     null,
       createdAt:    Date.now(),
+      roundResults: [],
     };
     await this.persist();
     return Response.json({ ok: true, prizePool });
@@ -143,12 +156,19 @@ export class TournamentDO implements DurableObject {
       return new Response("not running", { status: 409 });
 
     const { settlement } = await request.json<{ settlement: SettlementResult }>();
+    const deltas: Record<string, number> = {};
     for (const p of settlement.players) {
       const e = this.s.entries.find(x => x.playerId === p.playerId);
       if (e) e.aggScore += p.scoreDelta;
+      deltas[p.playerId] = p.scoreDelta;
     }
     this.s.roundsDone += 1;
     this.s.currentRoom = null;
+    (this.s.roundResults ??= []).push({
+      round:      this.s.roundsDone,
+      finishedAt: settlement.finishedAt,
+      deltas,
+    });
     await this.persist();
 
     log("info", "tournament_round_done", {

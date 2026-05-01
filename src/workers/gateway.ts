@@ -6,6 +6,7 @@ import { bump, snapshotMetrics }                             from "../utils/metr
 import { handleMatch, LobbyEnv }        from "../api/lobby";
 import {
   createTournament, joinTournament, listTournaments, getTournament,
+  listMyTournaments,
 } from "../api/tournaments";
 import {
   requestFriend, acceptFriend, declineFriend, unfriend, listFriends,
@@ -82,6 +83,9 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "GET"  && url.pathname === "/api/tournaments")
     return cors(await listTournaments(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/me/tournaments")
+    return cors(await listMyTournaments(request, env));
 
   const tJoin = url.pathname.match(/^\/api\/tournaments\/([^/]+)\/join$/);
   if (request.method === "POST" && tJoin)

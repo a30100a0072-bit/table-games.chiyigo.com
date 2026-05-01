@@ -5,6 +5,8 @@ import GameSelectScreen from "./components/GameSelectScreen";
 import LobbyScreen      from "./components/LobbyScreen";
 import GameScreen       from "./components/GameScreen";
 import ResultScreen     from "./components/ResultScreen";
+import { listMyTournamentsApi } from "./api/http";
+import type { MyTournamentRow } from "./api/http";
 import { useT } from "./i18n/useT";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -25,6 +27,8 @@ export default function App() {
   const [offline, setOffline] = useState(typeof navigator !== "undefined" && !navigator.onLine);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tourBanner, setTourBanner] = useState<MyTournamentRow | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState<Set<string>>(new Set());
   // If the user landed via a `?join=<token>` deeplink, hold the token
   // until they're logged in (token resolution requires a JWT) and pass
   // it into GameSelectScreen so the private-room modal can pop open.
@@ -67,6 +71,32 @@ export default function App() {
     return () => clearTimeout(id);
   }, [copied]);
 
+  // Tournament round-start poller. Active only on the select screen so
+  // we don't compete for bandwidth with the in-game WS or fire while
+  // the user is mid-hand. Fires every 15 s; surfaces the first running
+  // tournament with a live currentRoom that hasn't been dismissed yet.
+  const isOnSelect = screen.name === "select";
+  const pollerToken = isOnSelect ? screen.token : null;
+  useEffect(() => {
+    if (!pollerToken) { setTourBanner(null); return; }
+    let alive = true;
+    async function tick() {
+      try {
+        const r = await listMyTournamentsApi(pollerToken!);
+        if (!alive) return;
+        const ready = r.rows.find(t =>
+          t.status === "running" &&
+          t.currentRoom &&
+          !bannerDismissed.has(`${t.tournament_id}:${t.currentRoom}`),
+        );
+        setTourBanner(ready ?? null);
+      } catch { /* keep trying next tick */ }
+    }
+    void tick();
+    const id = setInterval(tick, 15_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [pollerToken, bannerDismissed]);
+
   async function triggerInstall() {
     if (!installEvt) return;
     await installEvt.prompt();
@@ -97,6 +127,41 @@ export default function App() {
         >
           {copied ? `✅ ${t("game.copied")}` : `📋 ${t("game.roomId")}: ${screen.roomId.slice(0, 8)}…`}
         </button>
+      )}
+      {tourBanner && screen.name === "select" && (
+        <div className="fixed left-1/2 top-2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-yellow-600 px-4 py-2 text-xs font-bold text-yellow-50 shadow-lg ring-1 ring-yellow-300">
+          <span>🏆 {t("tour.roundReady")}</span>
+          <button
+            onClick={() => {
+              if (screen.name !== "select" || !tourBanner.currentRoom) return;
+              const wsBase = (import.meta.env.VITE_WORKER_URL as string).replace(/^http/, "ws");
+              const roomId = tourBanner.currentRoom;
+              const gt     = tourBanner.game_type;
+              setTourBanner(null);
+              setScreen({
+                name: "game",
+                playerId: screen.playerId,
+                token:    screen.token,
+                roomId,
+                wsUrl:    `${wsBase}/rooms/${roomId}/join`,
+                gameType: gt,
+              });
+            }}
+            className="rounded-full bg-green-950 px-3 py-1 text-[11px] text-yellow-100 hover:bg-black"
+          >{t("tour.enter")}</button>
+          <button
+            onClick={() => {
+              setBannerDismissed(prev => {
+                const next = new Set(prev);
+                if (tourBanner.currentRoom) next.add(`${tourBanner.tournament_id}:${tourBanner.currentRoom}`);
+                return next;
+              });
+              setTourBanner(null);
+            }}
+            className="text-[11px] text-yellow-200/80 hover:text-yellow-50"
+            title={t("common.close")}
+          >✕</button>
+        </div>
       )}
     </>
   );

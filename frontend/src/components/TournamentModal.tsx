@@ -165,6 +165,54 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
               </ol>
             </div>
 
+            {detail.roundResults && detail.roundResults.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1 text-xs font-bold text-yellow-200">每局分數</div>
+                <div className="overflow-x-auto rounded-md bg-green-950/60 p-2">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="text-green-400">
+                        <th className="px-1 py-0.5 text-left">玩家</th>
+                        {detail.roundResults.map(r => (
+                          <th key={r.round} className="px-1 py-0.5 text-center">R{r.round}</th>
+                        ))}
+                        <th className="px-1 py-0.5 text-right">合計</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.entries.map(e => {
+                        const total = detail.roundResults.reduce(
+                          (s, r) => s + (r.deltas[e.player_id] ?? 0), 0,
+                        );
+                        return (
+                          <tr key={e.player_id} className={e.player_id === playerId ? "text-yellow-200" : ""}>
+                            <td className="px-1 py-0.5 truncate max-w-[80px]">{e.player_id}</td>
+                            {detail.roundResults.map(r => {
+                              const d = r.deltas[e.player_id] ?? 0;
+                              return (
+                                <td key={r.round} className={[
+                                  "px-1 py-0.5 text-center font-mono",
+                                  d > 0 ? "text-emerald-400" : d < 0 ? "text-red-400" : "text-green-500",
+                                ].join(" ")}>
+                                  {d > 0 ? "+" : ""}{d}
+                                </td>
+                              );
+                            })}
+                            <td className={[
+                              "px-1 py-0.5 text-right font-mono font-bold",
+                              total >= 0 ? "text-emerald-300" : "text-red-300",
+                            ].join(" ")}>
+                              {total >= 0 ? "+" : ""}{total}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {detail.tournament.status === "registering"
               && !detail.entries.some(e => e.player_id === playerId) && (
               <button

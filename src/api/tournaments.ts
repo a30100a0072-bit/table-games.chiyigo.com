@@ -221,16 +221,72 @@ export async function getTournament(_request: Request, env: TournamentEnv, tourn
     .bind(tournamentId)
     .all<{ player_id: string; agg_score: number; final_rank: number | null }>();
 
-  // Live currentRoom comes from TournamentDO since the DB column is updated lazily.
+  // Live currentRoom + per-round breakdown come from TournamentDO since
+  // those mutate after each round and aren't projected to D1.
   const stub = env.TOURNAMENT_DO.get(env.TOURNAMENT_DO.idFromName(tournamentId));
   let currentRoom: string | null = null;
+  let roundResults: { round: number; finishedAt: number; deltas: Record<string, number> }[] = [];
   try {
     const r = await stub.fetch(new Request("https://tournament.internal/state"));
     if (r.ok) {
-      const live = await r.json<{ currentRoom: string | null }>();
-      currentRoom = live.currentRoom;
+      const live = await r.json<{
+        currentRoom: string | null;
+        roundResults?: { round: number; finishedAt: number; deltas: Record<string, number> }[];
+      }>();
+      currentRoom  = live.currentRoom;
+      roundResults = live.roundResults ?? [];
     }
   } catch { /* DO may not be hydrated yet */ }
 
-  return Response.json({ tournament: t, entries: entries.results ?? [], currentRoom });
+  return Response.json({ tournament: t, entries: entries.results ?? [], currentRoom, roundResults });
+}
+
+// ── GET /api/me/tournaments — caller's tournaments across all states ──
+// Used by the App-level poller to surface "round about to start" toasts
+// even when the tournament modal is closed.
+export async function listMyTournaments(request: Request, env: TournamentEnv): Promise<Response> {
+  const auth  = request.headers.get("Authorization") ?? "";
+  const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  let me: string;
+  try { me = await verifyJWT(tok, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK)); }
+  catch (err) {
+    return Response.json(
+      { error: err instanceof JWTError ? err.message : "unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  // 30-row cap is generous — a player won't realistically be in more
+  // than a handful of in-flight tournaments.
+  const rows = await env.DB
+    .prepare(
+      "SELECT t.tournament_id, t.game_type, t.buy_in, t.prize_pool, t.status," +
+      "       t.rounds_total, t.rounds_done, t.created_at, t.finished_at, t.winner_id" +
+      " FROM tournaments t" +
+      " JOIN tournament_entries e ON e.tournament_id = t.tournament_id" +
+      " WHERE e.player_id = ?" +
+      " ORDER BY t.created_at DESC LIMIT 30",
+    )
+    .bind(me)
+    .all<{
+      tournament_id: string; game_type: string; buy_in: number;
+      prize_pool: number; status: string;
+      rounds_total: number; rounds_done: number;
+      created_at: number; finished_at: number | null; winner_id: string | null;
+    }>();
+
+  // Fold in live currentRoom for any "running" rows so the client can
+  // jump straight in without an extra round-trip.
+  const enriched = await Promise.all((rows.results ?? []).map(async r => {
+    if (r.status !== "running") return { ...r, currentRoom: null };
+    try {
+      const stub = env.TOURNAMENT_DO.get(env.TOURNAMENT_DO.idFromName(r.tournament_id));
+      const live = await stub.fetch(new Request("https://tournament.internal/state"));
+      if (!live.ok) return { ...r, currentRoom: null };
+      const j = await live.json<{ currentRoom: string | null }>();
+      return { ...r, currentRoom: j.currentRoom };
+    } catch { return { ...r, currentRoom: null }; }
+  }));
+
+  return Response.json({ rows: enriched });
 }

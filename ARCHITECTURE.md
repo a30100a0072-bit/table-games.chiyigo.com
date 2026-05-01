@@ -313,13 +313,14 @@ gateway.ts ──verifyJWT──► GameRoomDO
 5. **觀戰 live listings**（哪些房正在玩？）— 目前要靠分享房號；上線後若要做需設計列表 endpoint
 6. **Friend DMs / chat** — 範圍多大？只能傳給好友？要不要訊息保留期？
 
-**自包含但 nice-to-have（隨時可動）**
-5. Tournament UI 增強：bracket 視圖、進場提醒（目前只有列表 + 詳情 modal）
+**自包含但 nice-to-have**
+（清單已清空 — 上述項目皆已落地，見「後續補齊」段。）
 
 ### ✅ 後續補齊（2026-05-01 後續持續）
 - **Replay 視覺化播放器**（`frontend/src/components/ReplaysModal.tsx`）：每個事件渲染為帶卡牌/麻將牌符號 + badge 的 EventCard、Play/Pause/Step/Reset/Speed 1×–4× 控制、scrubber 任意跳轉、collapsed 完整事件清單可點擊跳轉
 - **移動端 onboarding 統一**（`frontend/src/components/RotateHint.tsx` + 套到三遊戲畫面）：抽出共用 RotateHint 元件含 i18n 旋轉提示與「為什麼要橫向」說明；BigTwo / Mahjong / Texas 三家統一掛載
 - **iOS Safari AudioContext unlock**（`frontend/src/shared/sound.ts` `unlockAudio` + LoginScreen 觸發）：登入按鈕 click handler 主動 resume() AudioContext + 零增益 blip 喚醒，避免後續對手動作觸發音效在 iOS 靜默
+- **Tournament UI 增強**（`src/do/TournamentDO.ts` 加 `roundResults[]` / `src/api/tournaments.ts` getTournament 透出 + 新 `GET /api/me/tournaments` / `frontend/src/components/TournamentModal.tsx` 加每局分數矩陣 / `frontend/src/App.tsx` 15s 輪詢 + 進場提醒 banner / `test/tournamentDO.test.ts` +1）：DO 在 round-result 時把每位玩家的 scoreDelta 存入 `roundResults`，前端 modal 詳情頁顯示 R1 / R2 / R3 + 合計表格；App 在 select 畫面以 15 秒輪詢 my tournaments，若有 status=running 且 currentRoom 已派發但本次 session 未消費過的賽事，頂部彈出黃色「進場」banner，✕ dismiss 後該 (tournamentId, roomId) 加入本 session blacklist 不再顯示
 
 ### ✅ 本次補齊（2026-05-01 後續）
 - **音效接 Mahjong + Texas**（`MahjongGameScreen.tsx` / `TexasHoldemGameScreen.tsx`）：myTurn / cardPlay / pass / win / lose 全 cue；BigTwo 既有實作不變
