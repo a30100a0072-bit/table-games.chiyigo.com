@@ -139,11 +139,12 @@ function OpponentSeat({ op, currentTurn, axis }: {
 // ─── GameScreen ─────────────────────────────────────────────────────────────── L2_鎖定
 
 interface Props {
-  playerId: string;
-  token:    string;
-  roomId:   string;
-  wsUrl:    string;
-  onSettled: (result: SettlementResult) => void;
+  playerId:   string;
+  token:      string;
+  roomId:     string;
+  wsUrl:      string;
+  spectator?: boolean;
+  onSettled:  (result: SettlementResult) => void;
 }
 
 // 5 個快捷鍵牌型，順序對應數字鍵 1–5。                                       // L2_實作
@@ -155,7 +156,7 @@ const QUICK_COMBOS: { type: QuickComboType; labelKey: DictKey; key: string }[] =
   { type: "straightFlush", labelKey: "bt.combo.straightFlush", key: "5" },
 ];
 
-export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spectator, onSettled }: Props) {
   const { t } = useT();
   const [view,     setView]     = useState<GameStateView | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -165,10 +166,11 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
   // 快捷鍵循環狀態：同一鍵按多次會循環顯示同類型的下一個組合。              // L2_實作
   const [cycle,    setCycle]    = useState<{ type: QuickComboType; index: number } | null>(null);
   const socketRef = useRef<GameSocket | null>(null);
+  const watching = !!spectator;
 
   // ── socket lifecycle ───────────────────────────────────────────────────── L2_鎖定
   useEffect(() => {
-    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token });
+    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token, spectator: watching });
     socketRef.current = sock;
 
     sock.on("connected",    ()      => setConnMsg(""));
@@ -306,6 +308,11 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
             {connMsg || sysMsg}
           </div>
         )}
+        {watching && (
+          <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-purple-700 px-4 py-1 text-xs font-bold text-purple-50 shadow">
+            👁️ {t("spec.watching")}
+          </div>
+        )}
 
         {/* 上方對手 */}
         <section className="flex items-center justify-center" style={{ gridArea: "top" }}>
@@ -369,7 +376,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, onSet
           style={{ gridArea: "self" }}
         >
           <div className="text-xs text-green-300/80">
-            {t("bt.cardsLeft", { n: view.self.cardCount })}
+            {watching ? t("spec.readOnly") : t("bt.cardsLeft", { n: view.self.cardCount })}
           </div>
 
           {/* 層疊：負 margin (L2_實作) */}

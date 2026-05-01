@@ -4,12 +4,15 @@ import MahjongGameScreen     from "./MahjongGameScreen";
 import TexasHoldemGameScreen from "./TexasHoldemGameScreen";
 
 interface Props {
-  playerId: string;
-  token:    string;
-  roomId:   string;
-  wsUrl:    string;
-  gameType: GameType;
-  onSettled: (result: SettlementResult) => void;
+  playerId:   string;
+  token:      string;
+  roomId:     string;
+  wsUrl:      string;
+  gameType:   GameType;
+  /** Read-only spectator session — backend will redact private fields
+   *  and reject any inbound action frames. */
+  spectator?: boolean;
+  onSettled:  (result: SettlementResult) => void;
 }
 
 export default function GameScreen({ gameType, ...rest }: Props) {

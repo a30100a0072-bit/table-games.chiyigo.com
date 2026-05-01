@@ -37,13 +37,17 @@ interface Props {
   dailyBonus?: number | null;
   onPick:      (gameType: GameType) => void;
   onJoinedTournamentRoom?: (roomId: string, gameType: GameType) => void;
+  onSpectate?: (roomId: string, gameType: GameType) => void;
   onLogout?:   () => void;
 }
 
-export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, onJoinedTournamentRoom, onLogout }: Props) {
+export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, onJoinedTournamentRoom, onSpectate, onLogout }: Props) {
   const { t } = useT();
-  const [stats, setStats] = useState(false);
-  const [tour,  setTour]  = useState(false);
+  const [stats,    setStats]    = useState(false);
+  const [tour,     setTour]     = useState(false);
+  const [specOpen, setSpecOpen] = useState(false);
+  const [specRoom, setSpecRoom] = useState("");
+  const [specType, setSpecType] = useState<GameType>("bigTwo");
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950 p-6">
       <div className="absolute left-4 top-4 flex items-center gap-2">
@@ -59,6 +63,15 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
         >
           🏆
         </button>
+        {onSpectate && (
+          <button
+            onClick={() => setSpecOpen(true)}
+            title={t("spec.title")}
+            className="rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+          >
+            👁️
+          </button>
+        )}
         <LocaleToggle />
         <MuteToggle />
       </div>
@@ -66,6 +79,49 @@ export default function GameSelectScreen({ playerId, token, dailyBonus, onPick, 
         <WalletBadge token={token} />
       </div>
       {stats && <StatsModal playerId={playerId} token={token} onClose={() => setStats(false)} />}
+      {specOpen && onSpectate && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-green-900 p-5 shadow-2xl">
+            <h2 className="text-center text-lg font-bold text-yellow-300">👁️ {t("spec.title")}</h2>
+            <p className="mt-1 text-center text-xs text-green-400">{t("spec.enterRoomId")}</p>
+
+            <div className="mt-4 flex flex-col gap-3">
+              <select
+                value={specType}
+                onChange={e => setSpecType(e.target.value as GameType)}
+                className="rounded-lg bg-green-800 px-3 py-2 text-sm text-yellow-100"
+              >
+                {GAME_TYPES.map(g => (
+                  <option key={g} value={g}>{ICON[g]} {t(LABEL_KEY[g])}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={specRoom}
+                onChange={e => setSpecRoom(e.target.value.trim())}
+                placeholder="room-id"
+                className="rounded-lg bg-green-800 px-3 py-2 text-sm text-yellow-100 placeholder:text-green-500"
+              />
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => { setSpecOpen(false); setSpecRoom(""); }}
+                className="flex-1 rounded-lg bg-gray-700 py-2 text-sm font-bold text-gray-200"
+              >{t("common.cancel")}</button>
+              <button
+                disabled={specRoom.length < 4}
+                onClick={() => {
+                  const id = specRoom;
+                  setSpecOpen(false); setSpecRoom("");
+                  onSpectate(id, specType);
+                }}
+                className="flex-1 rounded-lg bg-purple-600 py-2 text-sm font-bold text-white disabled:bg-gray-700 disabled:text-gray-500"
+              >{t("spec.start")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {tour && (
         <TournamentModal
           playerId={playerId}

@@ -23,14 +23,16 @@ function CardView({ card, faceDown }: { card?: Card; faceDown?: boolean }) {
 }
 
 interface Props {
-  playerId: string;
-  token:    string;
-  roomId:   string;
-  wsUrl:    string;
-  onSettled: (result: SettlementResult) => void;
+  playerId:   string;
+  token:      string;
+  roomId:     string;
+  wsUrl:      string;
+  spectator?: boolean;
+  onSettled:  (result: SettlementResult) => void;
 }
 
-export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, spectator, onSettled }: Props) {
+  const watching = !!spectator;
   const { t } = useT();
   const [view,    setView]    = useState<PokerStateView | null>(null);
   const [raise,   setRaise]   = useState<number>(0);
@@ -39,7 +41,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
   const socketRef = useRef<GameSocket | null>(null);
 
   useEffect(() => {
-    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token });
+    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token, spectator: watching });
     socketRef.current = sock;
 
     sock.on("connected",    ()    => setConnMsg(""));
@@ -96,6 +98,11 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
       {(connMsg || sysMsg) && (
         <div className="bg-yellow-700 px-4 py-1 text-center text-xs text-yellow-100">
           {connMsg || sysMsg}
+        </div>
+      )}
+      {watching && (
+        <div className="bg-purple-700 px-4 py-1 text-center text-xs font-bold text-purple-50">
+          👁️ {t("spec.watching")}
         </div>
       )}
 
@@ -163,8 +170,9 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
         </div>
 
         <div className="flex justify-center gap-2 pb-3">
-          <CardView card={me.holeCards[0]} />
-          <CardView card={me.holeCards[1]} />
+          {watching
+            ? <><CardView faceDown /><CardView faceDown /></>
+            : <><CardView card={me.holeCards[0]} /><CardView card={me.holeCards[1]} /></>}
         </div>
 
         <div className="grid grid-cols-2 gap-2 px-3 pb-2 sm:grid-cols-4">

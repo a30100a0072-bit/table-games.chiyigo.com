@@ -152,14 +152,16 @@ function OpponentRow({ view, currentTurn }: { view: MahjongStateView; currentTur
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  playerId: string;
-  token:    string;
-  roomId:   string;
-  wsUrl:    string;
-  onSettled: (result: SettlementResult) => void;
+  playerId:   string;
+  token:      string;
+  roomId:     string;
+  wsUrl:      string;
+  spectator?: boolean;
+  onSettled:  (result: SettlementResult) => void;
 }
 
-export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSettled }: Props) {
+export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spectator, onSettled }: Props) {
+  const watching = !!spectator;
   const { t } = useT();
   const [view,     setView]     = useState<MahjongStateView | null>(null);
   const [picked,   setPicked]   = useState<string | null>(null);  // tile key
@@ -170,7 +172,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
   const socketRef = useRef<GameSocket | null>(null);
 
   useEffect(() => {
-    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token });
+    const sock = new GameSocket({ url: wsUrl, playerId, gameId: roomId, token, spectator: watching });
     socketRef.current = sock;
 
     sock.on("connected",    ()    => setConnMsg(""));
@@ -264,6 +266,11 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, onSe
       {(connMsg || sysMsg) && (
         <div className="bg-yellow-700 px-4 py-1 text-center text-xs text-yellow-100">
           {connMsg || sysMsg}
+        </div>
+      )}
+      {watching && (
+        <div className="bg-purple-700 px-4 py-1 text-center text-xs font-bold text-purple-50">
+          👁️ {t("spec.watching")}
         </div>
       )}
 

@@ -1,5 +1,10 @@
 // Shared game types — mirrored from src/types/game.ts (no CF-specific APIs).
 
+/** Sentinel playerId used in spectator views — see backend
+ *  src/game/GameEngineAdapter.ts. Frontend keys off this to switch to
+ *  read-only UI when a payload arrives with self.playerId === this. */
+export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
+
 export type GameType = "bigTwo" | "mahjong" | "texas";
 
 export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas"] as const;

@@ -138,6 +138,15 @@ const ZH = {
   "result.fourthPlace":    "第四",
   "result.delta":          "{n} 分",
   "result.fanLine":        "底 {base} · {fan} 台",
+
+  // spectator
+  "spec.title":            "觀戰",
+  "spec.watching":         "觀戰中",
+  "spec.readOnly":         "唯讀（不能出牌）",
+  "spec.enterRoomId":      "輸入房號觀戰",
+  "spec.start":            "開始觀戰",
+  "spec.invalidRoom":      "房號格式不正確",
+  "spec.notStarted":       "對局尚未開始",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -258,6 +267,14 @@ const EN: Partial<Record<DictKey, string>> = {
   "result.fourthPlace":     "4th",
   "result.delta":           "{n} pts",
   "result.fanLine":         "Base {base} · {fan} fan",
+
+  "spec.title":             "Spectate",
+  "spec.watching":          "Watching",
+  "spec.readOnly":          "Read-only (no actions)",
+  "spec.enterRoomId":       "Enter room ID",
+  "spec.start":             "Start watching",
+  "spec.invalidRoom":       "Invalid room ID",
+  "spec.notStarted":        "Game has not started yet",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

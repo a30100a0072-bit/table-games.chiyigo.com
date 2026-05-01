@@ -16,7 +16,7 @@ type Screen =
   | { name: "login" }
   | { name: "select"; playerId: string; token: string; dailyBonus: number | null }
   | { name: "lobby";  playerId: string; token: string; gameType: GameType }
-  | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType }
+  | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType; spectator?: boolean }
   | { name: "result"; playerId: string; settlement: SettlementResult };
 
 export default function App() {
@@ -91,6 +91,17 @@ export default function App() {
             gameType,
           })
         }
+        onSpectate={(roomId, gameType) =>
+          setScreen({
+            name: "game",
+            playerId: screen.playerId,
+            token: screen.token,
+            roomId,
+            wsUrl: `${wsBase}/rooms/${roomId}/join`,
+            gameType,
+            spectator: true,
+          })
+        }
         onLogout={() => setScreen({ name: "login" })}
       />
     );
@@ -114,6 +125,7 @@ export default function App() {
         roomId={screen.roomId}
         wsUrl={screen.wsUrl}
         gameType={screen.gameType}
+        spectator={screen.spectator}
         onSettled={(result) =>
           setScreen({ name: "result", playerId: screen.playerId, settlement: result })
         }

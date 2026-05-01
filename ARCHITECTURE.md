@@ -317,7 +317,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **WS 訊框信封驗證**（`src/utils/wsFrame.ts` + `test/wsFrame.test.ts` 10 案）：信封層守 gameId / playerId / seq（非負整數）/ action.type 白名單；per-action 細節仍由各狀態機防禦。零新依賴（純 TS validator，不拉 zod）
 - **DO alarm 時序 + Hibernation eviction 測試**（`test/gameRoomDO.test.ts` 4 案）：startGame 排 turn alarm、alarm() FUDGE 視窗、JSON-roundtrip safe、eviction 後新實例從同一 storage 重建並對 `/init` 回 409
 - **wrangler 3 → 4.87** + Node 22 CI runner（`package.json` / `.github/workflows/cloudflare-deploy.yml`）：`npm audit` 從 1 high + 3 mod → 0
-- **觀戰後端**（`src/game/GameEngineAdapter.ts` / `src/do/GameRoomDO.ts` / `src/workers/gateway.ts` / `test/spectatorView.test.ts` 3 案）：每引擎加 `getSpectatorView()` 把 self phantom 化、所有真玩家進 opponents（BigTwo 不外洩 hand、Mahjong 不外洩 exposed/flowers/hand、Texas 攤牌前不外洩 holeCards）；DO `?spectator=1` 走分支不佔座位、不觸發 startGame、丟掉 spectator 送的 action frame、斷線不算 forfeit；廣播時 spectator view per-broadcast 算一次後快取重用
+- **觀戰後端 + 前端**（`src/game/GameEngineAdapter.ts` / `src/do/GameRoomDO.ts` / `src/workers/gateway.ts` / `frontend/src/shared/GameSocket.ts` / `frontend/src/components/{GameSelectScreen,GameScreen,BigTwoGameScreen,MahjongGameScreen,TexasHoldemGameScreen}.tsx` / `test/spectatorView.test.ts` 3 案）：每引擎加 `getSpectatorView()` 把 self phantom 化、所有真玩家進 opponents（BigTwo 不外洩 hand、Mahjong 不外洩 exposed/flowers/hand、Texas 攤牌前不外洩 holeCards）；DO `?spectator=1` 走分支不佔座位、不觸發 startGame、丟掉 spectator 送的 action frame、斷線不算 forfeit；廣播時 spectator view per-broadcast 算一次後快取重用；前端 GameSelectScreen 右上加 👁️ 按鈕開觀戰 modal、輸入 roomId + gameType 即進場；三個 GameScreen 偵測 `spectator` prop 顯示「觀戰中」帶子、Texas 對自己底牌渲染 face-down，動作鈕因 currentTurn 永遠不等於觀戰者 JWT id 自然 disable
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 

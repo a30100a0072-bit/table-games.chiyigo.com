@@ -6,6 +6,10 @@ export interface GameSocketConfig {
   playerId:    PlayerId;
   gameId:      string;
   token:       string;
+  /** When true, attaches `?spectator=1` so the DO accepts the WS without
+   *  taking a seat. Spectator mode is read-only — calling `send()` will
+   *  surface a server error frame. */
+  spectator?:  boolean;
   maxRetries?: number;
   baseDelay?:  number;
   maxDelay?:   number;
@@ -52,7 +56,7 @@ export class GameSocket {
   private readonly reg = new Map<keyof GameSocketEventMap, Set<Listener<never>>>();
 
   constructor(cfg: GameSocketConfig) {
-    this.cfg = { maxRetries: Infinity, baseDelay: 1_000, maxDelay: 30_000, jitter: 0.25, ...cfg };
+    this.cfg = { maxRetries: Infinity, baseDelay: 1_000, maxDelay: 30_000, jitter: 0.25, spectator: false, ...cfg };
   }
 
   connect(): this { if (this.status === "idle") this.openSocket(); return this; }
@@ -89,6 +93,7 @@ export class GameSocket {
     const url = new URL(this.cfg.url);
     url.searchParams.set("playerId", this.cfg.playerId);
     url.searchParams.set("token",    this.cfg.token);
+    if (this.cfg.spectator) url.searchParams.set("spectator", "1");
     const ws = new WebSocket(url.toString());
     ws.onopen    = this.onOpen;
     ws.onmessage = this.onMessage;
