@@ -304,13 +304,16 @@ gateway.ts ──verifyJWT──► GameRoomDO
 ### ⏳ 真正剩下的
 
 **需要外部資源**
-1. **Sentry / Cloudflare Logpush 接線** — 結構化 log 已有；`wrangler.toml` 已留 `tail_consumers` 骨架註解，等決定走 Logpush（付費）或 tail forwarder worker（免費）後啟用
+1. ~~**Sentry / Cloudflare Logpush 接線**~~ — 完成（2026-05-01 第三批）：自帶 tail forwarder worker `big-two-log-forwarder`（`src/forwarder/index.ts` + `wrangler.forwarder.toml`），CI 在主 worker 部署前先部署；接通用 webhook（Discord / Slack / 任意 sink）。**只剩手動一步**：`wrangler secret put WEBHOOK_URL --config wrangler.forwarder.toml` 設你的 webhook URL；secret 未設則 forwarder 收到事件後直接 return（安靜無動作，不會壞主 worker）
 2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**（2026-05-01 決議）：guest token + 帳號凍結 + ledger 已足夠跑 demo / 內測；待用戶量上來再啟動 IdP 申請
 
 **麻將進階台（需狀態機改動，2026-05-01 後續再做）**
 3. **搶槓** — 需要 `加槓` 加開反應視窗，目前只有 `kong/exposed` 與 `kong/concealed` 兩種未走 reaction window
 4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；單局結算不適用
 5. **七搶一 / 八仙過海** — 需要 8 花直接終局與「第 8 花被搶」hook
+
+### ✅ 後續補齊（2026-05-01 第三批 — 觀測性）
+- **Tail forwarder worker**（`src/forwarder/index.ts` + `wrangler.forwarder.toml` + `wrangler.toml` 加 `tail_consumers` + `.github/workflows/cloudflare-deploy.yml` 加先部署 step + `test/forwarder.test.ts` 11 案）：純 self-contained，獨立 worker `big-two-log-forwarder` 收 tail events，過濾後 POST 到 webhook。過濾規則：所有 exception + console error/warn + structured log event ∈ ALWAYS_FORWARD_EVENTS（admin_*、settlement_failed、bailout_granted、rate_limited、tournament_*_failed、match_blocked_frozen 等審計或異常事件）。Discord / Slack 同包（送 `{content, text}` 雙鍵），body 截 1500 字防超 Discord 2000 上限。secret 沒設 → no-op；不影響主 worker。
 
 ### ✅ 後續補齊（2026-05-01 第二批）
 - **Texas 賽事升盲**（`src/do/TournamentDO.ts` `TEXAS_TOURNAMENT_BLINDS` / `src/do/GameRoomDO.ts` 加 `smallBlind/bigBlind` 進 `RoomMeta` + `/init` 驗證 / `frontend/src/components/TournamentModal.tsx` 顯示 R1/R2/R3 盲注 / `test/tournamentDO.test.ts` +2）：3 輪 10/20 → 20/40 → 50/100；非 texas 賽事不帶 blind 欄位；GameRoomDO `/init` 鎖 `gt==="texas" && bb≥sb*2`
@@ -337,7 +340,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 18 檔 / 188 案 + Workers 整合 2 檔 / 6 案 = 194 全綠**。`npm audit` 0 漏洞。
+測試矩陣現況：**Node 單元 19 檔 / 199 案 + Workers 整合 2 檔 / 6 案 = 205 全綠**。`npm audit` 0 漏洞。
 
 ---
 

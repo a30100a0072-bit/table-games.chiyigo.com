@@ -89,18 +89,19 @@ database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
 # Then upload:        wrangler secret put JWT_PRIVATE_JWK --env production
 # The matching public key is published at /.well-known/jwks.json.
 
-# ── Logpush / Tail (skeleton, disabled until sink chosen) ─────────────── # L3_架構含防禦觀測
+# ── Logpush / Tail ────────────────────────────────────────────────────── # L3_架構含防禦觀測
 # Structured JSON logs (utils/log.ts) emit token_issued / settlement_written /
-# tournament_* / admin_* / rate_limited events. To ship them off-platform:
+# tournament_* / admin_* / rate_limited events. They flow to:
+#   • the main worker stdout (visible via `wrangler tail`),
+#   • the `big-two-log-forwarder` tail consumer below, which POSTs warn/error
+#     and audit-event lines to a webhook (Discord / Slack / generic).
 #
-#   Option A — Cloudflare Logpush (paid plan): configure via dashboard
-#     Workers & Pages → big-two-game-production → Logs → Logpush.
-#     No wrangler.toml change needed.
+# Forwarder lifecycle is independent — see wrangler.forwarder.toml. Deploy
+# the forwarder before referencing it here, or this worker's deploy fails
+# with "service not found".
 #
-#   Option B — tail_consumers (free): forward console output to a worker
-#     that posts to Sentry / external sink. Uncomment + deploy that worker:
-#
-#   [[env.production.tail_consumers]]
-#   service = "big-two-log-forwarder"
-#
-# See docs/observability.md (TBD) for the forwarder template.
+# Logpush (paid plan) is still an option in parallel for archival; configure
+# via dashboard → Workers & Pages → big-two-game-production → Logs.
+
+[[env.production.tail_consumers]]
+service = "big-two-log-forwarder"

@@ -1,0 +1,18 @@
+# /wrangler.forwarder.toml
+# Tail-consumer worker — separate from the main game worker on purpose:
+# main worker stays slim, forwarder gets its own deploy lifecycle so a
+# webhook misconfig never affects gameplay.
+#
+# Deploy:
+#   wrangler deploy --config wrangler.forwarder.toml
+# Set the webhook secret (Discord / Slack / generic):
+#   wrangler secret put WEBHOOK_URL --config wrangler.forwarder.toml
+# Optional named source for the message header (default "worker"):
+#   wrangler secret put SOURCE --config wrangler.forwarder.toml
+
+name               = "big-two-log-forwarder"
+main               = "src/forwarder/index.ts"
+compatibility_date = "2024-09-23"
+
+# No bindings — this worker only consumes tail events and posts to a
+# webhook URL provided as a secret. Keep its surface area minimal.

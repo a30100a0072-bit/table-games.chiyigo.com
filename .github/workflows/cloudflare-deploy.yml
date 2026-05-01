@@ -82,6 +82,15 @@ jobs:
           npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN frozen_at INTEGER NOT NULL DEFAULT 0" --env production --remote || true
           npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN frozen_reason TEXT" --env production --remote || true
 
+      # ── 6b-pre. Deploy tail-forwarder worker ─────────────────────────
+      # The main worker's wrangler.toml references `big-two-log-forwarder`
+      # via tail_consumers, so the forwarder MUST exist on Cloudflare's
+      # side before the main deploy runs. WEBHOOK_URL is a separate secret
+      # set out-of-band — the forwarder is a silent no-op until it's set,
+      # which is fine for first-deploy bring-up.                         # L3_架構含防禦觀測
+      - name: Deploy tail-forwarder worker
+        run: npx wrangler deploy --config wrangler.forwarder.toml
+
       # ── 6b. Deploy Worker (production) ───────────────────────────────
       # Runs ONLY when the previous test step succeeds.                  # L2_隔離
       - name: Deploy to Cloudflare Workers
