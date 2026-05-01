@@ -307,10 +307,14 @@ gateway.ts ──verifyJWT──► GameRoomDO
 1. ~~**Sentry / Cloudflare Logpush 接線**~~ — 完成（2026-05-01 第三批）：自帶 tail forwarder worker `big-two-log-forwarder`（`src/forwarder/index.ts` + `wrangler.forwarder.toml`），CI 在主 worker 部署前先部署；接通用 webhook（Discord / Slack / 任意 sink）。**只剩手動一步**：`wrangler secret put WEBHOOK_URL --config wrangler.forwarder.toml` 設你的 webhook URL；secret 未設則 forwarder 收到事件後直接 return（安靜無動作，不會壞主 worker）
 2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**（2026-05-01 決議）：guest token + 帳號凍結 + ledger 已足夠跑 demo / 內測；待用戶量上來再啟動 IdP 申請
 
-**麻將進階台（需狀態機改動，2026-05-01 後續再做）**
-3. **搶槓** — 需要 `加槓` 加開反應視窗，目前只有 `kong/exposed` 與 `kong/concealed` 兩種未走 reaction window
-4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；單局結算不適用
-5. **七搶一 / 八仙過海** — 需要 8 花直接終局與「第 8 花被搶」hook
+**麻將進階台（剩 1 項）**
+3. ~~**搶槓 / 七搶一 / 八仙過海**~~ — 完成（2026-05-01 第五批，bump `ENGINE_VERSION = 3`）
+4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先把麻將改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）才有意義
+
+### ✅ 後續補齊（2026-05-01 第五批 — 麻將進階台）
+- **搶槓**（`MahjongStateMachine.ts` 加 `kongUpgradeContext` 狀態 + 改 `onKong` `source==="added"` 改走反應視窗 / `commitHighestPriority` 加「視窗無人胡 → 完成加槓」分支 / `onPong` `onChow` 在搶槓視窗中拒絕 / `calcFan` 加 `chiangKong` flag +1 台 / `test/MahjongStateMachine.test.ts` +5 案）：加槓不再立即完成，而是用既有 `pending_reactions` 機制讓他家可食胡 lastDiscard = 加槓的牌；視窗結束無人胡 → 真正改 `pong → kong_exposed` + 嶺上抽。
+- **八仙過海 / 七搶一**（`MahjongStateMachine.ts` 加 `checkFlowerTerminal()` + `settleFlowerWin()` 在 `advanceToNextDraw` 與 `onKong` 嶺上抽後呼叫 / 8 台 + 1 底特殊結算 / `test/MahjongStateMachine.test.ts` +2 案）：在每次 `drawNonFlower` 把花牌轉到玩家後檢查全桌花牌總數；等於 8 + drawer 持 8 → 八仙過海（自摸路徑，三家攤付）；等於 8 + 他人持 7 → 七搶一（食胡路徑，drawer 一家賠）。
+- **`ENGINE_VERSION` 2 → 3**：上述改動會讓既有 v2 replay rerun 失敗（食胡 + chiangKong 不存在於舊 fan calc，flower-terminal 不會觸發），按既有機制舊 row 自動標 `replayable=false`。
 
 ### ✅ 後續補齊（2026-05-01 第四批 — 上線前合規）
 - **帳號刪除 / GDPR**（`src/api/account.ts` + `src/workers/gateway.ts` 加 `DELETE /api/me` 路由 / CORS 允許 `DELETE` 與 `X-Confirm-Delete` header / `/auth/token` 加 `DELETED_` 前綴守關 / `frontend/src/api/http.ts` `deleteAccountApi` / `frontend/src/components/WalletBadge.tsx` 三段式刪除流程（連結 → 警告 → 輸入 `DELETE` 確認）/ `test/account.test.ts` 6 案）：混合策略——hard-delete `friendships/dms/room_invites/room_tokens/users`；anonymise `chip_ledger/player_settlements/games/tournament_entries/replay_meta` 為 `DELETED_<8-hex>` tombstone（保留會計與 replay 結構完整性，PII 蓋掉）；`replay_meta.player_ids` 用 JSON-quoted REPLACE 防 substring 誤撞；要求 `X-Confirm-Delete: yes` header 防 token 重放洗號
@@ -344,7 +348,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **賽事文件對齊現況**（`docs/tournament-design.md`）：從 "proposed" 改為 "shipped"，列 code map + 範圍切割
 - **`WalletBadge` 補 `tournament: "賽事"` 標籤**
 
-測試矩陣現況：**Node 單元 20 檔 / 208 案 + Workers 整合 2 檔 / 6 案 = 214 全綠**。`npm audit` 0 漏洞。
+測試矩陣現況：**Node 單元 20 檔 / 215 案 + Workers 整合 2 檔 / 6 案 = 221 全綠**。`npm audit` 0 漏洞。
 
 ---
 

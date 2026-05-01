@@ -24,7 +24,7 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
  *  (mahjong fan calc, texas side-pot rules, big two combo ordering).
  *  Replays stamped with an older version still surface the final
  *  settlement, but the client refuses to step through the action list.   */
-export const ENGINE_VERSION = 2;
+export const ENGINE_VERSION = 3;
 
 // ──────────────────────────────────────────────
 //  統一介面  (L3_架構)

@@ -326,4 +326,165 @@ describe("calcFan 大眾規則", () => {
     expect(r.detail).toContain("門前清");
     expect(r.detail).toContain("平胡");
   });
+
+  it("搶槓胡：食胡 + chiangKong → +1 台", () => {
+    const r = calcFan({ ...baseOpts, selfDrawn: false, chiangKong: true });
+    expect(r.detail).toContain("搶槓");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// (6) 進階台 — 狀態機級別整合（搶槓 / 八仙過海 / 七搶一）
+// ─────────────────────────────────────────────────────────────────────────
+
+import type { MahjongSnapshot } from "../src/game/MahjongStateMachine";
+
+/** 把麻將狀態機塞到一個已知狀態 — 直接走 restore 路徑，避免重洗牌
+ *  仰賴隨機 RNG 才能跑到目標 phase 的曲折測試。                            // L2_測試 */
+function withSnapshot(mut: (snap: MahjongSnapshot) => void): MahjongStateMachine {
+  const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1));
+  const snap = sm.snapshot();
+  mut(snap);
+  return MahjongStateMachine.restore(snap);
+}
+
+describe("搶槓 (chiang kong)", () => {
+  it("加槓 → 進入 pending_reactions 視窗，未完成 exposed 變更", () => {
+    const sm = withSnapshot(st => {
+      st.phase = "playing";
+      st.turnIdx = 0;
+      // p1 已碰過 m5，手中還剩 1 張 m5 可加槓
+      st.players[0]!.hand = [m(5), m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), s(1), s(2), s(3)];
+      st.players[0]!.exposed = [{ kind: "pong", tiles: [m(5), m(5), m(5)] }];
+      st.drawnThisTurn = m(5);
+    });
+    const r = sm.process("p1", { type: "kong", source: "added", tile: m(5) });
+    expect(r.ok).toBe(true);
+    const view = sm.viewFor("p1");
+    expect(view.phase).toBe("pending_reactions");
+    expect(view.lastDiscard?.tile).toEqual(m(5));
+    // 加槓尚未完成 → 仍是 pong
+    expect(view.self.exposed[0]!.kind).toBe("pong");
+  });
+
+  it("搶槓視窗內所有對手都 pass → 加槓完成、改為 kong_exposed", () => {
+    const sm = withSnapshot(st => {
+      st.phase = "playing";
+      st.turnIdx = 0;
+      st.players[0]!.hand = [m(5), m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), s(1), s(2), s(3)];
+      st.players[0]!.exposed = [{ kind: "pong", tiles: [m(5), m(5), m(5)] }];
+      st.drawnThisTurn = m(5);
+    });
+    sm.process("p1", { type: "kong", source: "added", tile: m(5) });
+    sm.process("p2", { type: "mj_pass" });
+    sm.process("p3", { type: "mj_pass" });
+    sm.process("p4", { type: "mj_pass" });
+    const view = sm.viewFor("p1");
+    expect(view.phase).toBe("playing");
+    expect(view.self.exposed[0]!.kind).toBe("kong_exposed");
+    expect(view.self.exposed[0]!.tiles).toHaveLength(4);
+  });
+
+  it("搶槓視窗內 onPong / onChow 被擋下", () => {
+    const sm = withSnapshot(st => {
+      st.phase = "playing";
+      st.turnIdx = 0;
+      st.players[0]!.hand = [m(5), m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), s(1), s(2), s(3)];
+      st.players[0]!.exposed = [{ kind: "pong", tiles: [m(5), m(5), m(5)] }];
+      st.drawnThisTurn = m(5);
+    });
+    sm.process("p1", { type: "kong", source: "added", tile: m(5) });
+    const r = sm.process("p2", { type: "pong", tile: m(5) });
+    expect(r.ok).toBe(false);
+    expect("error" in r && r.error).toBe("ONLY_HU_DURING_CHIANG_KONG");
+  });
+
+  it("搶槓視窗內有人能胡 → 食胡 + 搶槓 fan，加槓不完成", () => {
+    // p2 持手牌 m1-m9 + p1-p7 共 16 張，差 m5 完成 1 對；p1 加槓 m5 給 p2 食胡
+    const sm = withSnapshot(st => {
+      st.phase = "playing";
+      st.turnIdx = 0;
+      st.players[0]!.hand = [m(5), m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), s(1), s(2), s(3)];
+      st.players[0]!.exposed = [{ kind: "pong", tiles: [m(5), m(5), m(5)] }];
+      st.drawnThisTurn = m(5);
+      // p2 設成 16 張差 m5 即胡的待牌：m123 m456 m789 p123 + m5 配對
+      // p2 16 張，差 m5 完成 m456：m123 m4_6 m789 p123 p456 z11 → +m5 = 5 副 + 1 對
+      st.players[1]!.hand = [m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), p(6), z(1), z(1)];
+      st.players[1]!.exposed = [];
+    });
+    sm.process("p1", { type: "kong", source: "added", tile: m(5) });
+    sm.process("p2", { type: "hu", selfDrawn: false });
+    sm.process("p3", { type: "mj_pass" });
+    const r = sm.process("p4", { type: "mj_pass" });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.settlement).toBeTruthy();
+    if (r.ok && r.settlement) {
+      expect(r.settlement.winnerId).toBe("p2");
+      expect(r.settlement.fanDetail?.detail).toContain("搶槓");
+      // p1 是放槍者
+      const p1 = r.settlement.players.find(x => x.playerId === "p1")!;
+      expect(p1.scoreDelta).toBeLessThan(0);
+    }
+    // 加槓沒完成 — exposed 仍是 pong（雖然遊戲已結算）
+    const view = sm.viewFor("p1");
+    expect(view.self.exposed[0]!.kind).toBe("pong");
+  });
+});
+
+describe("八仙過海 / 七搶一", () => {
+  it("八仙過海：drawer 收到第 8 張花 → 自己贏，三家攤付", () => {
+    const f = (rank: number) => ({ suit: "f" as const, rank });
+    const sm = withSnapshot(st => {
+      // p1 已有 7 花，牌牆首張是第 8 張花，再放一張正常牌讓 drawNonFlower 能停。
+      st.players[0]!.flowers = [f(1), f(2), f(3), f(4), f(5), f(6), f(7)];
+      st.players[1]!.flowers = [];
+      st.players[2]!.flowers = [];
+      st.players[3]!.flowers = [];
+      // turnIdx=3，下一摸是 p1（順時鐘 (3+1)%4 = 0）
+      st.turnIdx = 3;
+      st.phase = "pending_reactions";
+      st.lastDiscard = { tile: m(1), playerIdx: 3 };
+      st.pendingReactions = [
+        { playerId: "p1", declared: { kind: "pass" } },
+        { playerId: "p2", declared: { kind: "pass" } },
+        { playerId: "p4", declared: { kind: "pass" } },
+      ];
+      // drawNonFlower 從 wall 尾端 pop：把 f(8) 放尾巴讓它先被吸收，再 pop m(2) 給 hand
+      st.wall = [m(2), f(8)];
+    });
+    // 觸發 advanceToNextDraw（forceResolveReactions → all-pass → advance）
+    const r = sm.forceResolveReactions();
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.settlement?.winnerId).toBe("p1");
+    expect(r.ok && r.settlement?.fanDetail?.detail).toContain("八仙過海");
+  });
+
+  it("七搶一：他人摸到第 8 花 → 持 7 花玩家贏，摸花者付", () => {
+    const f = (rank: number) => ({ suit: "f" as const, rank });
+    const sm = withSnapshot(st => {
+      st.players[0]!.flowers = [f(1), f(2), f(3), f(4), f(5), f(6), f(7)];   // p1 持 7
+      st.players[1]!.flowers = [];
+      st.players[2]!.flowers = [];
+      st.players[3]!.flowers = [];
+      // turnIdx=0，下一摸是 p2 (順時鐘 1)
+      st.turnIdx = 0;
+      st.phase = "pending_reactions";
+      st.lastDiscard = { tile: m(1), playerIdx: 0 };
+      st.pendingReactions = [
+        { playerId: "p2", declared: { kind: "pass" } },
+        { playerId: "p3", declared: { kind: "pass" } },
+        { playerId: "p4", declared: { kind: "pass" } },
+      ];
+      // drawNonFlower 從 wall 尾端 pop：把 f(8) 放尾巴讓它先被吸收，再 pop m(2) 給 hand
+      st.wall = [m(2), f(8)];
+    });
+    const r = sm.forceResolveReactions();
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.settlement?.winnerId).toBe("p1");
+    expect(r.ok && r.settlement?.fanDetail?.detail).toContain("七搶一");
+    if (r.ok && r.settlement) {
+      const p2 = r.settlement.players.find(x => x.playerId === "p2")!;
+      expect(p2.scoreDelta).toBeLessThan(0);                                // 摸到第 8 花的 p2 賠
+    }
+  });
 });

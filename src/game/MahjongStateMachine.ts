@@ -140,6 +140,7 @@ export function calcFan(opts: {
   drewFromKongReplacement?: boolean;
   lastWallDraw?: boolean;   // 海底撈月：自摸取自牌牆最後一張
   lastRiverHu?: boolean;    // 河底撈魚：食胡的牌是牆空後最後一張被打出
+  chiangKong?: boolean;     // 搶槓胡：食胡來自他家加槓的牌
 }): FanResult {
   const detail: string[] = ["平胡"];
   let fan = 0;
@@ -214,6 +215,9 @@ export function calcFan(opts: {
   if (opts.selfDrawn  && opts.lastWallDraw) { fan += 1; detail.push("海底撈月"); }
   if (!opts.selfDrawn && opts.lastRiverHu)  { fan += 1; detail.push("河底撈魚"); }
 
+  // ─ 搶槓胡：食胡來自他家加槓的那張牌
+  if (opts.chiangKong) { fan += 1; detail.push("搶槓"); }
+
   // ─ 槓上開花（既有）
   if (opts.drewFromKongReplacement && opts.selfDrawn) {
     fan += 1; detail.push("槓上開花");
@@ -270,6 +274,9 @@ interface InternalState {
   drewFromKongReplacement: boolean;              // 補摸自槓尾，下一手胡計「槓上開花」 // L3_架構
   drewLastWallTile: boolean;                     // 本手摸到的是牌牆最後一張 → 海底撈月候補 // L2_實作
   lastDiscardOnEmptyWall: boolean;               // 上一手摸了最後一張後打出 → 河底撈魚候補 // L2_實作
+  /** 加槓 進行中 — 開放搶槓反應視窗。null = 普通 lastDiscard 視窗。
+   *  搶槓胡 = food-hu on this tile，否則視窗結束後完成槓+補張。           // L2_實作 */
+  kongUpgradeContext: { tile: MahjongTile; kongerIdx: number } | null;
 }
 
 export type ProcessResult =
@@ -325,6 +332,7 @@ export class MahjongStateMachine {
       drewFromKongReplacement: false,
       drewLastWallTile: wall.length === 0,
       lastDiscardOnEmptyWall: false,
+      kongUpgradeContext: null,
     };
   }
 
@@ -434,6 +442,7 @@ export class MahjongStateMachine {
     const me = this.s.players[idx]!;
     if (a.source === "exposed") {
       if (this.s.phase !== "pending_reactions" || !this.s.lastDiscard) return { ok: false, error: "NO_PENDING_DISCARD" };
+      if (this.s.kongUpgradeContext) return { ok: false, error: "ONLY_HU_DURING_CHIANG_KONG" };
       if (!tileEq(this.s.lastDiscard.tile, a.tile)) return { ok: false, error: "TILE_MISMATCH" };
       const ownCount = me.hand.filter(t => tileEq(t, a.tile)).length;
       if (ownCount < 3) return { ok: false, error: "INSUFFICIENT_TILES_FOR_KONG" };       // L2_隔離
@@ -449,27 +458,39 @@ export class MahjongStateMachine {
       if (ownCount < 4) return { ok: false, error: "INSUFFICIENT_TILES_FOR_KONG" };       // L2_隔離
       removeTilesFromHand(me.hand, a.tile, 4);
       me.exposed.push({ kind: "kong_concealed", tiles: Array(4).fill(a.tile) });
-    } else {
-      // 加槓：手中有 1 張，且 exposed 已有對應 pong
-      const ownCount = me.hand.filter(t => tileEq(t, a.tile)).length;
-      const targetMeld = me.exposed.find(m => m.kind === "pong" && m.tiles.every(t => tileEq(t, a.tile)));
-      if (ownCount < 1 || !targetMeld) return { ok: false, error: "INVALID_ADDED_KONG" };  // L2_隔離
-      removeTilesFromHand(me.hand, a.tile, 1);
-      targetMeld.kind = "kong_exposed";
-      targetMeld.tiles.push(a.tile);
+      // 嶺上抽
+      const replacement = drawNonFlower(this.s.wall, me.flowers);
+      if (!replacement) return this.drawExhaustion();
+      me.hand.push(replacement);
+      this.s.drawnThisTurn = replacement;
+      this.s.drewFromKongReplacement = true;
+      const flowerSettle = this.checkFlowerTerminal(idx);
+      if (flowerSettle) return { ok: true, settlement: flowerSettle };
+      return { ok: true };
     }
-    // 槓後補一張（嶺上抽；遇花吸收進該玩家的 flowers）
-    const replacement = drawNonFlower(this.s.wall, me.flowers);
-    if (!replacement) return this.drawExhaustion();
-    me.hand.push(replacement);
-    this.s.drawnThisTurn = replacement;
-    this.s.drewFromKongReplacement = true;        // 下一手自摸胡計槓上開花  // L3_架構
+    // 加槓：手中有 1 張，且 exposed 已有對應 pong；先進搶槓視窗，由
+    // commitHighestPriority/forceResolveReactions 決定要走哪條路。
+    const ownCount = me.hand.filter(t => tileEq(t, a.tile)).length;
+    const targetMeld = me.exposed.find(m => m.kind === "pong" && m.tiles.every(t => tileEq(t, a.tile)));
+    if (ownCount < 1 || !targetMeld) return { ok: false, error: "INVALID_ADDED_KONG" };  // L2_隔離
+
+    // 搶槓視窗：用既有 pending_reactions / lastDiscard 機制讓 onHu 食胡能命中此張，
+    // 但暫不真正改 exposed/hand — 等視窗結算才真正完成槓。                    // L2_實作
+    this.s.kongUpgradeContext = { tile: a.tile, kongerIdx: idx };
+    this.s.lastDiscard = { tile: a.tile, playerIdx: idx };
+    this.s.phase = "pending_reactions";
+    this.s.pendingReactions = this.s.players
+      .map((p, i) => i === idx ? null : { playerId: p.playerId } as PendingReaction)
+      .filter((x): x is PendingReaction => x !== null);
+    this.s.reactionDeadlineMs = Date.now() + REACTION_WINDOW_MS;
     return { ok: true };
   }
 
   // ─── 碰 ────────────────────────────────────
   private onPong(idx: number, a: MahjongPongAction): ProcessResult {
     if (this.s.phase !== "pending_reactions" || !this.s.lastDiscard) return { ok: false, error: "NO_PENDING_DISCARD" };
+    // 搶槓視窗只開放 hu / pass — 不能用碰反搶。                                  // L2_隔離
+    if (this.s.kongUpgradeContext) return { ok: false, error: "ONLY_HU_DURING_CHIANG_KONG" };
     if (!tileEq(this.s.lastDiscard.tile, a.tile)) return { ok: false, error: "TILE_MISMATCH" };
     const me = this.s.players[idx]!;
     const ownCount = me.hand.filter(t => tileEq(t, a.tile)).length;
@@ -483,6 +504,7 @@ export class MahjongStateMachine {
   // ─── 吃（僅下家可吃）───────────────────────
   private onChow(idx: number, a: MahjongChowAction): ProcessResult {
     if (this.s.phase !== "pending_reactions" || !this.s.lastDiscard) return { ok: false, error: "NO_PENDING_DISCARD" };
+    if (this.s.kongUpgradeContext) return { ok: false, error: "ONLY_HU_DURING_CHIANG_KONG" };
     const nextIdx = (this.s.lastDiscard.playerIdx + 1) % 4;
     if (idx !== nextIdx) return { ok: false, error: "ONLY_NEXT_PLAYER_CAN_CHOW" };          // L2_隔離
     const dt = this.s.lastDiscard.tile;
@@ -592,8 +614,41 @@ export class MahjongStateMachine {
     if (huR) {
       const winnerIdx = this.s.players.findIndex(p => p.playerId === huR.playerId);
       this.s.players[winnerIdx]!.hand.push(ld.tile);
-      const settlement = this.settle(winnerIdx, false, ld.playerIdx);
+      const isChiangKong = this.s.kongUpgradeContext !== null;
+      this.s.kongUpgradeContext = null;            // 搶槓胡 → 加槓沒成功
+      const settlement = this.settle(winnerIdx, false, ld.playerIdx, isChiangKong);
       return { ok: true, settlement };
+    }
+
+    // 1b. 搶槓視窗無人胡 → 完成 加槓 並抽嶺上
+    if (this.s.kongUpgradeContext) {
+      const ctx = this.s.kongUpgradeContext;
+      this.s.kongUpgradeContext = null;
+      const me = this.s.players[ctx.kongerIdx]!;
+      const targetMeld = me.exposed.find(m => m.kind === "pong" && m.tiles.every(t => tileEq(t, ctx.tile)));
+      // 若 invariant 失守（不應發生）— 視為 abort，回到該玩家正常出牌      // L2_隔離
+      if (!targetMeld) {
+        this.s.lastDiscard = null;
+        this.s.pendingReactions = [];
+        this.s.phase = "playing";
+        return { ok: false, error: "INVARIANT_PONG_MELD_VANISHED" };
+      }
+      removeTilesFromHand(me.hand, ctx.tile, 1);
+      targetMeld.kind = "kong_exposed";
+      targetMeld.tiles.push(ctx.tile);
+      this.s.lastDiscard = null;
+      this.s.pendingReactions = [];
+      const replacement = drawNonFlower(this.s.wall, me.flowers);
+      if (!replacement) return this.drawExhaustion();
+      me.hand.push(replacement);
+      this.s.drawnThisTurn = replacement;
+      this.s.drewFromKongReplacement = true;
+      this.s.phase = "playing";
+      this.s.turnIdx = ctx.kongerIdx;
+      this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
+      const flowerSettle = this.checkFlowerTerminal(ctx.kongerIdx);
+      if (flowerSettle) return { ok: true, settlement: flowerSettle };
+      return { ok: true };
     }
 
     // 2. 槓
@@ -673,7 +728,57 @@ export class MahjongStateMachine {
     this.s.drewLastWallTile = this.s.wall.length === 0;  // 海底撈月候補：摸完後牆空 // L2_實作
     this.s.phase = "playing";
     this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
+    // 摸花期間 drawNonFlower 已把花轉到 me.flowers 了；檢查是否觸發 八仙/七搶一。
+    const flowerSettle = this.checkFlowerTerminal(this.s.turnIdx);
+    if (flowerSettle) return { ok: true, settlement: flowerSettle };
     return { ok: true };
+  }
+
+  /** 在「最近一次摸牌的玩家」剛接收完花牌後呼叫。
+   *   - 該玩家收滿 8 花 → 八仙過海，自摸 +8 台，三家攤付。
+   *   - 全桌總花已 8、有人持 7 → 七搶一，7 花家贏，最後 1 花的「貢獻者」付。
+   *  非終局回 null。                                                       // L2_實作 */
+  private checkFlowerTerminal(drawerIdx: number): SettlementResult | null {
+    const total = this.s.players.reduce((n, p) => n + p.flowers.length, 0);
+    if (total !== 8) return null;
+    const drawer = this.s.players[drawerIdx]!;
+    if (drawer.flowers.length === 8) {
+      return this.settleFlowerWin(drawerIdx, "八仙過海", null);
+    }
+    const sevenIdx = this.s.players.findIndex((p, i) => i !== drawerIdx && p.flowers.length === 7);
+    if (sevenIdx >= 0) {
+      return this.settleFlowerWin(sevenIdx, "七搶一", drawerIdx);
+    }
+    return null;
+  }
+
+  /** 八仙過海 / 七搶一 共用結算。8 台 + 1 底；八仙視為「自摸」三家攤付，
+   *  七搶一視為「食胡」由 payerIdx 一家付。                                // L2_實作 */
+  private settleFlowerWin(winnerIdx: number, kind: "八仙過海" | "七搶一", payerIdx: number | null): SettlementResult {
+    this.s.phase = "settled";
+    const fan = 8;
+    const score = 1 + fan;
+    const selfDrawn = kind === "八仙過海";
+    return {
+      gameId: this.s.gameId,
+      roundId: this.s.roundId,
+      finishedAt: Date.now(),
+      reason: "lastCardPlayed",
+      winnerId: this.s.players[winnerIdx]!.playerId,
+      players: this.s.players.map((p, i) => {
+        let scoreDelta = 0;
+        if (i === winnerIdx)        scoreDelta = selfDrawn ? score * 3 : score;
+        else if (selfDrawn)         scoreDelta = -score;
+        else if (i === payerIdx)    scoreDelta = -score;
+        return {
+          playerId: p.playerId,
+          finalRank: i === winnerIdx ? 1 : (i === payerIdx ? 4 : 2),
+          remainingCards: [],
+          scoreDelta,
+        };
+      }),
+      fanDetail: { fan, base: 1, detail: [kind] },
+    };
   }
 
   private drawExhaustion(): ProcessResult {
@@ -700,7 +805,7 @@ export class MahjongStateMachine {
    *  - 食胡 (放炮 = payerIdx): 只有放炮者付 score → 贏家 +score；其餘 0       // L2_鎖定
    * payerIdx 在自摸時為 null；食胡時為 lastDiscard.playerIdx。
    */
-  private settle(winnerIdx: number, selfDrawn: boolean, payerIdx: number | null): SettlementResult {
+  private settle(winnerIdx: number, selfDrawn: boolean, payerIdx: number | null, chiangKong = false): SettlementResult {
     this.s.phase = "settled";
     const winner = this.s.players[winnerIdx]!;
     // 自摸時贏牌即 drawnThisTurn；食胡時贏牌即 lastDiscard.tile。
@@ -720,6 +825,7 @@ export class MahjongStateMachine {
       drewFromKongReplacement: this.s.drewFromKongReplacement,
       lastWallDraw: this.s.drewLastWallTile,
       lastRiverHu: this.s.lastDiscardOnEmptyWall,
+      chiangKong,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
     return {
