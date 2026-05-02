@@ -11,6 +11,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 import type { GameType }                           from "../types/game";
 import { isGameType }                               from "../types/game";
@@ -31,9 +32,9 @@ async function authPlayer(request: Request, env: PrivateRoomsEnv): Promise<strin
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -64,17 +65,17 @@ export async function createPrivateRoom(request: Request, env: PrivateRoomsEnv):
 
   let body: { gameType?: string; capacity?: number; ttlMinutes?: number };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   if (!isGameType(body.gameType))
-    return Response.json({ error: "gameType required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "gameType required");
 
   const gt       = body.gameType;
   const capacity = Number.isInteger(body.capacity) ? body.capacity! : defaultCapacity(gt);
   if (capacity < 2 || capacity > 4)
-    return Response.json({ error: "capacity must be 2–4" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "capacity must be 2–4");
   if (gt === "mahjong" && capacity !== 4)
-    return Response.json({ error: "mahjong requires capacity=4" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjong requires capacity=4");
 
   const ttlMin =
     Number.isInteger(body.ttlMinutes)
@@ -92,7 +93,7 @@ export async function createPrivateRoom(request: Request, env: PrivateRoomsEnv):
     body: JSON.stringify({ gameId, roundId, gameType: gt, capacity }),
   }));
   if (!init.ok)
-    return Response.json({ error: "room init failed" }, { status: 500 });
+    return errorResponse(ErrorCode.INTERNAL, 500, "room init failed");
 
   // 2. Persist the token. INSERT can theoretically collide on the
   //    PRIMARY KEY but base64url(16 bytes) makes that ~1-in-2^128.
@@ -128,9 +129,9 @@ export async function resolvePrivateRoom(
     .prepare("SELECT game_id, game_type, capacity, expires_at FROM room_tokens WHERE token = ?")
     .bind(token)
     .first<{ game_id: string; game_type: string; capacity: number; expires_at: number }>();
-  if (!row) return Response.json({ error: "token not found" }, { status: 404 });
+  if (!row) return errorResponse(ErrorCode.NOT_FOUND, 404, "token not found");
   if (row.expires_at < Date.now())
-    return Response.json({ error: "token expired" }, { status: 410 });
+    return errorResponse(ErrorCode.TOKEN_EXPIRED, 410);
 
   return Response.json({
     roomId:    row.game_id,

@@ -35,6 +35,13 @@ export const ErrorCode = {
   ADMIN_DISABLED:           "ADMIN_DISABLED",
   BAILOUT_INELIGIBLE:       "BAILOUT_INELIGIBLE",
   OVERDRAW:                 "OVERDRAW",
+  INSUFFICIENT_CHIPS:       "INSUFFICIENT_CHIPS",
+  TOKEN_EXPIRED:            "TOKEN_EXPIRED",
+  ALREADY_FRIENDS:          "ALREADY_FRIENDS",
+  FRIEND_REQUEST_PENDING:   "FRIEND_REQUEST_PENDING",
+  ALREADY_IN_ROOM:          "ALREADY_IN_ROOM",
+  ALREADY_QUEUED:           "ALREADY_QUEUED",
+  TOURNAMENT_REGISTRATION_CLOSED: "TOURNAMENT_REGISTRATION_CLOSED",
 } as const;
 export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
 
@@ -59,6 +66,13 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   ADMIN_DISABLED:         "admin disabled",
   BAILOUT_INELIGIBLE:     "bailout not eligible",
   OVERDRAW:               "would overdraw",
+  INSUFFICIENT_CHIPS:     "insufficient chips",
+  TOKEN_EXPIRED:          "token expired",
+  ALREADY_FRIENDS:        "already friends",
+  FRIEND_REQUEST_PENDING: "friend request already pending",
+  ALREADY_IN_ROOM:        "already in a room",
+  ALREADY_QUEUED:         "already queued",
+  TOURNAMENT_REGISTRATION_CLOSED: "tournament registration is closed",
 };
 
 /** Build a standard error Response. Carries both the legacy `error` field

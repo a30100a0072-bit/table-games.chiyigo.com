@@ -5,6 +5,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 import type { GameType }                           from "../types/game";
 import { isGameType }                               from "../types/game";
@@ -26,9 +27,9 @@ async function authPlayer(request: Request, env: TournamentEnv): Promise<string 
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -43,13 +44,13 @@ export async function createTournament(request: Request, env: TournamentEnv): Pr
 
   let body: { gameType?: string; buyIn?: number };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   if (!isGameType(body.gameType))
-    return Response.json({ error: "gameType required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "gameType required");
   const buyIn = Number(body.buyIn);
   if (!Number.isInteger(buyIn) || buyIn < MIN_BUY_IN || buyIn > MAX_BUY_IN)
-    return Response.json({ error: `buyIn must be ${MIN_BUY_IN}–${MAX_BUY_IN}` }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, `buyIn must be ${MIN_BUY_IN}–${MAX_BUY_IN}`);
 
   const tournamentId = crypto.randomUUID();
   const now          = Date.now();
@@ -68,7 +69,7 @@ export async function createTournament(request: Request, env: TournamentEnv): Pr
       .bind(buyIn, now, playerId, buyIn)
       .run();
     if (!debit.success || (debit.meta?.changes ?? 0) === 0) {
-      return Response.json({ error: "insufficient chips" }, { status: 402 });
+      return errorResponse(ErrorCode.INSUFFICIENT_CHIPS, 402);
     }
     await env.DB.batch([
       env.DB
@@ -97,7 +98,7 @@ export async function createTournament(request: Request, env: TournamentEnv): Pr
       .prepare("UPDATE users SET chip_balance = chip_balance + ? WHERE player_id = ?")
       .bind(buyIn, playerId)
       .run().catch(() => {});
-    return Response.json({ error: "tournament create failed" }, { status: 500 });
+    return errorResponse(ErrorCode.INTERNAL, 500, "tournament create failed");
   }
 
   // Spin up the TournamentDO and register the creator.
@@ -130,9 +131,9 @@ export async function joinTournament(request: Request, env: TournamentEnv, tourn
     .prepare("SELECT buy_in, status FROM tournaments WHERE tournament_id = ?")
     .bind(tournamentId)
     .first<{ buy_in: number; status: string }>();
-  if (!t) return Response.json({ error: "tournament not found" }, { status: 404 });
+  if (!t) return errorResponse(ErrorCode.NOT_FOUND, 404, "tournament not found");
   if (t.status !== "registering")
-    return Response.json({ error: "registration closed" }, { status: 409 });
+    return errorResponse(ErrorCode.TOURNAMENT_REGISTRATION_CLOSED, 409);
 
   const now = Date.now();
   const debit = await env.DB
@@ -143,7 +144,7 @@ export async function joinTournament(request: Request, env: TournamentEnv, tourn
     .bind(t.buy_in, now, playerId, t.buy_in)
     .run();
   if (!debit.success || (debit.meta?.changes ?? 0) === 0) {
-    return Response.json({ error: "insufficient chips" }, { status: 402 });
+    return errorResponse(ErrorCode.INSUFFICIENT_CHIPS, 402);
   }
 
   try {
@@ -167,7 +168,7 @@ export async function joinTournament(request: Request, env: TournamentEnv, tourn
       .prepare("UPDATE users SET chip_balance = chip_balance + ? WHERE player_id = ?")
       .bind(t.buy_in, playerId)
       .run().catch(() => {});
-    return Response.json({ error: "already registered or DB error" }, { status: 409 });
+    return errorResponse(ErrorCode.CONFLICT, 409, "already registered or DB error");
   }
 
   // Notify TournamentDO; it auto-starts when the 4th player joins.
@@ -211,7 +212,7 @@ export async function getTournament(_request: Request, env: TournamentEnv, tourn
     )
     .bind(tournamentId)
     .first();
-  if (!t) return Response.json({ error: "not found" }, { status: 404 });
+  if (!t) return errorResponse(ErrorCode.NOT_FOUND, 404);
 
   const entries = await env.DB
     .prepare(
@@ -250,9 +251,9 @@ export async function listMyTournaments(request: Request, env: TournamentEnv): P
   let me: string;
   try { me = await verifyJWT(tok, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK)); }
   catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 

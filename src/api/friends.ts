@@ -6,6 +6,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 
 export interface FriendsEnv {
@@ -26,9 +27,9 @@ async function authPlayer(request: Request, env: FriendsEnv): Promise<string | R
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -62,15 +63,15 @@ export async function requestFriend(request: Request, env: FriendsEnv): Promise<
 
   let body: { targetPlayerId?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   const target = body.targetPlayerId;
   if (typeof target !== "string" || target.length === 0)
-    return Response.json({ error: "targetPlayerId required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "targetPlayerId required");
   if (target === me)
-    return Response.json({ error: "cannot friend yourself" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot friend yourself");
   if (!(await userExists(env, target)))
-    return Response.json({ error: "target user not found" }, { status: 404 });
+    return errorResponse(ErrorCode.NOT_FOUND, 404, "target user not found");
 
   const { a, b } = canon(me, target);
   const now = Date.now();
@@ -82,10 +83,10 @@ export async function requestFriend(request: Request, env: FriendsEnv): Promise<
 
   if (existing) {
     if (existing.status === "accepted")
-      return Response.json({ error: "already_friends" }, { status: 409 });
+      return errorResponse(ErrorCode.ALREADY_FRIENDS, 409);
     // existing.status === "pending"
     if (existing.requester === me)
-      return Response.json({ error: "already_requested" }, { status: 409 });
+      return errorResponse(ErrorCode.FRIEND_REQUEST_PENDING, 409);
     // Other side already asked us → auto-accept.
     await env.DB
       .prepare("UPDATE friendships SET status = 'accepted', responded_at = ? WHERE a_id = ? AND b_id = ?")
@@ -113,7 +114,7 @@ export async function acceptFriend(request: Request, env: FriendsEnv, other: str
   const me = await authPlayer(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
-  if (other === me) return Response.json({ error: "cannot accept yourself" }, { status: 400 });
+  if (other === me) return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot accept yourself");
 
   const { a, b } = canon(me, other);
   const now = Date.now();
@@ -122,11 +123,11 @@ export async function acceptFriend(request: Request, env: FriendsEnv, other: str
     .prepare("SELECT requester, status FROM friendships WHERE a_id = ? AND b_id = ?")
     .bind(a, b)
     .first<{ requester: string; status: string }>();
-  if (!row) return Response.json({ error: "no pending request" }, { status: 404 });
+  if (!row) return errorResponse(ErrorCode.NOT_FOUND, 404, "no pending request");
   if (row.status === "accepted")
     return Response.json({ status: "accepted" });   // idempotent
   if (row.requester === me)
-    return Response.json({ error: "cannot accept your own request" }, { status: 409 });
+    return errorResponse(ErrorCode.CONFLICT, 409, "cannot accept your own request");
 
   await env.DB
     .prepare("UPDATE friendships SET status = 'accepted', responded_at = ? WHERE a_id = ? AND b_id = ? AND status = 'pending'")

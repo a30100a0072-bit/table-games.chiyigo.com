@@ -22,6 +22,7 @@
 // validator) — but we double-belt with a length+prefix check there too.   // L3_架構含防禦觀測
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 
 export interface AccountEnv {
@@ -45,9 +46,9 @@ async function authPlayer(request: Request, env: AccountEnv): Promise<string | R
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -61,7 +62,7 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
   if (me instanceof Response) return me;
 
   if (request.headers.get("X-Confirm-Delete") !== "yes")
-    return Response.json({ error: "missing confirmation header" }, { status: 400 });
+    return errorResponse(ErrorCode.MISSING_CONFIRMATION, 400);
 
   const tomb = makeTombstone();
 
@@ -94,7 +95,7 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
     ]);
   } catch (err) {
     log("error", "account_delete_failed", { playerId: me, err: String(err) });
-    return Response.json({ error: "deletion failed" }, { status: 500 });
+    return errorResponse(ErrorCode.ACCOUNT_DELETE_FAILED, 500);
   }
 
   log("info", "account_deleted", { playerId: me, tombstone: tomb });

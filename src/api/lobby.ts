@@ -6,6 +6,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 import { bump }                                     from "../utils/metrics";
 import type { GameType } from "../types/game";
@@ -134,18 +135,18 @@ export class LobbyDO implements DurableObject {
     const body = await request.json<LobbyJoinBody>();
     const { playerId, gameType } = body;
     if (!isGameType(gameType))
-      return Response.json({ error: "invalid gameType" }, { status: 400 });
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "invalid gameType");
 
     // 同一 LobbyDO 實例只能服務單一 gameType。                              // L2_隔離
     if (this.gameType === null) {
       this.gameType = gameType;
       await this.state.storage.put("gameType", this.gameType);
     } else if (this.gameType !== gameType) {
-      return Response.json({ error: "gameType mismatch for this lobby" }, { status: 400 });
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "gameType mismatch for this lobby");
     }
 
     if (this.deadlines.has(playerId))
-      return Response.json({ error: "already queued" }, { status: 409 });
+      return errorResponse(ErrorCode.ALREADY_QUEUED, 409);
 
     this.deadlines.set(playerId, Date.now() + WAIT_MS);
 
@@ -312,9 +313,9 @@ export async function handleMatch(
   try {
     playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 
@@ -333,7 +334,7 @@ export async function handleMatch(
     .first<{ frozen_at: number }>();
   if (frozen && frozen.frozen_at > 0) {
     log("warn", "match_blocked_frozen", { playerId });
-    return Response.json({ error: "account frozen" }, { status: 423 });
+    return errorResponse(ErrorCode.ACCOUNT_FROZEN, 423);
   }
 
   bump("matches_started");
@@ -356,9 +357,9 @@ export async function handleMatch(
   const balance = wallet?.chip_balance ?? 0;
   if (balance < ante) {
     log("info", "match_blocked_insufficient_chips", { playerId, gameType, balance, required: ante });
-    return Response.json(
-      { error: "insufficient chips", balance, required: ante, gameType },
-      { status: 402 },
+    return errorResponse(
+      ErrorCode.INSUFFICIENT_CHIPS, 402, undefined,
+      { balance, required: ante, gameType },
     );
   }
 
@@ -375,9 +376,9 @@ export async function handleMatch(
     if (stale) {
       await env.MATCH_KV.delete(`room:${playerId}`);
     } else {
-      return Response.json(
-        { error: "already in a room", roomId: existingRoom },
-        { status: 409 },
+      return errorResponse(
+        ErrorCode.ALREADY_IN_ROOM, 409, undefined,
+        { roomId: existingRoom },
       );
     }
   }

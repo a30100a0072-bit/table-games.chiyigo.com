@@ -9,6 +9,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 
 export interface RoomInvitesEnv {
@@ -22,9 +23,9 @@ async function authPlayer(request: Request, env: RoomInvitesEnv): Promise<string
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -52,27 +53,27 @@ export async function inviteToRoom(request: Request, env: RoomInvitesEnv): Promi
 
   let body: { friendPlayerId?: string; joinToken?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   const friend = body.friendPlayerId;
   const tok    = body.joinToken;
   if (typeof friend !== "string" || friend.length === 0)
-    return Response.json({ error: "friendPlayerId required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "friendPlayerId required");
   if (typeof tok !== "string" || tok.length === 0)
-    return Response.json({ error: "joinToken required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "joinToken required");
   if (friend === me)
-    return Response.json({ error: "cannot invite yourself" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot invite yourself");
 
   if (!(await isFriend(env, me, friend)))
-    return Response.json({ error: "not friends" }, { status: 403 });
+    return errorResponse(ErrorCode.FORBIDDEN, 403, "not friends");
 
   const room = await env.DB
     .prepare("SELECT game_type, expires_at FROM room_tokens WHERE token = ?")
     .bind(tok)
     .first<{ game_type: string; expires_at: number }>();
-  if (!room) return Response.json({ error: "token not found" }, { status: 404 });
+  if (!room) return errorResponse(ErrorCode.NOT_FOUND, 404, "token not found");
   const now = Date.now();
-  if (room.expires_at < now) return Response.json({ error: "token expired" }, { status: 410 });
+  if (room.expires_at < now) return errorResponse(ErrorCode.TOKEN_EXPIRED, 410);
 
   // INSERT OR IGNORE so re-inviting the same friend to the same room
   // is a no-op rather than an error. status='pending' on the surviving row.
@@ -133,7 +134,7 @@ export async function declineInvite(request: Request, env: RoomInvitesEnv, id: s
 
   const idNum = Number(id);
   if (!Number.isInteger(idNum) || idNum <= 0)
-    return Response.json({ error: "bad id" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "bad id");
 
   await env.DB
     .prepare(

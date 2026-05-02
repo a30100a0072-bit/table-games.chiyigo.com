@@ -10,6 +10,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 
 export interface DmEnv {
@@ -27,9 +28,9 @@ async function authPlayer(request: Request, env: DmEnv): Promise<string | Respon
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -57,20 +58,20 @@ export async function sendDm(request: Request, env: DmEnv): Promise<Response> {
 
   let body: { to?: string; body?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   const to       = body.to;
   const text     = (body.body ?? "").trim();
   if (typeof to !== "string" || to.length === 0)
-    return Response.json({ error: "to required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "to required");
   if (to === me)
-    return Response.json({ error: "cannot DM yourself" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot DM yourself");
   if (text.length === 0)
-    return Response.json({ error: "empty body" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "empty body");
   if (text.length > BODY_MAX)
-    return Response.json({ error: "body too long", max: BODY_MAX }, { status: 413 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 413, "body too long", { max: BODY_MAX });
   if (!(await areFriends(env, me, to)))
-    return Response.json({ error: "recipient is not your friend" }, { status: 403 });
+    return errorResponse(ErrorCode.FORBIDDEN, 403, "recipient is not your friend");
 
   const now = Date.now();
   const res = await env.DB
