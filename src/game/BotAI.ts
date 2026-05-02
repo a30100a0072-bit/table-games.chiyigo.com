@@ -245,14 +245,38 @@ function tileUtility(counts: Uint8Array, idx: number): number {
   return score;
 }
 
-/** Pick the most isolated tile to discard. Lone honors leave first.          // L3_邏輯安防 */
-function pickDiscardTile(hand: MahjongTile[]): MahjongTile {
+/** Pick the most isolated tile to discard. Lone honors leave first.          // L3_邏輯安防
+ *
+ *  When opponents have exposed pongs we add a heavy penalty (>> any
+ *  in-hand utility) for matching tiles, since discarding one lets the
+ *  opponent upgrade pong → kong (gain a replacement tile + 1 fan).
+ *  The penalty is large enough that danger tiles only get picked when
+ *  the entire hand is dangerous, which in practice is a degenerate
+ *  end-of-wall situation we'd lose anyway.                                   // L3_邏輯安防 */
+function pickDiscardTile(
+  hand: MahjongTile[],
+  opponentExposed: readonly (readonly { kind: string; tiles: MahjongTile[] }[])[] = [],
+): MahjongTile {
   const counts = new Uint8Array(34);
   for (const t of hand) counts[tileIndex(t)]!++;
+
+  const dangerTileIndices = new Set<number>();
+  for (const melds of opponentExposed) {
+    for (const m of melds) {
+      // Pongs are upgrade-able to kongs by discarding the matching tile.
+      // Existing kongs / chows are sealed — cannot grow.
+      if (m.kind === "pong" && m.tiles[0]) {
+        dangerTileIndices.add(tileIndex(m.tiles[0]));
+      }
+    }
+  }
+
   let bestI = 0;
   let bestScore = Infinity;
   for (let i = 0; i < hand.length; i++) {
-    const score = tileUtility(counts, tileIndex(hand[i]!));
+    const idx = tileIndex(hand[i]!);
+    let score = tileUtility(counts, idx);
+    if (dangerTileIndices.has(idx)) score += 10_000;
     if (score < bestScore) { bestScore = score; bestI = i; }
   }
   return hand[bestI]!;
@@ -324,7 +348,7 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
     if (canWin(view.self.hand, view.self.exposed.length)) {
       return { type: "hu", selfDrawn: true };
     }
-    return { type: "discard", tile: pickDiscardTile(view.self.hand) };
+    return { type: "discard", tile: pickDiscardTile(view.self.hand, view.opponents.map(o => o.exposed)) };
   }
 
   // Defensive fallback — DO will guard against scheduling us in wrong phase. // L3_架構含防禦觀測

@@ -252,7 +252,7 @@ function mahjongView(over: Partial<MahjongStateView> & {
       exposed: [],
       flowers: [],
     },
-    opponents: [],
+    opponents: over.opponents ?? [],
     wall: { remaining: 50 },
     currentTurn: over.currentTurn ?? "BOT_1",
     lastDiscard: over.lastDiscard ?? null,
@@ -330,6 +330,37 @@ describe("Mahjong bot", () => {
     if (a.type === "discard") {
       expect(a.tile).toEqual(z(7));
     }
+  });
+
+  it("avoids discarding a tile that would let an opponent kong-upgrade", () => {
+    // Bot's only "isolated" tile is z(7). An opponent has an exposed pong of
+    // z(7), so discarding it would feed a kong (gain a tile + 1 fan). With
+    // the danger penalty, the bot picks the next-most-isolated instead — s(2).
+    const hand: MahjongTile[] = [
+      z(7),                                  // would normally be the isolated discard
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      p(1), p(2), p(3),
+      p(4), p(5), p(6),
+      s(7), s(8), s(9),
+      s(2),                                  // next-best: lone within suited s
+    ];
+    const v = mahjongView({
+      phase: "playing",
+      hand,
+      opponents: [
+        {
+          playerId: "p2", handCount: 13,
+          exposed: [{ kind: "pong", tiles: [z(7), z(7), z(7)] }],
+          flowers: [],
+        } as never,
+      ],
+    });
+    const a = getMahjongBotAction(v);
+    expect(a.type).toBe("discard");
+    if (a.type !== "discard") return;
+    // We don't pin which non-z(7) tile gets discarded — only that it isn't z(7).
+    expect(a.tile).not.toEqual(z(7));
   });
 
   it("returns mj_pass defensively when called outside a valid action context", () => {
