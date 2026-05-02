@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-02（Replay 分享 / 撤銷 / 點閱統計 + last_viewed_at + 麻將進階台 v3 + GDPR delete/export + tail forwarder retry + 前端 game screens / admin code-split + chip_ledger 複合索引 + replay_participants 索引表 + cron retention sweep + ErrorCode 全 9 模組覆蓋 + 前端 ApiError class / errorCodes i18n 對應 / formatApiError 全 component catch 接線 + 嚴格 CSP + Modal Escape 鍵關閉 + role/aria-modal + 全 modal focus-trap + TournamentModal/StatsModal 完整 i18n + Workers 整合測試擴充 + admin health 儀表（後端 + 前端） + rate limit invite/share 桶細分）
+> 最後更新：2026-05-02（Replay 分享 / 撤銷 / 點閱統計 + last_viewed_at + 離線快取 + 麻將進階台 v3 + GDPR delete/export + tail forwarder retry + 前端 game screens / admin code-split + chip_ledger 複合索引 + replay_participants 索引表 + cron retention sweep + ErrorCode 全 9 模組覆蓋 + 前端 ApiError class / errorCodes i18n 對應 / formatApiError 全 component catch 接線 + 嚴格 CSP + Modal Escape 鍵關閉 + role/aria-modal + 全 modal focus-trap + TournamentModal/StatsModal 完整 i18n + PWA SW stale-while-revalidate + Workers 整合測試擴充 + admin health 儀表（後端 + 前端） + rate limit invite/share 桶細分）
 >
 > **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅；CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅；**ES256 JWKS + 多 key 輪換**；**籌碼錢包 + 流水帳本 + ANTE + bailout + daily bonus + forfeit + admin freeze**；**Tournament 後端+前端（含 Texas blind escalation 10/20→20/40→50/100）**；**Mahjong `ENGINE_VERSION=3`（含搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）**；**i18n 雙語**；**PWA**；**結構化 JSON log → tail forwarder → 通用 webhook**；**Friends / Private rooms / Spectator (含 live listings) / Replay (含 token 分享) / Room invites / Friend DM**；**GDPR DELETE + export `/api/me`**
 > **測試矩陣**：
