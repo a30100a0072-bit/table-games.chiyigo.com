@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   listMyReplaysApi, getReplayApi, shareReplayApi, getSharedReplayApi,
   listMySharesApi, revokeShareApi, formatApiError,
@@ -182,6 +183,7 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
 
 export default function ReplaysModal({ token, sharedReplayToken, onClose }: Props) {
   useEscapeClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const { t } = useT();
   const isShared = !!sharedReplayToken;
   const [list,    setList]    = useState<ReplaySummary[] | null>(null);
@@ -256,7 +258,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" ref={trapRef}>
       <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">

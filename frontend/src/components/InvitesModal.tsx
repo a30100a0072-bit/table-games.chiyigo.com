@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   listInvitesApi, declineInviteApi, resolvePrivateRoomApi, formatApiError,
 } from "../api/http";
@@ -20,6 +21,7 @@ const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.t
 
 export default function InvitesModal({ token, onClose, onEnter }: Props) {
   useEscapeClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const { t } = useT();
   const [items, setItems] = useState<RoomInvite[] | null>(null);
   const [busy,  setBusy]  = useState(false);
@@ -52,7 +54,7 @@ export default function InvitesModal({ token, onClose, onEnter }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" ref={trapRef}>
       <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">📨 {t("inv.title")}</h2>

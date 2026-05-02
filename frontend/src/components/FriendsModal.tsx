@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   listFriendsApi, requestFriendApi, respondFriendApi, unfriendApi,
   listDmConversationApi, sendDmApi, formatApiError,
@@ -102,6 +103,7 @@ function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack:
 
 export default function FriendsModal({ token, onClose }: Props) {
   useEscapeClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const { t } = useT();
   const [data,    setData]    = useState<FriendsResponse | null>(null);
   const [tab,     setTab]     = useState<Tab>("accepted");
@@ -148,7 +150,7 @@ export default function FriendsModal({ token, onClose }: Props) {
     : { accepted: 0, incoming: 0, outgoing: 0 };
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" ref={trapRef}>
       <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">👥 {t("friends.title")}</h2>
