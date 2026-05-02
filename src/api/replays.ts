@@ -177,21 +177,25 @@ export async function listMyShares(request: Request, env: ReplaysEnv): Promise<R
 
   const rows = await env.DB
     .prepare(
-      "SELECT token, game_id, created_at, expires_at, view_count" +
+      "SELECT token, game_id, created_at, expires_at, view_count, last_viewed_at" +
       "  FROM replay_shares" +
       " WHERE owner_id = ? AND expires_at > ?" +
       " ORDER BY created_at DESC LIMIT 50",
     )
     .bind(me, Date.now())
-    .all<{ token: string; game_id: string; created_at: number; expires_at: number; view_count: number }>();
+    .all<{
+      token: string; game_id: string; created_at: number; expires_at: number;
+      view_count: number; last_viewed_at: number | null;
+    }>();
 
   return Response.json({
     shares: (rows.results ?? []).map(r => ({
-      token:     r.token,
-      gameId:    r.game_id,
-      createdAt: r.created_at,
-      expiresAt: r.expires_at,
-      viewCount: r.view_count ?? 0,
+      token:        r.token,
+      gameId:       r.game_id,
+      createdAt:    r.created_at,
+      expiresAt:    r.expires_at,
+      viewCount:    r.view_count ?? 0,
+      lastViewedAt: r.last_viewed_at,
     })),
   });
 }
@@ -226,13 +230,14 @@ export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promi
   if (share.expires_at <= Date.now())
     return errorResponse(ErrorCode.REPLAY_SHARE_EXPIRED, 410);
 
-  // Increment view counter so the owner can see how often the link is
-  // hit. Best-effort: a failure here doesn't block the resolve, since
-  // the analytics signal is far less important than serving the replay.
+  // Increment view counter + stamp last_viewed_at so the owner can see
+  // how often the link is hit and when it last fired. Best-effort: a
+  // failure here doesn't block the resolve — the analytics signal is
+  // far less important than serving the replay.
   try {
     await env.DB
-      .prepare("UPDATE replay_shares SET view_count = view_count + 1 WHERE token = ?")
-      .bind(token)
+      .prepare("UPDATE replay_shares SET view_count = view_count + 1, last_viewed_at = ? WHERE token = ?")
+      .bind(Date.now(), token)
       .run();
   } catch { /* swallow — analytics is non-critical */ }
 

@@ -291,7 +291,8 @@ CREATE TABLE IF NOT EXISTS replay_shares (
   owner_id    TEXT    NOT NULL,             -- the seated player who minted the link
   created_at  INTEGER NOT NULL,
   expires_at  INTEGER NOT NULL,
-  view_count  INTEGER NOT NULL DEFAULT 0,   -- bumped on each public resolve
+  view_count     INTEGER NOT NULL DEFAULT 0,    -- bumped on each public resolve
+  last_viewed_at INTEGER,                       -- ms; NULL until first hit
   FOREIGN KEY (game_id) REFERENCES replay_meta (game_id)
 );
 

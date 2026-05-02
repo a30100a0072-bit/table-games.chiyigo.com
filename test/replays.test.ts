@@ -15,7 +15,7 @@ interface MetaRow {
   winner_id: string | null; reason: string | null;
 }
 
-interface ShareRow { token: string; game_id: string; owner_id: string; created_at: number; expires_at: number; view_count?: number; }
+interface ShareRow { token: string; game_id: string; owner_id: string; created_at: number; expires_at: number; view_count?: number; last_viewed_at?: number | null; }
 
 class MockDb {
   rows: MetaRow[] = [];
@@ -58,9 +58,12 @@ class MockStmt {
       return { success: true, meta: { changes: before - this.db.shares.length } };
     }
     if (this.sql.startsWith("UPDATE replay_shares SET view_count")) {
-      const [token] = this.args as [string];
+      const [now, token] = this.args as [number, string];
       const row = this.db.shares.find(s => s.token === token);
-      if (row) row.view_count = (row.view_count ?? 0) + 1;
+      if (row) {
+        row.view_count = (row.view_count ?? 0) + 1;
+        row.last_viewed_at = now;
+      }
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     return { success: true, meta: { changes: 0 } };
@@ -326,16 +329,18 @@ describe("replays API", () => {
     expect(r.status).toBe(404);
   });
 
-  it("resolveSharedReplay bumps view_count on each public hit", async () => {
+  it("resolveSharedReplay bumps view_count + last_viewed_at on each public hit", async () => {
     db.rows.push(mkRow({ game_id: "g1" }));
     db.shares.push({
       token: "abc", game_id: "g1", owner_id: "alice",
       created_at: Date.now(), expires_at: Date.now() + 60_000,
     });
+    const before = Date.now();
     await resolveSharedReplay(env, "abc");
     await resolveSharedReplay(env, "abc");
     await resolveSharedReplay(env, "abc");
     expect(db.shares[0]!.view_count).toBe(3);
+    expect(db.shares[0]!.last_viewed_at).toBeGreaterThanOrEqual(before);
   });
 
   it("listMyShares surfaces viewCount alongside expiry", async () => {
