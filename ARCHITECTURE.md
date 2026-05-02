@@ -5,9 +5,9 @@
 >
 > **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅；CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅；**ES256 JWKS + 多 key 輪換**；**籌碼錢包 + 流水帳本 + ANTE + bailout + daily bonus + forfeit + admin freeze**；**Tournament 後端+前端（含 Texas blind escalation 10/20→20/40→50/100）**；**Mahjong `ENGINE_VERSION=3`（含搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）**；**i18n 雙語**；**PWA**；**結構化 JSON log → tail forwarder → 通用 webhook**；**Friends / Private rooms / Spectator (含 live listings) / Replay (含 token 分享) / Room invites / Friend DM**；**GDPR DELETE + export `/api/me`**
 > **測試矩陣**：
->   - **Node 單元測試**：24 檔 / **262 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：24 檔 / **268 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 278 測試**
+>   - **總計 284 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`

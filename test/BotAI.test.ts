@@ -129,6 +129,65 @@ describe("Big Two bot", () => {
     });
     expect(getBigTwoBotAction(v, hand).type).toBe("pass");
   });
+
+  // Endgame "single-shot win" leads — the entire hand IS the combo,
+  // so dumping it ends the game immediately if nobody beats it.
+  it("leads the pair when hand is exactly two cards of the same rank", () => {
+    const hand: Card[] = [
+      { rank: "K", suit: "hearts" },
+      { rank: "K", suit: "spades" },
+    ];
+    const v = bigTwoView({ self: { playerId: "BOT_1", hand, cardCount: 2 } });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.combo).toBe("pair");
+    expect(a.cards).toHaveLength(2);
+  });
+
+  it("leads the triple when hand is exactly three cards of the same rank", () => {
+    const hand: Card[] = [
+      { rank: "9", suit: "hearts" },
+      { rank: "9", suit: "spades" },
+      { rank: "9", suit: "diamonds" },
+    ];
+    const v = bigTwoView({ self: { playerId: "BOT_1", hand, cardCount: 3 } });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.combo).toBe("triple");
+    expect(a.cards).toHaveLength(3);
+  });
+
+  it("leads the 5-card combo when hand is exactly a valid 5", () => {
+    // 4-5-6-7-8 straight (no 3♣ to trigger the opening rule).
+    const hand: Card[] = [
+      { rank: "4", suit: "hearts" },
+      { rank: "5", suit: "spades" },
+      { rank: "6", suit: "diamonds" },
+      { rank: "7", suit: "clubs" },
+      { rank: "8", suit: "hearts" },
+    ];
+    const v = bigTwoView({ self: { playerId: "BOT_1", hand, cardCount: 5 } });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.cards).toHaveLength(5);
+    expect(a.combo).toBe("straight");
+  });
+
+  it("falls back to single lead when 2-card hand isn't a pair", () => {
+    const hand: Card[] = [
+      { rank: "9", suit: "hearts" },
+      { rank: "K", suit: "spades" },
+    ];
+    const v = bigTwoView({ self: { playerId: "BOT_1", hand, cardCount: 2 } });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.combo).toBe("single");
+    expect(a.cards).toEqual([{ rank: "9", suit: "hearts" }]);  // smallest non-2
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -343,6 +402,43 @@ describe("Texas Hold'em bot", () => {
         { rank: "3", suit: "hearts" },
       ],
       currentBet: 200,
+      self: { betThisStreet: 0 } as PokerStateView["self"],
+      pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
+    });
+    expect(getTexasBotAction(v).type).toBe("fold");
+  });
+
+  it("calls a cheap bet on the flop with an open-ended straight draw", () => {
+    // Hole 6♣ 7♦ + flop 5♥ 8♠ K♣ → 5-6-7-8 OESD (8 outs: 4 / 9).
+    // Pot 100, owe 20 → 20/120 = 0.167 < 0.20 threshold.
+    const v = texasView({
+      street: "flop",
+      hole: [{ rank: "6", suit: "clubs" }, { rank: "7", suit: "diamonds" }],
+      communityCards: [
+        { rank: "5", suit: "hearts" },
+        { rank: "8", suit: "spades" },
+        { rank: "K", suit: "clubs" },
+      ],
+      currentBet: 20,
+      self: { betThisStreet: 0 } as PokerStateView["self"],
+      pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
+    });
+    expect(getTexasBotAction(v).type).toBe("call");
+  });
+
+  it("folds a one-sided straight draw at the bottom (A-2-3-4) — only 4 outs", () => {
+    // Hole A♣ 2♦ + flop 3♥ 4♠ K♣ → A-2-3-4 needs a 5; one-sided.
+    // Bot's hasOpenEndedStraightDraw excludes wheel-side draws, so this
+    // path falls through to fold against any non-zero bet.
+    const v = texasView({
+      street: "flop",
+      hole: [{ rank: "A", suit: "clubs" }, { rank: "2", suit: "diamonds" }],
+      communityCards: [
+        { rank: "3", suit: "hearts" },
+        { rank: "4", suit: "spades" },
+        { rank: "K", suit: "clubs" },
+      ],
+      currentBet: 20,
       self: { betThisStreet: 0 } as PokerStateView["self"],
       pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
     });

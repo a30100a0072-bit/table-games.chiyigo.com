@@ -113,6 +113,26 @@ function pickLead(hand: Card[]): { cards: Card[]; combo: ComboType } {
   const threeClub = sorted.find(c => c.rank === "3" && c.suit === "clubs");
   if (threeClub) return { cards: [threeClub], combo: "single" };
 
+  // Endgame "single-shot win" — when the entire hand forms exactly one
+  // legal combo, dumping it ends the game in our favour if opponents
+  // can't beat it. This beats the previous behaviour of leading one
+  // card from a pair-of-the-last-2: that path was strictly worse, since
+  // it gave any opponent a free chance to beat the lower card and leave
+  // us holding the higher one as a single (still beatable by a 2 we
+  // don't control).                                                          // L3_邏輯安防
+  if (sorted.length === 2 && sorted[0]!.rank === sorted[1]!.rank) {
+    return { cards: sorted, combo: "pair" };
+  }
+  if (sorted.length === 3 && sorted[0]!.rank === sorted[1]!.rank && sorted[1]!.rank === sorted[2]!.rank) {
+    return { cards: sorted, combo: "triple" };
+  }
+  if (sorted.length === 5) {
+    const meta = detectCombo(sorted);
+    if (meta && FIVE_TYPES.has(meta.type)) {
+      return { cards: sorted, combo: meta.type };
+    }
+  }
+
   const rankCount = new Map<Rank, number>();
   for (const c of sorted) rankCount.set(c.rank, (rankCount.get(c.rank) ?? 0) + 1);
 
@@ -372,6 +392,27 @@ function hasFlushDraw(cards: Card[]): boolean {
   return counts.spades >= 4 || counts.hearts >= 4 || counts.clubs >= 4 || counts.diamonds >= 4;
 }
 
+/** True iff hand contains an open-ended straight draw — four consecutive
+ *  ranks where neither end is the deck's bookend (no A-2-3-4 or J-Q-K-A,
+ *  since those have only 4 outs / one side). True OESD has 8 outs and
+ *  ≈32% equity over two streets, justifying the same call-cheap rule
+ *  as a flush draw.                                                          // L3_邏輯安防 */
+function hasOpenEndedStraightDraw(cards: Card[]): boolean {
+  const r2v: Readonly<Record<Rank, number>> = {
+    "2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9,"10":10,"J":11,"Q":12,"K":13,"A":14,
+  };
+  const set = new Set(cards.map(c => r2v[c.rank]));
+  // Slide a 4-wide window over rank values 3..12 (both ends open: low-1
+  // and high+1 must both lie in the legal 2..14 range).
+  for (let lo = 3; lo <= 11; lo++) {
+    if (set.has(lo) && set.has(lo + 1) && set.has(lo + 2) && set.has(lo + 3)) {
+      // lo-1 ≥ 2 and lo+4 ≤ 14 by the loop bounds — both sides open.
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getTexasBotAction(view: PokerStateView): PlayerAction {
   const me = view.self;
   const owe = Math.max(0, view.currentBet - me.betThisStreet);
@@ -435,7 +476,7 @@ export function getTexasBotAction(view: PokerStateView): PlayerAction {
     }
     return { type: "check" };
   }
-  if (hasFlushDraw(avail)) {
+  if (hasFlushDraw(avail) || hasOpenEndedStraightDraw(avail)) {
     const potTotal = view.pots.reduce((s, p) => s + p.amount, 0);
     const callOdds = owe / (potTotal + owe);
     if (callOdds <= 0.20) return { type: "call" };
