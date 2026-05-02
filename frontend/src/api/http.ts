@@ -389,7 +389,7 @@ export async function shareReplayApi(token: string, gameId: string, ttlMs?: numb
   return res.json();
 }
 
-export interface MyShareEntry { token: string; gameId: string; createdAt: number; expiresAt: number; }
+export interface MyShareEntry { token: string; gameId: string; createdAt: number; expiresAt: number; viewCount: number; }
 export async function listMySharesApi(token: string): Promise<{ shares: MyShareEntry[] }> {
   const res = await fetch(`${BASE}/api/me/shares`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`shares list failed: ${res.status}`);
@@ -403,6 +403,39 @@ export async function revokeShareApi(token: string, shareToken: string): Promise
   });
   if (res.status === 404) throw new Error("share not found");
   if (!res.ok) throw new Error(`revoke failed: ${res.status}`);
+}
+
+export interface AdminHealth {
+  now: number;
+  cron: {
+    lastRunAt: number | null;
+    lastResult: {
+      dmsPurged: number;
+      roomTokensPurged: number;
+      replaySharesPurged: number;
+      roomInvitesPurged: number;
+      errors: string[];
+    } | null;
+    runsLast7d:     number;
+    failuresLast7d: number;
+  };
+  counts: {
+    frozenUsers:        number;
+    ledgerRowsLast24h:  number;
+    replayRows:         number;
+    dmRows:             number;
+    activeReplayShares: number;
+  };
+}
+
+export async function getAdminHealthApi(secret: string): Promise<AdminHealth> {
+  const res = await fetch(`${BASE}/api/admin/health`, {
+    headers: { "X-Admin-Secret": secret },
+  });
+  if (res.status === 401) throw new Error("invalid admin secret");
+  if (res.status === 503) throw new Error("admin endpoints disabled");
+  if (!res.ok) throw new Error(`health failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getSharedReplayApi(token: string): Promise<ReplayDetail & { sharedBy: string }> {

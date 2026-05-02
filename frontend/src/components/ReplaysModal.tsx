@@ -311,6 +311,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                           <span className="flex-1 truncate font-mono">
                             <span className="text-green-500">{s.gameId.slice(0, 8)}…</span>{" "}
                             <span className="text-green-400">{t("rep.shares.until", { when: fmtTime(s.expiresAt) })}</span>
+                            {" "}<span className="text-yellow-300">👁 {s.viewCount}</span>
                           </span>
                           <button
                             onClick={() => revoke(s.token)}

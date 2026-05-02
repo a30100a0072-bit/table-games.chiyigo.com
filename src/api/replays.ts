@@ -9,6 +9,7 @@
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { ENGINE_VERSION }                          from "../game/GameEngineAdapter";
 
 export interface ReplaysEnv {
@@ -22,9 +23,9 @@ async function authPlayer(request: Request, env: ReplaysEnv): Promise<string | R
   try {
     return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 }
@@ -90,11 +91,11 @@ export async function getReplay(request: Request, env: ReplaysEnv, gameId: strin
     )
     .bind(gameId)
     .first<ReplayMetaRow>();
-  if (!row) return Response.json({ error: "not found" }, { status: 404 });
+  if (!row) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404);
 
   const playerIds = JSON.parse(row.player_ids) as string[];
   if (!playerIds.includes(me))
-    return Response.json({ error: "forbidden" }, { status: 403 });
+    return errorResponse(ErrorCode.REPLAY_FORBIDDEN, 403);
 
   const replayable = row.engine_version === ENGINE_VERSION;
   const events = replayable ? JSON.parse(row.events) : [];
@@ -136,16 +137,16 @@ export async function shareReplay(request: Request, env: ReplaysEnv, gameId: str
     if (typeof body.ttlMs === "number" && Number.isFinite(body.ttlMs)) ttlMs = body.ttlMs;
   } catch { /* default */ }
   if (ttlMs < SHARE_TTL_MIN_MS || ttlMs > SHARE_TTL_MAX_MS)
-    return Response.json({ error: "ttlMs out of range" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "ttlMs out of range");
 
   const seatRow = await env.DB
     .prepare("SELECT player_ids FROM replay_meta WHERE game_id = ?")
     .bind(gameId)
     .first<{ player_ids: string }>();
-  if (!seatRow) return Response.json({ error: "not found" }, { status: 404 });
+  if (!seatRow) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404);
   const playerIds = JSON.parse(seatRow.player_ids) as string[];
   if (!playerIds.includes(me))
-    return Response.json({ error: "forbidden" }, { status: 403 });
+    return errorResponse(ErrorCode.REPLAY_FORBIDDEN, 403);
 
   // 16 random bytes URL-safe base64. The token IS the capability — anyone
   // with it can read the replay until it expires.                         // L2_隔離
@@ -176,13 +177,13 @@ export async function listMyShares(request: Request, env: ReplaysEnv): Promise<R
 
   const rows = await env.DB
     .prepare(
-      "SELECT token, game_id, created_at, expires_at" +
+      "SELECT token, game_id, created_at, expires_at, view_count" +
       "  FROM replay_shares" +
       " WHERE owner_id = ? AND expires_at > ?" +
       " ORDER BY created_at DESC LIMIT 50",
     )
     .bind(me, Date.now())
-    .all<{ token: string; game_id: string; created_at: number; expires_at: number }>();
+    .all<{ token: string; game_id: string; created_at: number; expires_at: number; view_count: number }>();
 
   return Response.json({
     shares: (rows.results ?? []).map(r => ({
@@ -190,6 +191,7 @@ export async function listMyShares(request: Request, env: ReplaysEnv): Promise<R
       gameId:    r.game_id,
       createdAt: r.created_at,
       expiresAt: r.expires_at,
+      viewCount: r.view_count ?? 0,
     })),
   });
 }
@@ -208,7 +210,7 @@ export async function revokeShare(request: Request, env: ReplaysEnv, token: stri
     .bind(token, me)
     .run();
   const changes = (r.meta?.changes ?? 0) as number;
-  if (changes === 0) return Response.json({ error: "not found" }, { status: 404 });
+  if (changes === 0) return errorResponse(ErrorCode.NOT_FOUND, 404);
   return Response.json({ revoked: true });
 }
 
@@ -220,9 +222,19 @@ export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promi
     .prepare("SELECT game_id, owner_id, expires_at FROM replay_shares WHERE token = ?")
     .bind(token)
     .first<{ game_id: string; owner_id: string; expires_at: number }>();
-  if (!share) return Response.json({ error: "unknown token" }, { status: 404 });
+  if (!share) return errorResponse(ErrorCode.NOT_FOUND, 404, "unknown token");
   if (share.expires_at <= Date.now())
-    return Response.json({ error: "token expired" }, { status: 410 });
+    return errorResponse(ErrorCode.REPLAY_SHARE_EXPIRED, 410);
+
+  // Increment view counter so the owner can see how often the link is
+  // hit. Best-effort: a failure here doesn't block the resolve, since
+  // the analytics signal is far less important than serving the replay.
+  try {
+    await env.DB
+      .prepare("UPDATE replay_shares SET view_count = view_count + 1 WHERE token = ?")
+      .bind(token)
+      .run();
+  } catch { /* swallow — analytics is non-critical */ }
 
   const row = await env.DB
     .prepare(
@@ -232,7 +244,7 @@ export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promi
     )
     .bind(share.game_id)
     .first<ReplayMetaRow>();
-  if (!row) return Response.json({ error: "replay vanished" }, { status: 404 });
+  if (!row) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404, "replay vanished");
 
   const replayable      = row.engine_version === ENGINE_VERSION;
   const events          = replayable ? JSON.parse(row.events) : [];

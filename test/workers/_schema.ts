@@ -70,7 +70,8 @@ const DDL = [
      winner_id TEXT, reason TEXT)`,
   `CREATE TABLE IF NOT EXISTS replay_shares (
      token TEXT PRIMARY KEY, game_id TEXT NOT NULL, owner_id TEXT NOT NULL,
-     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+     view_count INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS replay_participants (
      game_id TEXT NOT NULL, player_id TEXT NOT NULL,
      finished_at INTEGER NOT NULL,

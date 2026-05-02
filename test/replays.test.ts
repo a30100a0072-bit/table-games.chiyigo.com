@@ -15,7 +15,7 @@ interface MetaRow {
   winner_id: string | null; reason: string | null;
 }
 
-interface ShareRow { token: string; game_id: string; owner_id: string; created_at: number; expires_at: number; }
+interface ShareRow { token: string; game_id: string; owner_id: string; created_at: number; expires_at: number; view_count?: number; }
 
 class MockDb {
   rows: MetaRow[] = [];
@@ -56,6 +56,12 @@ class MockStmt {
       const before = this.db.shares.length;
       this.db.shares = this.db.shares.filter(s => !(s.token === token && s.owner_id === ownerId));
       return { success: true, meta: { changes: before - this.db.shares.length } };
+    }
+    if (this.sql.startsWith("UPDATE replay_shares SET view_count")) {
+      const [token] = this.args as [string];
+      const row = this.db.shares.find(s => s.token === token);
+      if (row) row.view_count = (row.view_count ?? 0) + 1;
+      return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     return { success: true, meta: { changes: 0 } };
   }
@@ -318,6 +324,30 @@ describe("replays API", () => {
     const tok = await tokFor("alice");
     const r = await revokeShare(authedReq("DELETE", "/", tok), env, "ghost");
     expect(r.status).toBe(404);
+  });
+
+  it("resolveSharedReplay bumps view_count on each public hit", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+    });
+    await resolveSharedReplay(env, "abc");
+    await resolveSharedReplay(env, "abc");
+    await resolveSharedReplay(env, "abc");
+    expect(db.shares[0]!.view_count).toBe(3);
+  });
+
+  it("listMyShares surfaces viewCount alongside expiry", async () => {
+    db.shares.push({
+      token: "t1", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+      view_count: 7,
+    });
+    const tok = await tokFor("alice");
+    const r = await listMyShares(authedReq("GET", "/", tok), env);
+    const body = await r.json() as { shares: Array<{ token: string; viewCount: number }> };
+    expect(body.shares[0]!.viewCount).toBe(7);
   });
 
   it("after revoke, resolveSharedReplay falls through to 404", async () => {
