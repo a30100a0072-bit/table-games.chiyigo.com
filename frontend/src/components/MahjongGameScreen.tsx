@@ -1,3 +1,4 @@
+import { formatApiError } from "../api/http";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   MahjongStateView, MahjongTile, ExposedMeld, PlayerAction, SettlementResult,
@@ -208,7 +209,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
       if (action.type === "mj_pass") sfx.pass();
       else                            sfx.cardPlay();
     }
-    catch (err) { setSysMsg(err instanceof Error ? err.message : "送出失敗"); }
+    catch (err) { setSysMsg(formatApiError(err, t)); }
   }
 
   // ── 反應視窗倒數 (L2_鎖定) ─────────────────────────────────────────────

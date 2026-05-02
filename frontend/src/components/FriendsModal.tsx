@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import {
   listFriendsApi, requestFriendApi, respondFriendApi, unfriendApi,
-  listDmConversationApi, sendDmApi,
+  listDmConversationApi, sendDmApi, formatApiError,
 } from "../api/http";
 import type { FriendsResponse, DmMessage } from "../api/http";
 import { useT } from "../i18n/useT";
@@ -14,6 +15,7 @@ interface Props {
 type Tab = "accepted" | "incoming" | "outgoing";
 
 function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack: () => void }) {
+  const { t } = useT();
   const [msgs, setMsgs] = useState<DmMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,7 @@ function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack:
       setDraft("");
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
@@ -99,6 +101,7 @@ function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack:
 }
 
 export default function FriendsModal({ token, onClose }: Props) {
+  useEscapeClose(onClose);
   const { t } = useT();
   const [data,    setData]    = useState<FriendsResponse | null>(null);
   const [tab,     setTab]     = useState<Tab>("accepted");
@@ -109,7 +112,7 @@ export default function FriendsModal({ token, onClose }: Props) {
 
   async function refresh() {
     try { setData(await listFriendsApi(token)); }
-    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    catch (e) { setErr(formatApiError(e, t)); }
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -122,21 +125,21 @@ export default function FriendsModal({ token, onClose }: Props) {
       setTarget("");
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
   async function respond(other: string, action: "accept" | "decline") {
     setBusy(true); setErr(null);
     try { await respondFriendApi(token, other, action); await refresh(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    catch (e) { setErr(formatApiError(e, t)); }
     finally { setBusy(false); }
   }
 
   async function remove(other: string) {
     setBusy(true); setErr(null);
     try { await unfriendApi(token, other); await refresh(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    catch (e) { setErr(formatApiError(e, t)); }
     finally { setBusy(false); }
   }
 
@@ -145,7 +148,7 @@ export default function FriendsModal({ token, onClose }: Props) {
     : { accepted: 0, incoming: 0, outgoing: 0 };
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
       <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">👥 {t("friends.title")}</h2>

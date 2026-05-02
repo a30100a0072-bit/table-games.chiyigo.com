@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import { GAME_TYPES } from "../shared/types";
 import type { GameType } from "../shared/types";
 import {
   createPrivateRoomApi, resolvePrivateRoomApi,
-  listFriendsApi, inviteFriendToRoomApi,
+  listFriendsApi, inviteFriendToRoomApi, formatApiError,
 } from "../api/http";
 import { useT } from "../i18n/useT";
 
@@ -34,6 +35,7 @@ function parseToken(input: string): string {
 }
 
 export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
+  useEscapeClose(onClose);
   const { t } = useT();
   const [tab,      setTab]      = useState<Tab>("create");
   const [gameType, setGameType] = useState<GameType>("bigTwo");
@@ -57,7 +59,7 @@ export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
       await inviteFriendToRoomApi(token, friendPlayerId, created.joinToken);
       setInvited(prev => { const n = new Set(prev); n.add(friendPlayerId); return n; });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "invite failed");
+      setErr(formatApiError(e, t));
     }
   }
 
@@ -68,7 +70,7 @@ export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
       const url = `${location.origin}${location.pathname}?join=${r.joinToken}`;
       setCreated({ url, gameType: r.gameType, roomId: r.roomId, expiresAt: r.expiresAt, joinToken: r.joinToken });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
@@ -93,12 +95,12 @@ export default function PrivateRoomModal({ token, onClose, onEnter }: Props) {
       const r = await resolvePrivateRoomApi(token, tok);
       onEnter(r.roomId, r.gameType);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-md rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">🔒 {t("priv.title")}</h2>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import {
-  listInvitesApi, declineInviteApi, resolvePrivateRoomApi,
+  listInvitesApi, declineInviteApi, resolvePrivateRoomApi, formatApiError,
 } from "../api/http";
 import type { RoomInvite } from "../api/http";
 import type { GameType } from "../shared/types";
@@ -18,6 +19,7 @@ const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.t
 };
 
 export default function InvitesModal({ token, onClose, onEnter }: Props) {
+  useEscapeClose(onClose);
   const { t } = useT();
   const [items, setItems] = useState<RoomInvite[] | null>(null);
   const [busy,  setBusy]  = useState(false);
@@ -25,7 +27,7 @@ export default function InvitesModal({ token, onClose, onEnter }: Props) {
 
   async function refresh() {
     try { setItems((await listInvitesApi(token)).invites); }
-    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    catch (e) { setErr(formatApiError(e, t)); }
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -38,19 +40,19 @@ export default function InvitesModal({ token, onClose, onEnter }: Props) {
       const r = await resolvePrivateRoomApi(token, inv.joinToken);
       onEnter(r.roomId, r.gameType);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
   async function decline(inv: RoomInvite) {
     setBusy(true); setErr(null);
     try { await declineInviteApi(token, inv.id); await refresh(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    catch (e) { setErr(formatApiError(e, t)); }
     finally { setBusy(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
       <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">📨 {t("inv.title")}</h2>

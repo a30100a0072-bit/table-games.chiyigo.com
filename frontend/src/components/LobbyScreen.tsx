@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatApiError } from "../api/http";
 import { findMatch } from "../api/http";
 import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
@@ -27,7 +28,7 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
     called.current = true;
     findMatch(token, gameType)
       .then(({ roomId, wsUrl, players, gameType: gt }) => onMatched(roomId, wsUrl, players, gt))
-      .catch(err => setError(err instanceof Error ? err.message : t("login.fail")));
+      .catch(err => setError(formatApiError(err, t)));
   }, [token, gameType, onMatched, t]);
 
   useEffect(() => {

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
+import { formatApiError } from "../api/http";
 import { getAdminHealthApi } from "../api/http";
 import type { AdminHealth } from "../api/http";
 import { useT } from "../i18n/useT";
@@ -18,6 +20,7 @@ function fmtTime(ms: number | null): string {
 interface Props { onClose: () => void; }
 
 export default function AdminDashboard({ onClose }: Props) {
+  useEscapeClose(onClose);
   const { t } = useT();
   const [secret, setSecret] = useState<string | null>(() =>
     typeof sessionStorage !== "undefined" ? sessionStorage.getItem(SECRET_KEY) : null,
@@ -35,7 +38,7 @@ export default function AdminDashboard({ onClose }: Props) {
       const r = await getAdminHealthApi(secret);
       setHealth(r);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "failed";
+      const msg = formatApiError(e, t);
       setErr(msg);
       // Bad secret? Drop it so the operator re-enters cleanly instead of
       // hammering the endpoint until the rate limit cuts in.
@@ -71,7 +74,7 @@ export default function AdminDashboard({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center bg-black/80 px-4 py-8 overflow-y-auto">
+    <div className="fixed inset-0 z-30 flex items-start justify-center bg-black/80 px-4 py-8 overflow-y-auto" role="dialog" aria-modal="true">
       <div className="flex w-full max-w-lg flex-col gap-4 rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-yellow-300">⚙️ {t("admin.title")}</h2>

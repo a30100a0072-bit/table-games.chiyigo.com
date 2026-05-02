@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { formatApiError } from "../api/http";
 import { getToken, FrozenAccountError } from "../api/http";
 import { useT } from "../i18n/useT";
 import { unlockAudio } from "../shared/sound";
@@ -31,7 +32,7 @@ export default function LoginScreen({ onLoggedIn }: Props) {
       if (err instanceof FrozenAccountError) {
         setFrozen(err.reason || "—");
       } else {
-        setError(err instanceof Error ? err.message : t("login.fail"));
+        setError(formatApiError(err, t));
       }
     } finally {
       setLoading(false);

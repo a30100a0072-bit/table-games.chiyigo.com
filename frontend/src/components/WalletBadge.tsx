@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatApiError } from "../api/http";
 import { getWallet, claimBailout, BailoutError, deleteAccountApi, exportAccountApi } from "../api/http";
 import type { WalletResponse, LedgerEntry } from "../api/http";
 import { useT } from "../i18n/useT";
@@ -43,7 +44,7 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
     setError(null);
     getWallet(token)
       .then(w => { if (!cancelled) setWallet(w); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗"); });
+      .catch(e => { if (!cancelled) setError(formatApiError(e, t)); });
     return () => { cancelled = true; };
   }, [token, refreshKey, tick]);
 
@@ -59,7 +60,7 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
         const hrs = Math.ceil((e.detail.nextEligibleAt - Date.now()) / 3_600_000);
         setError(`領取失敗：${e.message}${hrs > 0 ? `，再 ${hrs} 小時可領` : ""}`);
       } else {
-        setError(e instanceof Error ? e.message : "領取失敗");
+        setError(formatApiError(e, t));
       }
     } finally {
       setClaiming(false);
@@ -71,7 +72,7 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
     if (exporting) return;
     setExporting(true); setError(null);
     try { await exportAccountApi(token); }
-    catch (e) { setError(e instanceof Error ? e.message : "匯出失敗"); }
+    catch (e) { setError(formatApiError(e, t)); }
     finally { setExporting(false); }
   }
 
@@ -82,7 +83,7 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
       await deleteAccountApi(token);
       onAccountDeleted?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "刪除失敗");
+      setError(formatApiError(e, t));
       setDeleting(false);
     }
   }

@@ -1,3 +1,4 @@
+import { formatApiError } from "../api/http";
 import { useEffect, useRef, useState } from "react";
 import type {
   PokerStateView, Card, PlayerAction, SettlementResult,
@@ -76,7 +77,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
       else if (action.type === "check")  sfx.cardSelect();
       else                                sfx.cardPlay();
     }
-    catch (err) { setSysMsg(err instanceof Error ? err.message : "送出失敗"); }
+    catch (err) { setSysMsg(formatApiError(err, t)); }
   }
 
   if (!view)

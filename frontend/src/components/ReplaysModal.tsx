@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import {
   listMyReplaysApi, getReplayApi, shareReplayApi, getSharedReplayApi,
-  listMySharesApi, revokeShareApi,
+  listMySharesApi, revokeShareApi, formatApiError,
 } from "../api/http";
 import type { ReplayDetail, ReplaySummary, ReplayEvent, MyShareEntry } from "../api/http";
 import type { GameType } from "../shared/types";
@@ -180,6 +181,7 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
 // ─── Main modal ──────────────────────────────────────────────────────────
 
 export default function ReplaysModal({ token, sharedReplayToken, onClose }: Props) {
+  useEscapeClose(onClose);
   const { t } = useT();
   const isShared = !!sharedReplayToken;
   const [list,    setList]    = useState<ReplaySummary[] | null>(null);
@@ -195,7 +197,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
       const r = await listMySharesApi(token);
       setShares(r.shares);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "shares load failed");
+      setErr(formatApiError(e, t));
     }
   }
   async function revoke(shareToken: string) {
@@ -204,7 +206,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
       await revokeShareApi(token, shareToken);
       setShares(prev => (prev ?? []).filter(s => s.token !== shareToken));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "revoke failed");
+      setErr(formatApiError(e, t));
     }
   }
 
@@ -218,13 +220,13 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
     if (isShared) {
       getSharedReplayApi(sharedReplayToken!)
         .then(d => { setDetail(d); setStep(0); setPlaying(false); setSpeed(1); })
-        .catch(e => setErr(e instanceof Error ? e.message : "failed"));
+        .catch(e => setErr(formatApiError(e, t)));
       return;
     }
     if (!token) return;
     listMyReplaysApi(token)
       .then(d => setList(d.replays))
-      .catch(e => setErr(e instanceof Error ? e.message : "failed"));
+      .catch(e => setErr(formatApiError(e, t)));
   }, [token, sharedReplayToken, isShared]);
 
   // Auto-advance while playing. Stops at the end (no infinite re-render).
@@ -244,7 +246,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
       setDetail(d);
       setStep(0); setPlaying(false); setSpeed(1);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
+      setErr(formatApiError(e, t));
     } finally { setBusy(false); }
   }
 
@@ -254,7 +256,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true">
       <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-green-900 p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <h2 className="text-lg font-bold text-yellow-300">
@@ -368,7 +370,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                               }
                               setErr(t("rep.shareCopied", { preview: url.slice(0, 60) }));
                             } catch (e) {
-                              setErr(e instanceof Error ? e.message : t("rep.shareFailed"));
+                              setErr(formatApiError(e, t));
                             }
                           }}
                           disabled={busy}
