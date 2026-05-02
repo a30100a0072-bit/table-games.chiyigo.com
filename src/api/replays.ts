@@ -8,6 +8,7 @@
 // since the state machine has shifted underneath them.                   // L3_架構
 
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ENGINE_VERSION }                          from "../game/GameEngineAdapter";
 
 export interface ReplaysEnv {
@@ -125,6 +126,9 @@ const SHARE_TTL_MAX_MS     = 30 * 86_400_000;
 export async function shareReplay(request: Request, env: ReplaysEnv, gameId: string): Promise<Response> {
   const me = await authPlayer(request, env);
   if (me instanceof Response) return me;
+  // Mint creates a public capability — tighter limit than the default friend
+  // bucket so a compromised token can't spew share URLs into the wild.
+  if (!takeToken(`share:${me}`, "share")) return rateLimited();
 
   let ttlMs = SHARE_TTL_DEFAULT_MS;
   try {

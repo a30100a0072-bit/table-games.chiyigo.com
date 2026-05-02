@@ -48,7 +48,7 @@ async function isFriend(env: RoomInvitesEnv, x: string, y: string): Promise<bool
 export async function inviteToRoom(request: Request, env: RoomInvitesEnv): Promise<Response> {
   const me = await authPlayer(request, env);
   if (me instanceof Response) return me;
-  if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
+  if (!takeToken(`invite:${me}`, "invite")) return rateLimited();
 
   let body: { friendPlayerId?: string; joinToken?: string };
   try { body = await request.json(); }
@@ -129,7 +129,7 @@ export async function listInvites(request: Request, env: RoomInvitesEnv): Promis
 export async function declineInvite(request: Request, env: RoomInvitesEnv, id: string): Promise<Response> {
   const me = await authPlayer(request, env);
   if (me instanceof Response) return me;
-  if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
+  if (!takeToken(`invite:${me}`, "invite")) return rateLimited();
 
   const idNum = Number(id);
   if (!Number.isInteger(idNum) || idNum <= 0)

@@ -10,13 +10,19 @@ const buckets = new Map<string, Bucket>();
 
 export interface RateSpec { capacity: number; perSec: number; }
 
-export const RATE: Record<"token" | "match" | "wallet" | "bailout" | "friend" | "dm", RateSpec> = {
+export const RATE: Record<
+  "token" | "match" | "wallet" | "bailout" | "friend" | "dm" | "invite" | "share", RateSpec
+> = {
   token:   { capacity: 10, perSec: 10 / 60 },   // 10/min  per IP
   match:   { capacity: 30, perSec: 30 / 60 },   // 30/min  per playerId
   wallet:  { capacity: 60, perSec: 60 / 60 },   //  1/sec  per playerId
   bailout: { capacity:  3, perSec:  3 / 60 },   //  3/min  per playerId (24h cooldown still applies)
   friend:  { capacity: 20, perSec: 20 / 60 },   // 20/min  per playerId — friend req/accept/etc.
   dm:      { capacity: 30, perSec: 30 / 60 },   // 30/min  per playerId — direct messages
+  invite:  { capacity: 15, perSec: 15 / 60 },   // 15/min  per playerId — room invites (split off `friend`
+                                                //          so an invite spam wave can't starve friend ops)
+  share:   { capacity:  5, perSec:  5 / 60 },   //  5/min  per playerId — replay share-token mint
+                                                //          (creates a public capability; rate-limit tighter)
 };
 
 export function takeToken(key: string, kind: keyof typeof RATE): boolean {
