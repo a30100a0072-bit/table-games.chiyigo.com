@@ -55,12 +55,11 @@ class MockStmt {
   }
 
   async all<T = unknown>(): Promise<{ results: T[] }> {
-    if (this.sql.includes("FROM replay_meta") && this.sql.includes("LIKE ?")) {
-      const [pattern] = this.args as [string];
-      // Strip the surrounding %…% wildcards and the JSON quotes to get
-      // the raw playerId, then check membership against each row's seat list.
-      const needle = pattern.slice(1, -1);              // drop %..%
-      const me = JSON.parse(needle) as string;          // un-stringify "alice"
+    // Indexed list path: SELECT … FROM replay_participants rp JOIN replay_meta rm …
+    // The mock derives participants from each row's player_ids array so
+    // we don't have to maintain a parallel join table in the fixture.
+    if (this.sql.includes("FROM replay_participants") && this.sql.includes("JOIN replay_meta")) {
+      const [me] = this.args as [string];
       const out = this.db.rows
         .filter(r => (JSON.parse(r.player_ids) as string[]).includes(me))
         .sort((a, b) => b.finished_at - a.finished_at)

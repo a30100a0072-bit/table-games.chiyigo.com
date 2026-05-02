@@ -42,20 +42,19 @@ export async function listMyReplays(request: Request, env: ReplaysEnv): Promise<
   const me = await authPlayer(request, env);
   if (me instanceof Response) return me;
 
-  // SQLite has no native JSON contains; use LIKE on the JSON-encoded
-  // player_ids array. Quoting the playerId in JSON form ("alice")
-  // prevents a substring match against bots like "BOT_alice_1" and
-  // also rules out matching "ali" inside "alice".
-  const needle = `%${JSON.stringify(me)}%`;
+  // Indexed lookup via replay_participants. Without it this would be a
+  // LIKE-scan over replay_meta.player_ids — fine on a small DB, quadratic
+  // on a busy one.
   const rows = await env.DB
     .prepare(
-      "SELECT game_id, game_type, engine_version, player_ids," +
-      "       started_at, finished_at, winner_id, reason" +
-      " FROM replay_meta" +
-      " WHERE player_ids LIKE ?" +
-      " ORDER BY finished_at DESC LIMIT 30",
+      "SELECT rm.game_id, rm.game_type, rm.engine_version, rm.player_ids," +
+      "       rm.started_at, rm.finished_at, rm.winner_id, rm.reason" +
+      "  FROM replay_participants rp" +
+      "  JOIN replay_meta rm ON rm.game_id = rp.game_id" +
+      " WHERE rp.player_id = ?" +
+      " ORDER BY rp.finished_at DESC LIMIT 30",
     )
-    .bind(needle)
+    .bind(me)
     .all<Omit<ReplayMetaRow, "initial_snapshot" | "events">>();
 
   return Response.json({

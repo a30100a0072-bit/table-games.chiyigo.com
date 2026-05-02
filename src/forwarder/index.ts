@@ -105,6 +105,51 @@ export function formatTrace(trace: TraceItem, source: string): string | null {
   return `${header}\n${body}`;
 }
 
+/** Bounded retry around the webhook POST. Retries on network errors,
+ *  HTTP 429, and 5xx with exponential backoff (200 / 800 / 3200 ms). 4xx
+ *  is treated as a permanent misconfiguration — no point retrying.
+ *
+ *  No DLQ: the forwarder intentionally has no bindings (see
+ *  wrangler.forwarder.toml), so terminal failures are surfaced via
+ *  console.error, which `wrangler tail big-two-log-forwarder` can pick
+ *  up. Adding a D1 dead-letter table would defeat the "minimal surface"
+ *  rationale for this worker.                                            // L3_架構含防禦觀測 */
+export async function postWithRetry(
+  url: string,
+  payload: string,
+  opts: {
+    fetchImpl?: typeof fetch;
+    sleep?:     (ms: number) => Promise<void>;
+    maxAttempts?: number;
+  } = {},
+): Promise<{ ok: boolean; attempts: number; lastStatus?: number; lastError?: string }> {
+  const f       = opts.fetchImpl ?? fetch;
+  const sleep   = opts.sleep     ?? ((ms) => new Promise(r => setTimeout(r, ms)));
+  const maxAttempts = opts.maxAttempts ?? 3;
+
+  let lastStatus: number | undefined;
+  let lastError:  string | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await f(url, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    payload,
+      });
+      if (r.ok) return { ok: true, attempts: attempt, lastStatus: r.status };
+      lastStatus = r.status;
+      // Permanent client errors (auth, malformed payload): give up early.
+      if (r.status >= 400 && r.status < 500 && r.status !== 429) {
+        return { ok: false, attempts: attempt, lastStatus };
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    if (attempt < maxAttempts) await sleep(200 * Math.pow(4, attempt - 1));
+  }
+  return { ok: false, attempts: maxAttempts, lastStatus, lastError };
+}
+
 export default {
   async tail(events: TraceItem[], env: ForwarderEnv, ctx: ExecutionContext): Promise<void> {
     if (!env.WEBHOOK_URL) return;        // misconfigured → silent no-op  // L2_隔離
@@ -124,11 +169,18 @@ export default {
     const payload = JSON.stringify({ content, text: content });
 
     ctx.waitUntil(
-      fetch(env.WEBHOOK_URL, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    payload,
-      }).catch(() => { /* webhook outage shouldn't crash the tail */ }),
+      postWithRetry(env.WEBHOOK_URL, payload).then(r => {
+        if (!r.ok) {
+          console.error(JSON.stringify({
+            level: "error",
+            event: "forwarder_webhook_failed",
+            attempts:   r.attempts,
+            lastStatus: r.lastStatus,
+            lastError:  r.lastError,
+            droppedMessages: messages.length,
+          }));
+        }
+      }),
     );
   },
 };

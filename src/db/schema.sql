@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS chip_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_chip_ledger_player ON chip_ledger (player_id);
 CREATE INDEX IF NOT EXISTS idx_chip_ledger_game   ON chip_ledger (game_id);
+-- Wallet history endpoint: WHERE player_id = ? ORDER BY ledger_id DESC LIMIT 20.
+-- Composite ordered index lets SQLite walk the index directly without a sort.
+CREATE INDEX IF NOT EXISTS idx_chip_ledger_player_ledger
+  ON chip_ledger (player_id, ledger_id DESC);
 
 -- ── tournaments / tournament_entries ──────────────────────────────────
 -- Best-of-N tournament: 4 players each pay `buy_in`, play N rounds of the
@@ -186,6 +190,10 @@ CREATE TABLE IF NOT EXISTS room_invites (
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_invites_invitee ON room_invites (invitee, status);
+-- Cron sweep: DELETE WHERE expires_at < now. Single-column index is enough
+-- since the prune touches < 1% of rows and we don't want write amplification
+-- from a multi-column variant.
+CREATE INDEX IF NOT EXISTS idx_room_invites_expires ON room_invites (expires_at);
 
 -- ── replays ──────────────────────────────────────────────────────────────
 -- One row per finished game: initial engine snapshot + ordered event list.
@@ -207,6 +215,33 @@ CREATE TABLE IF NOT EXISTS replay_meta (
 );
 
 CREATE INDEX IF NOT EXISTS idx_replay_meta_finished ON replay_meta (finished_at DESC);
+
+-- ── replay_participants ──────────────────────────────────────────────────
+-- Index table: one row per (game_id, player_id) seat. Lets the "my replays"
+-- endpoint query by player without a LIKE-scan over replay_meta.player_ids.
+-- finished_at is denormalised so the list query stays single-table:
+--   SELECT game_id FROM replay_participants
+--    WHERE player_id = ? ORDER BY finished_at DESC LIMIT 30
+-- Bot seats are intentionally included (they're cheap and keep the writer
+-- logic uniform); the API filter for "my replays" only ever binds a real
+-- playerId, so bot rows never surface to a user.
+CREATE TABLE IF NOT EXISTS replay_participants (
+  game_id     TEXT    NOT NULL,
+  player_id   TEXT    NOT NULL,
+  finished_at INTEGER NOT NULL,
+  PRIMARY KEY (game_id, player_id),
+  FOREIGN KEY (game_id) REFERENCES replay_meta (game_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_replay_participants_player
+  ON replay_participants (player_id, finished_at DESC);
+
+-- One-shot backfill from existing replay_meta rows. INSERT OR IGNORE keeps
+-- this idempotent across deploys. Uses json_each so each playerId in the
+-- JSON-encoded player_ids array becomes its own row. Safe to re-run.
+INSERT OR IGNORE INTO replay_participants (game_id, player_id, finished_at)
+  SELECT rm.game_id, je.value, rm.finished_at
+    FROM replay_meta rm, json_each(rm.player_ids) je;
 
 -- ── dms ──────────────────────────────────────────────────────────────────
 -- Friend-only direct messages. Sender and recipient must already be in an

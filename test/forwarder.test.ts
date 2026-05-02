@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  parseLogLine, shouldForwardLog, formatTrace,
+  parseLogLine, shouldForwardLog, formatTrace, postWithRetry,
 } from "../src/forwarder/index";
 
 function trace(parts: Partial<TraceItem>): TraceItem {
@@ -91,5 +91,69 @@ describe("formatTrace", () => {
     const out = formatTrace(t, "prod")!;
     // Header + at-most 1500 chars body. Total well under 2000.
     expect(out.length).toBeLessThanOrEqual(1600);
+  });
+});
+
+describe("postWithRetry", () => {
+  const noSleep = () => Promise.resolve();
+
+  it("returns ok on first-attempt 200", async () => {
+    let calls = 0;
+    const fetchImpl = (async () => { calls++; return new Response("ok", { status: 200 }); }) as typeof fetch;
+    const r = await postWithRetry("https://x", "{}", { fetchImpl, sleep: noSleep });
+    expect(r.ok).toBe(true);
+    expect(r.attempts).toBe(1);
+    expect(calls).toBe(1);
+  });
+
+  it("retries 5xx and succeeds on second attempt", async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Response("", { status: calls === 1 ? 503 : 200 });
+    }) as typeof fetch;
+    const r = await postWithRetry("https://x", "{}", { fetchImpl, sleep: noSleep });
+    expect(r.ok).toBe(true);
+    expect(r.attempts).toBe(2);
+  });
+
+  it("retries on 429 (rate limited)", async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Response("", { status: calls < 3 ? 429 : 200 });
+    }) as typeof fetch;
+    const r = await postWithRetry("https://x", "{}", { fetchImpl, sleep: noSleep });
+    expect(r.ok).toBe(true);
+    expect(r.attempts).toBe(3);
+  });
+
+  it("gives up immediately on permanent 4xx (e.g. 404 misconfigured webhook)", async () => {
+    let calls = 0;
+    const fetchImpl = (async () => { calls++; return new Response("", { status: 404 }); }) as typeof fetch;
+    const r = await postWithRetry("https://x", "{}", { fetchImpl, sleep: noSleep });
+    expect(r.ok).toBe(false);
+    expect(r.attempts).toBe(1);
+    expect(r.lastStatus).toBe(404);
+    expect(calls).toBe(1);
+  });
+
+  it("retries network errors and reports lastError on terminal failure", async () => {
+    let calls = 0;
+    const fetchImpl = (async () => { calls++; throw new Error("ENOTFOUND"); }) as typeof fetch;
+    const r = await postWithRetry("https://x", "{}", { fetchImpl, sleep: noSleep, maxAttempts: 3 });
+    expect(r.ok).toBe(false);
+    expect(r.attempts).toBe(3);
+    expect(r.lastError).toBe("ENOTFOUND");
+    expect(calls).toBe(3);
+  });
+
+  it("waits between attempts using the injected sleep (exponential)", async () => {
+    const delays: number[] = [];
+    const sleep = (ms: number) => { delays.push(ms); return Promise.resolve(); };
+    const fetchImpl = (async () => new Response("", { status: 503 })) as typeof fetch;
+    await postWithRetry("https://x", "{}", { fetchImpl, sleep, maxAttempts: 3 });
+    // Two waits between three attempts: 200 then 800.
+    expect(delays).toEqual([200, 800]);
   });
 });

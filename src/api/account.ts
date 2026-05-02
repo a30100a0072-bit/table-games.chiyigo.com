@@ -85,6 +85,9 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
       // substring inside another ID.                                        // L2_實作
       env.DB.prepare("UPDATE replay_meta SET player_ids = REPLACE(player_ids, ?, ?) WHERE player_ids LIKE ?")
         .bind(JSON.stringify(me), JSON.stringify(tomb), `%${JSON.stringify(me)}%`),
+      // Mirror the anonymisation in the participants index table so the
+      // tombstone surfaces consistently in both list and lookup paths.
+      env.DB.prepare("UPDATE OR REPLACE replay_participants SET player_id = ? WHERE player_id = ?").bind(tomb, me),
 
       // Finally, drop the user row itself
       env.DB.prepare("DELETE FROM users WHERE player_id = ?").bind(me),
@@ -128,9 +131,11 @@ export async function exportAccount(request: Request, env: AccountEnv): Promise<
       env.DB.prepare("SELECT tournament_id, registered_at, agg_score, final_rank FROM tournament_entries WHERE player_id = ?")
         .bind(me).all<unknown>().catch(() => ({ results: [] })),
       env.DB.prepare(
-        "SELECT game_id, game_type, started_at, finished_at, winner_id, reason FROM replay_meta" +
-        " WHERE player_ids LIKE ? ORDER BY finished_at DESC LIMIT 500",
-      ).bind(`%${JSON.stringify(me)}%`).all<unknown>().catch(() => ({ results: [] })),
+        "SELECT rm.game_id, rm.game_type, rm.started_at, rm.finished_at, rm.winner_id, rm.reason" +
+        "  FROM replay_participants rp" +
+        "  JOIN replay_meta rm ON rm.game_id = rp.game_id" +
+        " WHERE rp.player_id = ? ORDER BY rp.finished_at DESC LIMIT 500",
+      ).bind(me).all<unknown>().catch(() => ({ results: [] })),
     ]);
 
   type Bag = { results?: unknown[] };

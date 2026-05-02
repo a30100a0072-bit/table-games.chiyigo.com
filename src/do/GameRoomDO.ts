@@ -624,26 +624,39 @@ export class GameRoomDO implements DurableObject {
     // refuse to step through the events when the algorithm has shifted.
     if (this.replay && this.room) {
       try {
-        await this.env.DB
-          .prepare(
-            "INSERT OR IGNORE INTO replay_meta" +
-            " (game_id, game_type, engine_version, player_ids, initial_snapshot," +
-            "  events, started_at, finished_at, winner_id, reason)" +
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          )
-          .bind(
-            this.room.gameId,
-            this.room.gameType,
-            ENGINE_VERSION,
-            JSON.stringify(this.room.playerIds),
-            JSON.stringify(this.replay.initialSnapshot),
-            JSON.stringify(this.replay.events),
-            this.replay.startedAt,
-            result.finishedAt,
-            result.winnerId,
-            result.reason,
-          )
-          .run();
+        // Append meta + one row per seat in a single batch. The participants
+        // index table powers the "my replays" listing — without it the list
+        // endpoint has to LIKE-scan replay_meta.player_ids.
+        const stmts = [
+          this.env.DB
+            .prepare(
+              "INSERT OR IGNORE INTO replay_meta" +
+              " (game_id, game_type, engine_version, player_ids, initial_snapshot," +
+              "  events, started_at, finished_at, winner_id, reason)" +
+              " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(
+              this.room.gameId,
+              this.room.gameType,
+              ENGINE_VERSION,
+              JSON.stringify(this.room.playerIds),
+              JSON.stringify(this.replay.initialSnapshot),
+              JSON.stringify(this.replay.events),
+              this.replay.startedAt,
+              result.finishedAt,
+              result.winnerId,
+              result.reason,
+            ),
+          ...this.room.playerIds.map(pid =>
+            this.env.DB
+              .prepare(
+                "INSERT OR IGNORE INTO replay_participants (game_id, player_id, finished_at)" +
+                " VALUES (?, ?, ?)",
+              )
+              .bind(this.room!.gameId, pid, result.finishedAt),
+          ),
+        ];
+        await this.env.DB.batch(stmts);
       } catch (err) {
         console.error("[replay] flush failed:", err);
         // Replay is non-critical to settlement; swallow so chip economy
