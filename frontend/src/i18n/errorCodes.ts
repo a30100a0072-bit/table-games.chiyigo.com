@@ -43,6 +43,7 @@ const CODE_TO_KEY: Record<string, string> = {
   ALREADY_IN_ROOM:        "err.alreadyInRoom",
   ALREADY_QUEUED:         "err.alreadyQueued",
   TOURNAMENT_REGISTRATION_CLOSED: "err.tourClosed",
+  BLOCKED:                "err.blocked",
 };
 
 interface MaybeApiError {

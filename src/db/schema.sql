@@ -206,6 +206,25 @@ CREATE TABLE IF NOT EXISTS room_invites (
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_invites_invitee ON room_invites (invitee, status);
+
+-- ── blocks ──────────────────────────────────────────────────────────────
+-- Unilateral block list. blocker has actively chosen to mute blockee;
+-- blockee gets no notification (they see the same generic FORBIDDEN /
+-- "not friends" responses as a stranger). Either side can be on either
+-- end of the pair, so we check both directions in DM / friend / invite
+-- gates (a blocked user can't friend-request the blocker either, since
+-- that would just shove a notification into their inbox).
+CREATE TABLE IF NOT EXISTS blocks (
+  blocker     TEXT    NOT NULL,
+  blockee     TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (blocker, blockee),
+  CHECK (blocker != blockee)
+);
+
+-- Reverse lookup index — "is X blocked by anyone in this set?" gates
+-- run on the blockee side too.
+CREATE INDEX IF NOT EXISTS idx_blocks_blockee ON blocks (blockee);
 -- Cron sweep: DELETE WHERE expires_at < now. Single-column index is enough
 -- since the prune touches < 1% of rows and we don't want write amplification
 -- from a multi-column variant.

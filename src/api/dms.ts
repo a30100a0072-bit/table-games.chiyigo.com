@@ -11,6 +11,7 @@
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
+import { isBlockedEitherWay }                       from "./blocks";
 import { log }                                      from "../utils/log";
 
 export interface DmEnv {
@@ -72,6 +73,8 @@ export async function sendDm(request: Request, env: DmEnv): Promise<Response> {
     return errorResponse(ErrorCode.VALIDATION_FAILED, 413, "body too long", { max: BODY_MAX });
   if (!(await areFriends(env, me, to)))
     return errorResponse(ErrorCode.FORBIDDEN, 403, "recipient is not your friend");
+  if (await isBlockedEitherWay(env.DB, me, to))
+    return errorResponse(ErrorCode.BLOCKED, 403);
 
   const now = Date.now();
   const res = await env.DB

@@ -42,6 +42,7 @@ export const ErrorCode = {
   ALREADY_IN_ROOM:          "ALREADY_IN_ROOM",
   ALREADY_QUEUED:           "ALREADY_QUEUED",
   TOURNAMENT_REGISTRATION_CLOSED: "TOURNAMENT_REGISTRATION_CLOSED",
+  BLOCKED:                  "BLOCKED",
 } as const;
 export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
 
@@ -73,6 +74,7 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   ALREADY_IN_ROOM:        "already in a room",
   ALREADY_QUEUED:         "already queued",
   TOURNAMENT_REGISTRATION_CLOSED: "tournament registration is closed",
+  BLOCKED:                "blocked",
 };
 
 /** Build a standard error Response. Carries both the legacy `error` field

@@ -16,6 +16,7 @@ import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
 import { listMyReplays, getReplay, shareReplay, resolveSharedReplay, listMyShares, revokeShare } from "../api/replays";
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
+import { blockPlayer, unblockPlayer, listMyBlocks } from "../api/blocks";
 import { deleteAccount, exportAccount } from "../api/account";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
@@ -157,6 +158,15 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
     return cors(await listInbox(request, env));
   if (request.method === "GET"  && url.pathname === "/api/dm/unread")
     return cors(await unreadDmCount(request, env));
+
+  // ── Blocks ──────────────────────────────────────────────────────────
+  if (request.method === "POST" && url.pathname === "/api/blocks")
+    return cors(await blockPlayer(request, env));
+  if (request.method === "GET"  && url.pathname === "/api/blocks")
+    return cors(await listMyBlocks(request, env));
+  const blockDel = url.pathname.match(/^\/api\/blocks\/([^/]+)$/);
+  if (request.method === "DELETE" && blockDel)
+    return cors(await unblockPlayer(request, env, decodeURIComponent(blockDel[1]!)));
 
   // ── Replays ─────────────────────────────────────────────────────────
   if (request.method === "GET" && url.pathname === "/api/me/replays")

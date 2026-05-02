@@ -75,6 +75,7 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
       env.DB.prepare("DELETE FROM dms          WHERE sender = ? OR recipient = ?").bind(me, me),
       env.DB.prepare("DELETE FROM room_invites WHERE inviter = ? OR invitee = ?").bind(me, me),
       env.DB.prepare("DELETE FROM room_tokens  WHERE created_by = ?").bind(me),
+      env.DB.prepare("DELETE FROM blocks       WHERE blocker = ? OR blockee = ?").bind(me, me),
 
       // Anonymise audit-bearing rows
       env.DB.prepare("UPDATE chip_ledger        SET player_id = ? WHERE player_id = ?").bind(tomb, me),

@@ -78,6 +78,13 @@ const DDL = [
      finished_at INTEGER NOT NULL,
      PRIMARY KEY (game_id, player_id))`,
 
+  // Unilateral block list. PK enforces one row per (blocker, blockee).
+  `CREATE TABLE IF NOT EXISTS blocks (
+     blocker TEXT NOT NULL, blockee TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (blocker, blockee),
+     CHECK (blocker != blockee))`,
+
   // Audit log for the daily retention sweep — powers /api/admin/health.
   `CREATE TABLE IF NOT EXISTS cron_runs (
      id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at INTEGER NOT NULL,

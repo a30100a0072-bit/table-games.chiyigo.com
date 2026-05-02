@@ -409,6 +409,32 @@ export async function revokeShareApi(token: string, shareToken: string): Promise
   if (!res.ok) throw await readApiError(res);
 }
 
+// ── Blocks ──────────────────────────────────────────────────────────
+export interface BlockEntry { playerId: string; createdAt: number; }
+
+export async function listMyBlocksApi(token: string): Promise<{ blocks: BlockEntry[] }> {
+  const res = await fetch(`${BASE}/api/blocks`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw await readApiError(res);
+  return res.json();
+}
+
+export async function blockPlayerApi(token: string, targetPlayerId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/blocks`, {
+    method:  "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body:    JSON.stringify({ targetPlayerId }),
+  });
+  if (!res.ok) throw await readApiError(res);
+}
+
+export async function unblockPlayerApi(token: string, targetPlayerId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/blocks/${encodeURIComponent(targetPlayerId)}`, {
+    method:  "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw await readApiError(res);
+}
+
 export interface AdminHealth {
   now: number;
   cron: {

@@ -7,6 +7,7 @@
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
+import { isBlockedEitherWay }                       from "./blocks";
 import { log }                                      from "../utils/log";
 
 export interface FriendsEnv {
@@ -72,6 +73,11 @@ export async function requestFriend(request: Request, env: FriendsEnv): Promise<
     return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot friend yourself");
   if (!(await userExists(env, target)))
     return errorResponse(ErrorCode.NOT_FOUND, 404, "target user not found");
+  // Block check both directions — a blocked user can't befriend the
+  // blocker (would just spam their inbox), and a blocker shouldn't see
+  // an outgoing pending row to someone they've cut off either.
+  if (await isBlockedEitherWay(env.DB, me, target))
+    return errorResponse(ErrorCode.BLOCKED, 403);
 
   const { a, b } = canon(me, target);
   const now = Date.now();

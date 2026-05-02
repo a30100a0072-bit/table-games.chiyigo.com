@@ -3,9 +3,11 @@ import { useEscapeClose } from "../hooks/useEscapeClose";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   listFriendsApi, requestFriendApi, respondFriendApi, unfriendApi,
-  listDmConversationApi, sendDmApi, formatApiError,
+  listDmConversationApi, sendDmApi,
+  listMyBlocksApi, blockPlayerApi, unblockPlayerApi,
+  formatApiError,
 } from "../api/http";
-import type { FriendsResponse, DmMessage } from "../api/http";
+import type { FriendsResponse, DmMessage, BlockEntry } from "../api/http";
 import { useT } from "../i18n/useT";
 
 interface Props {
@@ -13,7 +15,7 @@ interface Props {
   onClose:  () => void;
 }
 
-type Tab = "accepted" | "incoming" | "outgoing";
+type Tab = "accepted" | "incoming" | "outgoing" | "blocked";
 
 function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack: () => void }) {
   const { t } = useT();
@@ -106,17 +108,36 @@ export default function FriendsModal({ token, onClose }: Props) {
   const trapRef = useFocusTrap<HTMLDivElement>();
   const { t } = useT();
   const [data,    setData]    = useState<FriendsResponse | null>(null);
+  const [blocks,  setBlocks]  = useState<BlockEntry[] | null>(null);
   const [tab,     setTab]     = useState<Tab>("accepted");
   const [target,  setTarget]  = useState("");
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState<string | null>(null);
   const [dmPeer,  setDmPeer]  = useState<string | null>(null);
 
+  async function refreshBlocks() {
+    try { setBlocks((await listMyBlocksApi(token)).blocks); }
+    catch (e) { setErr(formatApiError(e, t)); }
+  }
+  async function block(other: string) {
+    if (!confirm(t("blocks.confirmBlock", { who: other }))) return;
+    setBusy(true); setErr(null);
+    try { await blockPlayerApi(token, other); await Promise.all([refresh(), refreshBlocks()]); }
+    catch (e) { setErr(formatApiError(e, t)); }
+    finally { setBusy(false); }
+  }
+  async function unblock(other: string) {
+    setBusy(true); setErr(null);
+    try { await unblockPlayerApi(token, other); await refreshBlocks(); }
+    catch (e) { setErr(formatApiError(e, t)); }
+    finally { setBusy(false); }
+  }
+
   async function refresh() {
     try { setData(await listFriendsApi(token)); }
     catch (e) { setErr(formatApiError(e, t)); }
   }
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); void refreshBlocks(); }, []);
 
   async function add() {
     const id = target.trim();
@@ -184,7 +205,7 @@ export default function FriendsModal({ token, onClose }: Props) {
         {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
 
         <div className="mt-4 flex gap-1 border-b border-green-800 text-xs">
-          {(["accepted", "incoming", "outgoing"] as Tab[]).map(k => (
+          {(["accepted", "incoming", "outgoing"] as const).map(k => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -193,9 +214,18 @@ export default function FriendsModal({ token, onClose }: Props) {
                 tab === k ? "bg-green-800 text-yellow-300" : "text-green-400 hover:text-yellow-200",
               ].join(" ")}
             >
-              {t(`friends.tab.${k}` as `friends.tab.${Tab}`)} {counts[k] > 0 && `(${counts[k]})`}
+              {t(`friends.tab.${k}` as `friends.tab.${"accepted" | "incoming" | "outgoing"}`)} {counts[k] > 0 && `(${counts[k]})`}
             </button>
           ))}
+          <button
+            onClick={() => setTab("blocked")}
+            className={[
+              "rounded-t-md px-3 py-1.5 font-bold transition",
+              tab === "blocked" ? "bg-green-800 text-yellow-300" : "text-green-400 hover:text-yellow-200",
+            ].join(" ")}
+          >
+            {t("blocks.tab")} {blocks && blocks.length > 0 && `(${blocks.length})`}
+          </button>
         </div>
 
         <div className="mt-3 flex-1 overflow-y-auto">
@@ -219,6 +249,13 @@ export default function FriendsModal({ token, onClose }: Props) {
                           disabled={busy}
                           className="rounded bg-red-700 px-2 py-1 text-[10px] font-bold text-red-50 hover:bg-red-600 disabled:opacity-50"
                         >{t("friends.unfriend")}</button>
+                        <button
+                          onClick={() => block(f.playerId)}
+                          disabled={busy}
+                          title={t("blocks.block")}
+                          aria-label={t("blocks.block")}
+                          className="rounded bg-red-900 px-2 py-1 text-[10px] font-bold text-red-50 hover:bg-red-800 disabled:opacity-50"
+                        >🚫</button>
                       </div>
                     </li>
                   ))}
@@ -262,6 +299,24 @@ export default function FriendsModal({ token, onClose }: Props) {
                     </li>
                   ))}
                 </ul>
+          )}
+          {tab === "blocked" && (
+            blocks === null
+              ? <p className="text-center text-xs text-green-500">{t("friends.loading")}</p>
+              : blocks.length === 0
+                ? <p className="text-center text-xs text-green-500">{t("blocks.empty")}</p>
+                : <ul className="flex flex-col gap-1.5">
+                    {blocks.map(b => (
+                      <li key={b.playerId} className="flex items-center justify-between rounded-md bg-green-800/60 px-3 py-2">
+                        <span className="text-sm text-yellow-100">{b.playerId}</span>
+                        <button
+                          onClick={() => unblock(b.playerId)}
+                          disabled={busy}
+                          className="rounded bg-gray-700 px-2 py-1 text-[10px] font-bold text-gray-200 hover:bg-gray-600 disabled:opacity-50"
+                        >{t("blocks.unblock")}</button>
+                      </li>
+                    ))}
+                  </ul>
           )}
         </div>
         </>)}

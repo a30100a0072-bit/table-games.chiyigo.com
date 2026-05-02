@@ -10,6 +10,7 @@
 import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
+import { isBlockedEitherWay }                       from "./blocks";
 import { log }                                      from "../utils/log";
 
 export interface RoomInvitesEnv {
@@ -66,6 +67,8 @@ export async function inviteToRoom(request: Request, env: RoomInvitesEnv): Promi
 
   if (!(await isFriend(env, me, friend)))
     return errorResponse(ErrorCode.FORBIDDEN, 403, "not friends");
+  if (await isBlockedEitherWay(env.DB, me, friend))
+    return errorResponse(ErrorCode.BLOCKED, 403);
 
   const room = await env.DB
     .prepare("SELECT game_type, expires_at FROM room_tokens WHERE token = ?")

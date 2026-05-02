@@ -335,6 +335,14 @@ const ZH = {
   "ws.reconnecting":         "🔄 重新連線中…（第 {attempt} 次嘗試）",
   "ws.disconnected":         "⚠️ 連線中斷",
   "ws.waitingGame":          "等待遊戲開始…",
+
+  // Blocks
+  "blocks.tab":              "🚫 封鎖",
+  "blocks.empty":            "沒有封鎖中的對象",
+  "blocks.unblock":          "解除封鎖",
+  "blocks.block":            "封鎖",
+  "blocks.confirmBlock":     "封鎖 {who}？將自動解除好友關係並阻擋對方傳送 DM／邀請。",
+  "err.blocked":             "你或對方已封鎖此對象",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -637,6 +645,13 @@ const EN: Partial<Record<DictKey, string>> = {
   "ws.reconnecting":          "🔄 Reconnecting… (attempt {attempt})",
   "ws.disconnected":          "⚠️ Disconnected",
   "ws.waitingGame":           "Waiting for game to start…",
+
+  "blocks.tab":               "🚫 Blocked",
+  "blocks.empty":             "Nobody blocked",
+  "blocks.unblock":           "Unblock",
+  "blocks.block":             "Block",
+  "blocks.confirmBlock":      "Block {who}? This unfriends them and stops their DMs / invites.",
+  "err.blocked":              "You or the other party have blocked this person",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {
