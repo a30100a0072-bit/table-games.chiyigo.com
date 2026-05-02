@@ -305,6 +305,7 @@ export class TexasHoldemStateMachine {
       totalCommitted: me.totalCommitted,
       hasFolded: me.hasFolded,
       isAllIn: me.isAllIn,
+      seatIdx: meIdx,
     };
     // 攤牌時揭示未棄牌對手的底牌；其他階段不寫 holeCards 欄位以維持隔離。 // L3_邏輯安防
     const isShowdown = this.s.street === "showdown" || this.s.street === "settled";

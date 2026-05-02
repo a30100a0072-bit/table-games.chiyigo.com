@@ -264,6 +264,7 @@ export interface PokerSelfView {
   totalCommitted: number;              // 整局已投入（用於 side pot 結算）
   hasFolded: boolean;
   isAllIn: boolean;
+  seatIdx: number;                     // 本人座位索引（莊家位置以 dealerIdx 表示）
 }
 
 export interface PokerOpponentView {

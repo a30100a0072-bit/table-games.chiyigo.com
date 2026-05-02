@@ -245,6 +245,7 @@ class TexasEngine implements IGameEngine {
         holeCards: [{ suit: "spades", rank: "2" }, { suit: "spades", rank: "2" }],
         stack: 0, betThisStreet: 0, totalCommitted: 0,
         hasFolded: false, isAllIn: false,
+        seatIdx: -1,                 // phantom — not a real seat
       },
       opponents: [
         {

@@ -419,6 +419,7 @@ function texasView(over: Partial<PokerStateView> & {
       totalCommitted: 0,
       hasFolded: false,
       isAllIn: false,
+      seatIdx: 0,                          // default: button (late position)
       ...((over.self ?? {}) as object),
     },
     opponents: over.opponents ?? [],
@@ -501,6 +502,43 @@ describe("Texas Hold'em bot", () => {
       pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
     });
     expect(getTexasBotAction(v).type).toBe("fold");
+  });
+
+  it("calls preflop with a marginal hand from the button (late position) that it'd fold from UTG", () => {
+    // KQ offsuit Chen score: hi=13 → baseHi=8, gap=0, kicker bonus 0 → 8 (un-suited).
+    // With +1 raise threshold (UTG, score≥10) → falls into score≥8, but UTG sees
+    // 8 < 7+1=8 strictly? 8 >= 8 → call. Hmm. Let me pick a hand that splits
+    // cleanly: KJ offsuit (Chen ≈ 6) — adj-1 button calls (≥6), adj+1 UTG folds
+    // unless cheap. We force a non-cheap call price (3 BB) so UTG falls through.
+    const hole: [Card, Card] = [
+      { rank: "K", suit: "hearts" },
+      { rank: "J", suit: "spades" },
+    ];
+    const baseV = texasView({
+      street: "preflop",
+      hole,
+      currentBet: 60,
+      bigBlind: 20,
+      // 3 BB raise — too pricy for UTG marginal but a button can still call (score ≥ 5+(-1)=4).
+      self: { betThisStreet: 0, seatIdx: 0 } as PokerStateView["self"],   // button
+      opponents: [
+        { playerId: "p2" } as never,
+        { playerId: "p3" } as never,
+        { playerId: "p4" } as never,
+      ],
+      dealerIdx: 0,
+    });
+    const buttonAction = getTexasBotAction(baseV);
+    expect(buttonAction.type).toBe("call");
+
+    // Same hand from UTG (offset = total - 1 = 3): tighten by +1 → score 6 < 7+1
+    // and < 9+1; falls to "marginal score≥5+1=6" branch but owe (60) > 1.5*BB (30) → fold.
+    const utgV: PokerStateView = {
+      ...baseV,
+      self: { ...baseV.self, seatIdx: 3 },
+    };
+    const utgAction = getTexasBotAction(utgV);
+    expect(utgAction.type).toBe("fold");
   });
 
   it("calls a cheap bet on the flop with an open-ended straight draw", () => {

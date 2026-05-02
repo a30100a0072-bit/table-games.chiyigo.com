@@ -476,16 +476,26 @@ export function getTexasBotAction(view: PokerStateView): PlayerAction {
     return { type: "raise", raiseAmount: target };
   };
 
-  // ── Pre-flop: Chen-formula buckets ───────────────────────────────────── L2_實作
+  // ── Pre-flop: Chen-formula buckets, with position adjustment ─────────── L2_實作
+  // Position offset from dealer (0 = button, total-1 = UTG). UTG acts
+  // first preflop with no info → tighten by 1pt. Button + BB act with
+  // most info / closing power → loosen by 1pt. SB and middle stay flat.
   if (view.street === "preflop") {
+    const total  = view.opponents.length + 1;
+    const offset = ((me.seatIdx - view.dealerIdx) + total) % total;
+    const adj    = (offset === 0)         ? -1   // button (late)
+                : (offset === total - 1)  ? +1   // UTG (early)
+                : (offset === 2 && total >= 4) ? -1  // BB-style closing seat
+                : 0;
+
     const score = chenScore(me.holeCards);
-    if (score >= 9) {
+    if (score >= 9 + adj) {
       return buildRaise() ?? (canCheck ? { type: "check" } : (owe <= me.stack ? { type: "call" } : { type: "fold" }));
     }
-    if (score >= 7) {
+    if (score >= 7 + adj) {
       return canCheck ? { type: "check" } : (owe <= me.stack ? { type: "call" } : { type: "fold" });
     }
-    if (score >= 5) {
+    if (score >= 5 + adj) {
       // Marginal: call only if owe ≤ 1.5 × BB
       if (canCheck) return { type: "check" };
       if (owe <= Math.floor(view.bigBlind * 1.5)) return { type: "call" };
