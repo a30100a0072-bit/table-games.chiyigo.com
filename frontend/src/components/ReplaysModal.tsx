@@ -293,16 +293,16 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                 className="flex w-full items-center justify-between text-[11px] font-bold text-yellow-200"
                 aria-expanded={showShares}
               >
-                <span>🔗 已分享連結 {shares ? `(${shares.length})` : ""}</span>
-                <span className="text-green-400">{showShares ? "▾" : "▸"}</span>
+                <span>🔗 {t("rep.shares")} {shares ? `(${shares.length})` : ""}</span>
+                <span className="text-green-400" aria-hidden="true">{showShares ? "▾" : "▸"}</span>
               </button>
               {showShares && (
                 <div className="mt-2">
                   {shares === null && (
-                    <p className="text-center text-[10px] text-green-500">…</p>
+                    <p className="text-center text-[10px] text-green-500" aria-live="polite">…</p>
                   )}
                   {shares && shares.length === 0 && (
-                    <p className="text-center text-[10px] text-green-500">沒有作用中的分享</p>
+                    <p className="text-center text-[10px] text-green-500">{t("rep.shares.empty")}</p>
                   )}
                   {shares && shares.length > 0 && (
                     <ul className="flex flex-col gap-1">
@@ -310,13 +310,14 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                         <li key={s.token} className="flex items-center justify-between gap-2 text-[10px] text-green-200">
                           <span className="flex-1 truncate font-mono">
                             <span className="text-green-500">{s.gameId.slice(0, 8)}…</span>{" "}
-                            <span className="text-green-400">至 {fmtTime(s.expiresAt)}</span>
+                            <span className="text-green-400">{t("rep.shares.until", { when: fmtTime(s.expiresAt) })}</span>
                           </span>
                           <button
                             onClick={() => revoke(s.token)}
                             className="rounded bg-red-700 px-2 py-0.5 text-[10px] font-bold text-red-50 hover:bg-red-600"
-                            title="撤銷此分享連結"
-                          >撤銷</button>
+                            title={t("rep.shares.revokeTitle")}
+                            aria-label={t("rep.shares.revokeTitle")}
+                          >{t("rep.shares.revoke")}</button>
                         </li>
                       ))}
                     </ul>
@@ -362,14 +363,15 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                                 ta.value = url; document.body.appendChild(ta);
                                 ta.select(); document.execCommand("copy"); ta.remove();
                               }
-                              setErr("分享連結已複製：" + url.slice(0, 60) + "…");
+                              setErr(t("rep.shareCopied", { preview: url.slice(0, 60) }));
                             } catch (e) {
-                              setErr(e instanceof Error ? e.message : "分享失敗");
+                              setErr(e instanceof Error ? e.message : t("rep.shareFailed"));
                             }
                           }}
                           disabled={busy}
                           className="rounded bg-yellow-600 px-2 py-1 text-[10px] font-bold text-yellow-50 hover:bg-yellow-500 disabled:opacity-50"
-                          title="分享"
+                          title={t("rep.share")}
+                          aria-label={t("rep.share")}
                         >🔗</button>
                         <button
                           onClick={() => open(r.gameId)}
