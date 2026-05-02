@@ -409,6 +409,13 @@ export async function revokeShareApi(token: string, shareToken: string): Promise
   if (!res.ok) throw await readApiError(res);
 }
 
+export interface FriendRecommendation { playerId: string; together: number; lastPlayed: number; }
+export async function getFriendRecommendationsApi(token: string): Promise<{ recommendations: FriendRecommendation[] }> {
+  const res = await fetch(`${BASE}/api/friends/recommendations`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw await readApiError(res);
+  return res.json();
+}
+
 // ── Blocks ──────────────────────────────────────────────────────────
 export interface BlockEntry { playerId: string; createdAt: number; }
 

@@ -5,9 +5,10 @@ import {
   listFriendsApi, requestFriendApi, respondFriendApi, unfriendApi,
   listDmConversationApi, sendDmApi,
   listMyBlocksApi, blockPlayerApi, unblockPlayerApi,
+  getFriendRecommendationsApi,
   formatApiError,
 } from "../api/http";
-import type { FriendsResponse, DmMessage, BlockEntry } from "../api/http";
+import type { FriendsResponse, DmMessage, BlockEntry, FriendRecommendation } from "../api/http";
 import { useT } from "../i18n/useT";
 
 interface Props {
@@ -109,6 +110,7 @@ export default function FriendsModal({ token, onClose }: Props) {
   const { t } = useT();
   const [data,    setData]    = useState<FriendsResponse | null>(null);
   const [blocks,  setBlocks]  = useState<BlockEntry[] | null>(null);
+  const [recs,    setRecs]    = useState<FriendRecommendation[] | null>(null);
   const [tab,     setTab]     = useState<Tab>("accepted");
   const [target,  setTarget]  = useState("");
   const [busy,    setBusy]    = useState(false);
@@ -118,6 +120,10 @@ export default function FriendsModal({ token, onClose }: Props) {
   async function refreshBlocks() {
     try { setBlocks((await listMyBlocksApi(token)).blocks); }
     catch (e) { setErr(formatApiError(e, t)); }
+  }
+  async function refreshRecs() {
+    try { setRecs((await getFriendRecommendationsApi(token)).recommendations); }
+    catch { /* recommendations are non-critical; swallow */ }
   }
   async function block(other: string) {
     if (!confirm(t("blocks.confirmBlock", { who: other }))) return;
@@ -137,7 +143,7 @@ export default function FriendsModal({ token, onClose }: Props) {
     try { setData(await listFriendsApi(token)); }
     catch (e) { setErr(formatApiError(e, t)); }
   }
-  useEffect(() => { void refresh(); void refreshBlocks(); }, []);
+  useEffect(() => { void refresh(); void refreshBlocks(); void refreshRecs(); }, []);
 
   async function add() {
     const id = target.trim();
@@ -230,6 +236,35 @@ export default function FriendsModal({ token, onClose }: Props) {
 
         <div className="mt-3 flex-1 overflow-y-auto">
           {!data && <p className="text-center text-xs text-green-500">{t("friends.loading")}</p>}
+          {data && tab === "accepted" && recs && recs.length > 0 && (
+            <div className="mb-3 rounded-md bg-green-950/60 p-2">
+              <p className="mb-1 text-[11px] font-bold text-yellow-200">{t("friends.recommend")}</p>
+              <ul className="flex flex-col gap-1">
+                {recs.map(r => (
+                  <li key={r.playerId} className="flex items-center justify-between text-[11px] text-green-200">
+                    <span>
+                      <span className="font-bold text-yellow-100">{r.playerId}</span>{" "}
+                      <span className="text-green-400">· {t("friends.recommend.together", { n: r.together })}</span>
+                    </span>
+                    <button
+                      onClick={async () => {
+                        setBusy(true); setErr(null);
+                        try {
+                          await requestFriendApi(token, r.playerId);
+                          setRecs(prev => (prev ?? []).filter(x => x.playerId !== r.playerId));
+                          await refresh();
+                        } catch (e) {
+                          setErr(formatApiError(e, t));
+                        } finally { setBusy(false); }
+                      }}
+                      disabled={busy}
+                      className="rounded bg-yellow-600 px-2 py-0.5 text-[10px] font-bold text-yellow-50 hover:bg-yellow-500 disabled:opacity-50"
+                    >+ {t("friends.recommend.add")}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {data && tab === "accepted" && (
             data.accepted.length === 0
               ? <p className="text-center text-xs text-green-500">{t("friends.empty.accepted")}</p>

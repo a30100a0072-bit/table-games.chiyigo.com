@@ -342,6 +342,10 @@ const ZH = {
   "blocks.unblock":          "解除封鎖",
   "blocks.block":            "封鎖",
   "blocks.confirmBlock":     "封鎖 {who}？將自動解除好友關係並阻擋對方傳送 DM／邀請。",
+  "friends.recommend":       "建議朋友（共玩過）",
+  "friends.recommend.empty": "暫無推薦對象 — 多玩幾局就會出現",
+  "friends.recommend.together": "共 {n} 局",
+  "friends.recommend.add":   "加好友",
   "err.blocked":             "你或對方已封鎖此對象",
 } as const;
 
@@ -651,6 +655,10 @@ const EN: Partial<Record<DictKey, string>> = {
   "blocks.unblock":           "Unblock",
   "blocks.block":             "Block",
   "blocks.confirmBlock":      "Block {who}? This unfriends them and stops their DMs / invites.",
+  "friends.recommend":        "People you've played with",
+  "friends.recommend.empty":  "No suggestions yet — play a few more games",
+  "friends.recommend.together": "{n} game(s) together",
+  "friends.recommend.add":    "Add",
   "err.blocked":              "You or the other party have blocked this person",
 };
 

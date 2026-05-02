@@ -222,3 +222,56 @@ export async function listFriends(request: Request, env: FriendsEnv): Promise<Re
 
   return Response.json({ accepted, incoming, outgoing });
 }
+
+// ── GET /api/friends/recommendations ─────────────────────────────────────
+// People you've sat at a table with at least once, ordered by how
+// often. Excludes:
+//   • bots and deleted-account tombstones (string-prefix filter)
+//   • yourself
+//   • anyone you already have any friendship state with (accepted /
+//     pending / outgoing — we don't recommend re-requesting someone
+//     who already declined or is queued)
+//   • anyone in a block relation either direction (avoid surfacing
+//     them at all on the blocker's side, and avoid implying mutual
+//     interest on the blockee's side)
+//
+// Driven entirely by the replay_participants index — one self-join,
+// O(N) in the caller's recent games.                                       // L3_架構含防禦觀測
+export async function recommendFriends(request: Request, env: FriendsEnv): Promise<Response> {
+  const me = await authPlayer(request, env);
+  if (me instanceof Response) return me;
+
+  const rows = await env.DB
+    .prepare(
+      "SELECT theirs.player_id AS player_id," +
+      "       COUNT(*) AS together," +
+      "       MAX(theirs.finished_at) AS last_at" +
+      "  FROM replay_participants mine" +
+      "  JOIN replay_participants theirs ON theirs.game_id = mine.game_id" +
+      " WHERE mine.player_id = ?" +
+      "   AND theirs.player_id != ?" +
+      "   AND theirs.player_id NOT LIKE 'BOT_%'" +
+      "   AND theirs.player_id NOT LIKE 'DELETED_%'" +
+      "   AND theirs.player_id NOT IN (" +
+      "         SELECT b_id FROM friendships WHERE a_id = ?" +
+      "         UNION" +
+      "         SELECT a_id FROM friendships WHERE b_id = ?)" +
+      "   AND theirs.player_id NOT IN (" +
+      "         SELECT blockee FROM blocks WHERE blocker = ?" +
+      "         UNION" +
+      "         SELECT blocker FROM blocks WHERE blockee = ?)" +
+      " GROUP BY theirs.player_id" +
+      " ORDER BY together DESC, last_at DESC" +
+      " LIMIT 10",
+    )
+    .bind(me, me, me, me, me, me)
+    .all<{ player_id: string; together: number; last_at: number }>();
+
+  return Response.json({
+    recommendations: (rows.results ?? []).map(r => ({
+      playerId:   r.player_id,
+      together:   r.together,
+      lastPlayed: r.last_at,
+    })),
+  });
+}

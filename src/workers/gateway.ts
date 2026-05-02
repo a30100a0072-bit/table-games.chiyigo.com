@@ -10,7 +10,7 @@ import {
   listMyTournaments,
 } from "../api/tournaments";
 import {
-  requestFriend, acceptFriend, declineFriend, unfriend, listFriends,
+  requestFriend, acceptFriend, declineFriend, unfriend, listFriends, recommendFriends,
 } from "../api/friends";
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
@@ -105,6 +105,9 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   // ── Friends ─────────────────────────────────────────────────────────
   if (request.method === "GET"  && url.pathname === "/api/friends")
     return cors(await listFriends(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/friends/recommendations")
+    return cors(await recommendFriends(request, env));
 
   if (request.method === "POST" && url.pathname === "/api/friends/request")
     return cors(await requestFriend(request, env));
