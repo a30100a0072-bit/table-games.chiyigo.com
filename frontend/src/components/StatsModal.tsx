@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
-import { getHistory, getLeaderboard } from "../api/http";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { getHistory, getLeaderboard, formatApiError } from "../api/http";
 import type { HistoryEntry, LeaderboardRow } from "../api/http";
+import { useT } from "../i18n/useT";
+import type { DictKey } from "../i18n/dict";
 
 interface Props {
   playerId: string;
@@ -11,10 +14,10 @@ interface Props {
 
 type Tab = "leaderboard" | "history";
 
-const REASON_LABEL: Record<string, string> = {
-  lastCardPlayed: "正常結算",
-  timeout:        "逾時",
-  disconnect:     "斷線",
+const REASON_KEY: Record<string, DictKey> = {
+  lastCardPlayed: "stats.reasonNormal",
+  timeout:        "stats.reasonTimeout",
+  disconnect:     "stats.reasonDisconnect",
 };
 
 function fmtTime(ms: number): string {
@@ -27,7 +30,9 @@ function fmtTime(ms: number): string {
 }
 
 export default function StatsModal({ playerId, token, onClose }: Props) {
+  const { t } = useT();
   useEscapeClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [tab,         setTab]         = useState<Tab>("leaderboard");
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [history,     setHistory]     = useState<HistoryEntry[] | null>(null);
@@ -39,11 +44,11 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
     if (tab === "leaderboard" && !leaderboard) {
       getLeaderboard()
         .then(r => { if (!cancelled) setLeaderboard(r.rows); })
-        .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗"); });
+        .catch(e => { if (!cancelled) setError(formatApiError(e, t)); });
     } else if (tab === "history" && !history) {
       getHistory(token)
         .then(r => { if (!cancelled) setHistory(r.games); })
-        .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗"); });
+        .catch(e => { if (!cancelled) setError(formatApiError(e, t)); });
     }
     return () => { cancelled = true; };
   }, [tab, token, leaderboard, history]);
@@ -54,14 +59,14 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
   const netDelta = history?.reduce((n, g) => n + g.score_delta, 0) ?? 0;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true" ref={trapRef}>
       <div
         className="w-full max-w-md rounded-2xl bg-green-900 p-4 shadow-2xl ring-1 ring-yellow-700/40"
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-lg font-bold text-yellow-300">統計</span>
-          <button onClick={onClose} className="rounded-full bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700">關閉</button>
+          <span className="text-lg font-bold text-yellow-300">{t("stats.title")}</span>
+          <button onClick={onClose} className="rounded-full bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700">{t("common.close")}</button>
         </div>
 
         <div className="mb-3 flex gap-2">
@@ -71,22 +76,22 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
               "flex-1 rounded-lg px-3 py-1.5 text-sm font-bold transition",
               tab === "leaderboard" ? "bg-yellow-400 text-green-950" : "bg-green-800 text-green-300 hover:bg-green-700",
             ].join(" ")}
-          >🏆 排行榜</button>
+          >{t("stats.tabLeaderboard")}</button>
           <button
             onClick={() => setTab("history")}
             className={[
               "flex-1 rounded-lg px-3 py-1.5 text-sm font-bold transition",
               tab === "history" ? "bg-yellow-400 text-green-950" : "bg-green-800 text-green-300 hover:bg-green-700",
             ].join(" ")}
-          >📋 戰績</button>
+          >{t("stats.tabHistory")}</button>
         </div>
 
-        {error && <p className="mb-2 text-sm text-red-300">{error}</p>}
+        {error && <p className="mb-2 text-sm text-red-300" role="alert">{error}</p>}
 
         {tab === "leaderboard" && (
           <div className="max-h-96 overflow-y-auto">
-            {!leaderboard ? <p className="py-8 text-center text-sm text-green-400">載入中…</p>
-            : leaderboard.length === 0 ? <p className="py-8 text-center text-sm text-green-400">尚無資料</p>
+            {!leaderboard ? <p className="py-8 text-center text-sm text-green-400">{t("stats.loading")}</p>
+            : leaderboard.length === 0 ? <p className="py-8 text-center text-sm text-green-400">{t("stats.empty")}</p>
             : (
               <ol className="space-y-1 text-sm">
                 {leaderboard.map((row, i) => (
@@ -115,14 +120,14 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
 
         {tab === "history" && (
           <div className="max-h-96 overflow-y-auto">
-            {!history ? <p className="py-8 text-center text-sm text-green-400">載入中…</p>
-            : history.length === 0 ? <p className="py-8 text-center text-sm text-green-400">尚無對戰紀錄</p>
+            {!history ? <p className="py-8 text-center text-sm text-green-400">{t("stats.loading")}</p>
+            : history.length === 0 ? <p className="py-8 text-center text-sm text-green-400">{t("stats.emptyHistory")}</p>
             : (
               <>
                 <div className="mb-2 grid grid-cols-3 gap-2 rounded-lg bg-green-800/60 p-2 text-center text-xs">
-                  <div><div className="text-yellow-300">{total}</div><div className="text-green-300">場數</div></div>
-                  <div><div className="text-yellow-300">{winPct}%</div><div className="text-green-300">勝率</div></div>
-                  <div><div className={netDelta >= 0 ? "text-emerald-300" : "text-red-300"}>{netDelta >= 0 ? "+" : ""}{netDelta}</div><div className="text-green-300">淨分</div></div>
+                  <div><div className="text-yellow-300">{total}</div><div className="text-green-300">{t("stats.games")}</div></div>
+                  <div><div className="text-yellow-300">{winPct}%</div><div className="text-green-300">{t("stats.winRate")}</div></div>
+                  <div><div className={netDelta >= 0 ? "text-emerald-300" : "text-red-300"}>{netDelta >= 0 ? "+" : ""}{netDelta}</div><div className="text-green-300">{t("stats.netDelta")}</div></div>
                 </div>
                 <ul className="space-y-1 text-sm">
                   {history.map(g => (
@@ -132,7 +137,9 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
                           "w-7 rounded-full text-center text-[10px] font-bold leading-5",
                           g.final_rank === 1 ? "bg-yellow-500 text-green-950" : "bg-green-700 text-green-200",
                         ].join(" ")}>#{g.final_rank}</span>
-                        <span className="text-[10px] text-green-400">{fmtTime(g.finished_at)} · {REASON_LABEL[g.reason] ?? g.reason}</span>
+                        <span className="text-[10px] text-green-400">
+                          {fmtTime(g.finished_at)} · {REASON_KEY[g.reason] ? t(REASON_KEY[g.reason]!) : g.reason}
+                        </span>
                       </span>
                       <span className={g.score_delta >= 0 ? "font-bold text-emerald-300" : "font-bold text-red-300"}>
                         {g.score_delta >= 0 ? "+" : ""}{g.score_delta}

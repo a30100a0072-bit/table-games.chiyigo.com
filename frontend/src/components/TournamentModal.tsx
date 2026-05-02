@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import {
   listTournaments, getTournament, createTournament, joinTournamentApi,
+  formatApiError,
 } from "../api/http";
 import type { TournamentRow, TournamentDetail } from "../api/http";
 import type { GameType } from "../shared/types";
+import { useT } from "../i18n/useT";
 
 interface Props {
   playerId: string;
@@ -13,11 +16,11 @@ interface Props {
   onJoinedRoom: (roomId: string, gameType: GameType) => void;
 }
 
-const GAMES: { value: GameType; label: string }[] = [
-  { value: "bigTwo",  label: "🃏 大老二" },
-  { value: "mahjong", label: "🀄 麻將" },
-  { value: "texas",   label: "♠️ 德州" },
-];
+const GAME_LABEL_KEY: Record<GameType, "tour.gameBigTwo" | "tour.gameMahjong" | "tour.gameTexas"> = {
+  bigTwo:  "tour.gameBigTwo",
+  mahjong: "tour.gameMahjong",
+  texas:   "tour.gameTexas",
+};
 const PRESET_BUYINS = [200, 500, 1000];
 
 function fmtTime(ms: number): string {
@@ -26,7 +29,9 @@ function fmtTime(ms: number): string {
 }
 
 export default function TournamentModal({ playerId, token, onClose, onJoinedRoom }: Props) {
+  const { t } = useT();
   useEscapeClose(onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const [list,    setList]    = useState<TournamentRow[] | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [busy,    setBusy]    = useState(false);
@@ -44,7 +49,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
       const r = await listTournaments();
       setList(r.rows);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "load failed");
+      setError(formatApiError(e, t));
     }
   }
 
@@ -79,7 +84,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
       setOpenId(tournamentId);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "create failed");
+      setError(formatApiError(e, t));
     } finally {
       setBusy(false);
     }
@@ -92,24 +97,24 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
       setOpenId(id);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "join failed");
+      setError(formatApiError(e, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true" ref={trapRef}>
       <div
         className="w-full max-w-md rounded-2xl bg-green-900 p-4 shadow-2xl ring-1 ring-yellow-700/40"
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-lg font-bold text-yellow-300">🏆 賽事</span>
-          <button onClick={onClose} className="rounded-full bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700">關閉</button>
+          <span className="text-lg font-bold text-yellow-300">🏆 {t("tour.title")}</span>
+          <button onClick={onClose} className="rounded-full bg-green-800 px-3 py-1 text-xs text-green-200 hover:bg-green-700">{t("common.close")}</button>
         </div>
 
-        {error && <p className="mb-2 text-sm text-red-300">{error}</p>}
+        {error && <p className="mb-2 text-sm text-red-300" role="alert">{error}</p>}
 
         {/* DETAIL VIEW */}
         {openId && detail && (
@@ -117,33 +122,33 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
             <button
               onClick={() => { setOpenId(null); refresh(); }}
               className="mb-3 text-xs text-green-300 hover:text-yellow-200"
-            >← 返回列表</button>
+            >{t("tour.back")}</button>
             <div className="mb-3 rounded-lg bg-green-800/60 p-3 text-sm">
               <div className="mb-1 flex items-center justify-between">
                 <span className="font-bold text-yellow-200">
-                  {GAMES.find(g => g.value === detail.tournament.game_type)?.label}
+                  {t(GAME_LABEL_KEY[detail.tournament.game_type])}
                 </span>
                 <span className="rounded-full bg-yellow-700/40 px-2 py-0.5 text-xs text-yellow-100">
-                  {detail.tournament.status === "registering" ? "🟢 報名中"
-                    : detail.tournament.status === "running"   ? "▶️ 進行中"
-                    : "✅ 已結束"}
+                  {detail.tournament.status === "registering" ? t("tour.statusRegistering")
+                    : detail.tournament.status === "running"   ? t("tour.statusRunning")
+                    : t("tour.statusSettled")}
                 </span>
               </div>
               <div className="text-xs text-green-300">
-                報名費 {detail.tournament.buy_in} · 獎金 {detail.tournament.prize_pool}
+                {t("tour.buyInPrize", { buyIn: detail.tournament.buy_in, prize: detail.tournament.prize_pool })}
               </div>
               <div className="text-xs text-green-300">
-                Best-of-{detail.tournament.rounds_total} · 已完成 {detail.tournament.rounds_done} 局
+                {t("tour.bestOfProgress", { total: detail.tournament.rounds_total, done: detail.tournament.rounds_done })}
               </div>
               {detail.tournament.game_type === "texas" && (
                 <div className="mt-1 text-[11px] text-green-400">
-                  盲注：R1 10/20 · R2 20/40 · R3 50/100
+                  {t("tour.blindsHint")}
                 </div>
               )}
             </div>
 
             <div className="mb-3 max-h-64 overflow-y-auto">
-              <div className="mb-1 text-xs font-bold text-yellow-200">參賽者</div>
+              <div className="mb-1 text-xs font-bold text-yellow-200">{t("tour.entrants")}</div>
               <ol className="space-y-1 text-sm">
                 {detail.entries.map((e, i) => (
                   <li
@@ -166,7 +171,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
                 ))}
                 {Array.from({ length: 4 - detail.entries.length }).map((_, i) => (
                   <li key={`empty-${i}`} className="rounded-md bg-green-800/30 px-3 py-1.5 text-xs text-green-500">
-                    等待中…
+                    {t("tour.waiting")}
                   </li>
                 ))}
               </ol>
@@ -174,16 +179,16 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
 
             {detail.roundResults && detail.roundResults.length > 0 && (
               <div className="mb-3">
-                <div className="mb-1 text-xs font-bold text-yellow-200">每局分數</div>
+                <div className="mb-1 text-xs font-bold text-yellow-200">{t("tour.roundScores")}</div>
                 <div className="overflow-x-auto rounded-md bg-green-950/60 p-2">
                   <table className="w-full text-[11px]">
                     <thead>
                       <tr className="text-green-400">
-                        <th className="px-1 py-0.5 text-left">玩家</th>
+                        <th className="px-1 py-0.5 text-left">{t("tour.player")}</th>
                         {detail.roundResults.map(r => (
                           <th key={r.round} className="px-1 py-0.5 text-center">R{r.round}</th>
                         ))}
-                        <th className="px-1 py-0.5 text-right">合計</th>
+                        <th className="px-1 py-0.5 text-right">{t("tour.total")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -227,7 +232,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
                 disabled={busy}
                 className="w-full rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:opacity-50"
               >
-                {busy ? "加入中…" : `加入（-${detail.tournament.buy_in} 籌碼）`}
+                {busy ? t("tour.joining") : t("tour.joinChips", { buyIn: detail.tournament.buy_in })}
               </button>
             )}
           </div>
@@ -240,22 +245,22 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
               <button
                 onClick={() => setCreating(true)}
                 className="mb-3 w-full rounded-lg bg-yellow-400 py-2 text-sm font-bold text-green-950 hover:bg-yellow-300"
-              >+ 建立新賽事</button>
+              >{t("tour.createNew")}</button>
             )}
 
             {creating && (
               <div className="mb-3 rounded-lg bg-green-800/60 p-3">
-                <div className="mb-2 text-xs font-bold text-yellow-200">建立賽事</div>
+                <div className="mb-2 text-xs font-bold text-yellow-200">{t("tour.create")}</div>
                 <div className="mb-2 flex gap-1">
-                  {GAMES.map(g => (
+                  {(["bigTwo", "mahjong", "texas"] as GameType[]).map(g => (
                     <button
-                      key={g.value}
-                      onClick={() => setCreateGT(g.value)}
+                      key={g}
+                      onClick={() => setCreateGT(g)}
                       className={[
                         "flex-1 rounded-md py-1.5 text-xs font-bold",
-                        createGT === g.value ? "bg-yellow-400 text-green-950" : "bg-green-700 text-green-200",
+                        createGT === g ? "bg-yellow-400 text-green-950" : "bg-green-700 text-green-200",
                       ].join(" ")}
-                    >{g.label}</button>
+                    >{t(GAME_LABEL_KEY[g])}</button>
                   ))}
                 </div>
                 <div className="mb-2 flex gap-1">
@@ -271,43 +276,43 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
                   ))}
                 </div>
                 <div className="mb-2 text-[11px] text-green-300">
-                  獎金 {createBI * 4 - Math.floor(createBI * 4 * 5 / 100)}（5% 抽水）· Best-of-3
+                  {t("tour.prizeRakeHint", { prize: createBI * 4 - Math.floor(createBI * 4 * 5 / 100) })}
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setCreating(false)}
                     className="flex-1 rounded-md bg-gray-700 py-1.5 text-xs font-bold text-gray-200"
-                  >取消</button>
+                  >{t("tour.cancel")}</button>
                   <button
                     onClick={handleCreate}
                     disabled={busy}
                     className="flex-1 rounded-md bg-yellow-400 py-1.5 text-xs font-bold text-green-950 disabled:opacity-50"
-                  >{busy ? "建立中…" : "建立"}</button>
+                  >{busy ? t("tour.creating") : t("tour.confirmCreate")}</button>
                 </div>
               </div>
             )}
 
             <div className="max-h-72 overflow-y-auto">
-              <div className="mb-1 text-xs font-bold text-yellow-200">報名中</div>
-              {!list ? <p className="py-4 text-center text-sm text-green-400">載入中…</p>
-              : list.length === 0 ? <p className="py-4 text-center text-sm text-green-400">目前沒有可報名的賽事</p>
+              <div className="mb-1 text-xs font-bold text-yellow-200">{t("tour.openListings")}</div>
+              {!list ? <p className="py-4 text-center text-sm text-green-400">{t("tour.loading")}</p>
+              : list.length === 0 ? <p className="py-4 text-center text-sm text-green-400">{t("tour.noOpen")}</p>
               : (
                 <ul className="space-y-1 text-sm">
-                  {list.map(t => (
+                  {list.map(row => (
                     <li
-                      key={t.tournament_id}
-                      onClick={() => setOpenId(t.tournament_id)}
+                      key={row.tournament_id}
+                      onClick={() => setOpenId(row.tournament_id)}
                       className="cursor-pointer rounded-md bg-green-800/60 px-3 py-2 transition hover:bg-green-700"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-bold">
-                          {GAMES.find(g => g.value === t.game_type)?.label ?? t.game_type}
+                          {t(GAME_LABEL_KEY[row.game_type])}
                         </span>
-                        <span className="text-xs text-yellow-200">獎金 {t.prize_pool}</span>
+                        <span className="text-xs text-yellow-200">{t("tour.prize", { n: row.prize_pool })}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-green-300">
-                        <span>{fmtTime(t.created_at)} · 報名費 {t.buy_in}</span>
-                        <span>{t.registered}/4</span>
+                        <span>{t("tour.feeAt", { ts: fmtTime(row.created_at), buyIn: row.buy_in })}</span>
+                        <span>{row.registered}/4</span>
                       </div>
                     </li>
                   ))}
