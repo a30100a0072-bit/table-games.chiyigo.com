@@ -240,6 +240,49 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
     return () => clearTimeout(id);
   }, [playing, step, speed, detail]);
 
+  // Keyboard transport: ←/→ step, Space play/pause, Home/End jump.
+  // Only active while a replay is loaded (detail !== null) so the
+  // shortcuts don't shadow other modal interactions like list scrolling.
+  useEffect(() => {
+    if (!detail) return;
+    const total = detail.events.length;
+    function onKey(e: KeyboardEvent) {
+      // Don't hijack typing inside form fields.
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA")) return;
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          setPlaying(false);
+          setStep(s => Math.max(0, s - 1));
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          setPlaying(false);
+          setStep(s => Math.min(total, s + 1));
+          break;
+        case " ":
+        case "Spacebar":
+          e.preventDefault();
+          if (step >= total) return;
+          setPlaying(p => !p);
+          break;
+        case "Home":
+          e.preventDefault();
+          setPlaying(false);
+          setStep(0);
+          break;
+        case "End":
+          e.preventDefault();
+          setPlaying(false);
+          setStep(total);
+          break;
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [detail, step]);
+
   async function open(gameId: string) {
     if (!token) return;
     setBusy(true); setErr(null);
@@ -475,6 +518,8 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                       <option value={4}>4×</option>
                     </select>
                   </div>
+
+                  <p className="text-center text-[10px] text-green-500">{t("rep.kbHint")}</p>
 
                   {/* Compact full log below for context — clicking jumps to that step. */}
                   <details className="text-[10px] text-green-300">

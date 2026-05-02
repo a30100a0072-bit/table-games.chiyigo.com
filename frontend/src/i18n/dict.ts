@@ -216,6 +216,7 @@ const ZH = {
   "rep.share":               "分享",
   "rep.shareCopied":         "分享連結已複製：{preview}…",
   "rep.shareFailed":         "分享失敗",
+  "rep.kbHint":              "鍵盤：← → 上下步｜空白播放／暫停｜Home/End 跳到首/末",
 
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
@@ -321,6 +322,12 @@ const ZH = {
   "stats.reasonTimeout":     "逾時",
   "stats.reasonDisconnect":  "斷線",
   "stats.loadFailed":        "載入失敗",
+
+  // Crash boundary
+  "boundary.title":          "畫面發生錯誤",
+  "boundary.body":           "畫面渲染時發生未預期的錯誤。重新整理頁面通常可以解決。",
+  "boundary.reload":         "重新整理",
+  "boundary.details":        "錯誤細節（可複製回報）",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -513,6 +520,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "rep.share":                "Share",
   "rep.shareCopied":          "Link copied: {preview}…",
   "rep.shareFailed":          "Share failed",
+  "rep.kbHint":               "Keys: ← → step · Space play/pause · Home/End jump",
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",
@@ -611,6 +619,11 @@ const EN: Partial<Record<DictKey, string>> = {
   "stats.reasonTimeout":      "Timeout",
   "stats.reasonDisconnect":   "Disconnect",
   "stats.loadFailed":         "Load failed",
+
+  "boundary.title":           "Something went wrong",
+  "boundary.body":            "The screen hit an unexpected error while rendering. Reloading the page usually fixes it.",
+  "boundary.reload":          "Reload",
+  "boundary.details":         "Error details (paste in a report)",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {
