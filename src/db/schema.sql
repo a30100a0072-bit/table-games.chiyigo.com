@@ -132,6 +132,22 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 CREATE INDEX IF NOT EXISTS idx_admin_audit_player ON admin_audit (player_id);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit (created_at DESC);
 
+-- ── cron_runs ────────────────────────────────────────────────────────────
+-- One row per scheduled() invocation. Captures per-table changes counts
+-- and any errors raised. Powers /api/admin/health so the operator can
+-- see at a glance whether the daily sweep is healthy without tailing.
+CREATE TABLE IF NOT EXISTS cron_runs (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  ran_at               INTEGER NOT NULL,
+  dms_purged           INTEGER NOT NULL DEFAULT 0,
+  room_tokens_purged   INTEGER NOT NULL DEFAULT 0,
+  replay_shares_purged INTEGER NOT NULL DEFAULT 0,
+  room_invites_purged  INTEGER NOT NULL DEFAULT 0,
+  errors_json          TEXT             -- NULL when clean; JSON array of strings otherwise
+);
+
+CREATE INDEX IF NOT EXISTS idx_cron_runs_ran_at ON cron_runs (ran_at DESC);
+
 -- ── friendships ──────────────────────────────────────────────────────────
 -- Bidirectional consent. (a_id, b_id) is canonical with a_id < b_id so the
 -- same relationship has exactly one row regardless of who initiated.

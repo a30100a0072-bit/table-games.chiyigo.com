@@ -29,15 +29,42 @@ class MockStmt {
 const ENV = (db: MockDb) => ({ DB: db as unknown as D1Database });
 
 describe("runCleanup", () => {
-  it("issues one DELETE per retention sweep, in a stable order", async () => {
+  it("issues one DELETE per retention sweep, in a stable order, then audits the run", async () => {
     const db = new MockDb();
     await runCleanup(ENV(db), 10_000_000_000);
     const sqls = db.statements.map(s => s.sql);
-    expect(sqls).toHaveLength(4);
+    expect(sqls).toHaveLength(5);
     expect(sqls[0]).toContain("DELETE FROM dms");
     expect(sqls[1]).toContain("DELETE FROM room_tokens");
     expect(sqls[2]).toContain("DELETE FROM replay_shares");
     expect(sqls[3]).toContain("DELETE FROM room_invites");
+    // The audit row goes last so a partial sweep still records what got done.
+    expect(sqls[4]).toContain("INSERT INTO cron_runs");
+  });
+
+  it("audit row carries per-section counts and null errors when clean", async () => {
+    const db = new MockDb();
+    db.responses = [{ match: "FROM room_tokens", changes: 4 }];
+    await runCleanup(ENV(db), 10_000_000_000);
+    const audit = db.statements[4]!;
+    expect(audit.sql).toContain("INSERT INTO cron_runs");
+    // ran_at, dms_purged, room_tokens_purged, replay_shares_purged, room_invites_purged, errors_json
+    expect(audit.args[0]).toBe(10_000_000_000);
+    expect(audit.args[1]).toBe(0);     // dms
+    expect(audit.args[2]).toBe(4);     // room_tokens (matched response)
+    expect(audit.args[3]).toBe(0);
+    expect(audit.args[4]).toBe(0);
+    expect(audit.args[5]).toBeNull();  // no errors
+  });
+
+  it("audit row carries the JSON-serialised error list when a section failed", async () => {
+    const db = new MockDb();
+    db.responses = [{ match: "FROM dms", throws: "no such table" }];
+    await runCleanup(ENV(db), 1);
+    const audit = db.statements[4]!;
+    const errs = JSON.parse(audit.args[5] as string) as string[];
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toContain("dmsPurged");
   });
 
   it("uses now-7d for the dms cutoff and `now` for expiry-based prunes", async () => {

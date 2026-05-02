@@ -48,5 +48,27 @@ export async function runCleanup(env: CronEnv, now: number = Date.now()): Promis
     }
   }
 
+  // Audit the run so /api/admin/health can report it. Persist failures
+  // are logged but never thrown — the cleanup itself already happened. // L3_架構含防禦觀測
+  try {
+    await env.DB
+      .prepare(
+        "INSERT INTO cron_runs" +
+        " (ran_at, dms_purged, room_tokens_purged, replay_shares_purged, room_invites_purged, errors_json)" +
+        " VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .bind(
+        now,
+        result.dmsPurged,
+        result.roomTokensPurged,
+        result.replaySharesPurged,
+        result.roomInvitesPurged,
+        result.errors.length > 0 ? JSON.stringify(result.errors) : null,
+      )
+      .run();
+  } catch {
+    /* best-effort audit; the cleanup itself is what matters */
+  }
+
   return result;
 }

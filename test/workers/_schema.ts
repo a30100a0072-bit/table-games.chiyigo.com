@@ -75,6 +75,15 @@ const DDL = [
      game_id TEXT NOT NULL, player_id TEXT NOT NULL,
      finished_at INTEGER NOT NULL,
      PRIMARY KEY (game_id, player_id))`,
+
+  // Audit log for the daily retention sweep — powers /api/admin/health.
+  `CREATE TABLE IF NOT EXISTS cron_runs (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at INTEGER NOT NULL,
+     dms_purged INTEGER NOT NULL DEFAULT 0,
+     room_tokens_purged INTEGER NOT NULL DEFAULT 0,
+     replay_shares_purged INTEGER NOT NULL DEFAULT 0,
+     room_invites_purged INTEGER NOT NULL DEFAULT 0,
+     errors_json TEXT)`,
 ];
 
 let applied = false;

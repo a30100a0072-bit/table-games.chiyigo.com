@@ -1,6 +1,7 @@
 // /src/workers/gateway.ts
 import { verifyJWT, signJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
 import { takeToken, rateLimited, clientIp }                 from "../utils/rateLimit";
+import { ErrorCode, errorResponse }                          from "../utils/errors";
 import { log, errStr }                                       from "../utils/log";
 import { bump, snapshotMetrics }                             from "../utils/metrics";
 import { handleMatch, LobbyEnv }        from "../api/lobby";
@@ -79,6 +80,9 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "GET"  && url.pathname === "/api/admin/users")
     return cors(await listAdminUsers(request, env));
+
+  if (request.method === "GET"  && url.pathname === "/api/admin/health")
+    return cors(await getAdminHealth(request, env));
 
   if (request.method === "POST" && url.pathname === "/api/tournaments")
     return cors(await createTournament(request, env));
@@ -194,7 +198,7 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
     const body = await request.json<{ playerId?: string }>();
     playerId   = (body.playerId ?? "").trim();
   } catch {
-    return Response.json({ error: "invalid JSON" }, { status: 400 });
+    return errorResponse(ErrorCode.INVALID_JSON, 400);
   }
 
   // Frozen account check — defended at the auth boundary so a banned
@@ -206,25 +210,25 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
     .first<{ frozen_at: number; frozen_reason: string | null }>();
   if (frozen && frozen.frozen_at > 0) {
     log("warn", "auth_blocked_frozen", { playerId, reason: frozen.frozen_reason ?? "unspecified" });
-    return Response.json(
-      { error: "account frozen", reason: frozen.frozen_reason ?? "" },
-      { status: 423 },
+    return errorResponse(
+      ErrorCode.ACCOUNT_FROZEN, 423, undefined,
+      { reason: frozen.frozen_reason ?? "" },
     );
   }
 
   if (playerId.length < 2 || playerId.length > 20)
-    return Response.json({ error: "playerId must be 2–20 chars" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "playerId must be 2–20 chars");
 
   if (!/^[a-zA-Z0-9_-]+$/.test(playerId))
-    return Response.json({ error: "a-z A-Z 0-9 _ - only" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "a-z A-Z 0-9 _ - only");
 
   if (playerId.toUpperCase().startsWith("BOT_"))
-    return Response.json({ error: "reserved prefix" }, { status: 400 });
+    return errorResponse(ErrorCode.RESERVED_PREFIX, 400);
 
   // Deletion tombstones look like `DELETED_<hex>`. Guard signup so a user
   // can't recreate a tombstoned identity.                                 // L3_架構含防禦觀測
   if (playerId.toUpperCase().startsWith("DELETED_"))
-    return Response.json({ error: "reserved prefix" }, { status: 400 });
+    return errorResponse(ErrorCode.RESERVED_PREFIX, 400);
 
   // Lazy-create the user wallet on first login. Idempotent: returning users
   // hit INSERT OR IGNORE / UNIQUE on the signup ledger row and nothing changes.
@@ -287,9 +291,9 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
   try {
     playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 
@@ -310,7 +314,7 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
       .all<{ ledger_id: number; game_id: string | null; delta: number; reason: string; created_at: number }>(),
   ]);
 
-  if (!walletRow) return Response.json({ error: "wallet not found" }, { status: 404 });
+  if (!walletRow) return errorResponse(ErrorCode.WALLET_NOT_FOUND, 404);
 
   return Response.json({
     playerId,
@@ -339,9 +343,9 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
   try {
     playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 
@@ -373,16 +377,16 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
       .first<{ chip_balance: number; last_bailout_at: number }>();
     if (!wallet) {
       log("warn", "bailout_blocked", { playerId, reason: "wallet_not_found" });
-      return Response.json({ error: "wallet not found" }, { status: 404 });
+      return errorResponse(ErrorCode.WALLET_NOT_FOUND, 404);
     }
     const reason = wallet.chip_balance >= BAILOUT_THRESHOLD
       ? "balance above threshold"
       : "cooldown active";
     const nextEligibleAt = wallet.last_bailout_at + BAILOUT_COOLDOWN;
     log("info", "bailout_blocked", { playerId, reason, balance: wallet.chip_balance });
-    return Response.json(
-      { error: reason, balance: wallet.chip_balance, nextEligibleAt },
-      { status: 409 },
+    return errorResponse(
+      ErrorCode.BAILOUT_INELIGIBLE, 409, reason,
+      { balance: wallet.chip_balance, nextEligibleAt },
     );
   }
 
@@ -423,9 +427,9 @@ async function getHistory(request: Request, env: GatewayEnv): Promise<Response> 
   try {
     playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 
@@ -484,20 +488,20 @@ async function getLeaderboard(env: GatewayEnv): Promise<Response> {
 // Writes a chip_ledger 'adjustment' row + atomically refreshes balance.
 
 async function adjustChips(request: Request, env: GatewayEnv): Promise<Response> {
-  if (!env.ADMIN_SECRET) return Response.json({ error: "admin disabled" }, { status: 503 });
+  if (!env.ADMIN_SECRET) return errorResponse(ErrorCode.ADMIN_DISABLED, 503);
   const provided = request.headers.get("X-Admin-Secret") ?? "";
   if (!timingSafeEqual(provided, env.ADMIN_SECRET))
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+    return errorResponse(ErrorCode.UNAUTHORIZED, 401);
 
   let body: { playerId?: string; delta?: number; reason?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
 
   const playerId = (body.playerId ?? "").trim();
   const delta    = Number(body.delta);
   const reason   = (body.reason ?? "").trim() || "manual";
   if (!playerId || !Number.isFinite(delta) || delta === 0 || !Number.isInteger(delta))
-    return Response.json({ error: "playerId + non-zero integer delta required" }, { status: 400 });
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "playerId + non-zero integer delta required");
 
   const now = Date.now();
   const upd = await env.DB
@@ -509,9 +513,7 @@ async function adjustChips(request: Request, env: GatewayEnv): Promise<Response>
     .run();
 
   if (!upd.success || (upd.meta?.changes ?? 0) === 0) {
-    return Response.json(
-      { error: "player not found or would overdraw" }, { status: 409 },
-    );
+    return errorResponse(ErrorCode.OVERDRAW, 409, "player not found or would overdraw");
   }
 
   await env.DB
@@ -538,10 +540,10 @@ async function adjustChips(request: Request, env: GatewayEnv): Promise<Response>
 
 // ── Shared admin gate (timing-safe + 503 when secret unset) ──────────
 function checkAdmin(request: Request, env: GatewayEnv): Response | null {
-  if (!env.ADMIN_SECRET) return Response.json({ error: "admin disabled" }, { status: 503 });
+  if (!env.ADMIN_SECRET) return errorResponse(ErrorCode.ADMIN_DISABLED, 503);
   const provided = request.headers.get("X-Admin-Secret") ?? "";
   if (!timingSafeEqual(provided, env.ADMIN_SECRET))
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+    return errorResponse(ErrorCode.UNAUTHORIZED, 401);
   return null;
 }
 
@@ -552,10 +554,10 @@ async function freezePlayer(request: Request, env: GatewayEnv): Promise<Response
 
   let body: { playerId?: string; reason?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
   const playerId = (body.playerId ?? "").trim();
   const reason   = (body.reason ?? "").trim().slice(0, 200);
-  if (!playerId) return Response.json({ error: "playerId required" }, { status: 400 });
+  if (!playerId) return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "playerId required");
 
   const upd = await env.DB
     .prepare(
@@ -565,7 +567,7 @@ async function freezePlayer(request: Request, env: GatewayEnv): Promise<Response
     .bind(Date.now(), reason || null, Date.now(), playerId)
     .run();
   if (!upd.success || (upd.meta?.changes ?? 0) === 0)
-    return Response.json({ error: "player not found" }, { status: 404 });
+    return errorResponse(ErrorCode.NOT_FOUND, 404, "player not found");
 
   log("warn", "admin_froze", { playerId, reason });
   await writeAudit(env.DB, "freeze", playerId, null, reason);
@@ -579,9 +581,9 @@ async function unfreezePlayer(request: Request, env: GatewayEnv): Promise<Respon
 
   let body: { playerId?: string };
   try { body = await request.json(); }
-  catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
   const playerId = (body.playerId ?? "").trim();
-  if (!playerId) return Response.json({ error: "playerId required" }, { status: 400 });
+  if (!playerId) return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "playerId required");
 
   const upd = await env.DB
     .prepare(
@@ -591,7 +593,7 @@ async function unfreezePlayer(request: Request, env: GatewayEnv): Promise<Respon
     .bind(Date.now(), playerId)
     .run();
   if (!upd.success || (upd.meta?.changes ?? 0) === 0)
-    return Response.json({ error: "player not found" }, { status: 404 });
+    return errorResponse(ErrorCode.NOT_FOUND, 404, "player not found");
 
   log("warn", "admin_unfroze", { playerId });
   await writeAudit(env.DB, "unfreeze", playerId, null, null);
@@ -646,6 +648,71 @@ async function listAdminUsers(request: Request, env: GatewayEnv): Promise<Respon
         .all();
 
   return Response.json({ rows: rows.results ?? [], limit, offset });
+}
+
+// ── GET /api/admin/health — operational snapshot ─────────────────────
+// Aggregates the few signals an operator wants at a glance: most recent
+// cron sweep + recent runs window, table sizes, and frozen-account
+// count. All cheap COUNT(*) / single-row reads — meant to be cheap
+// enough to poll once a minute from a dashboard.
+async function getAdminHealth(request: Request, env: GatewayEnv): Promise<Response> {
+  const gate = checkAdmin(request, env);
+  if (gate) return gate;
+
+  const now    = Date.now();
+  const dayAgo = now - 86_400_000;
+
+  // Run all reads in parallel; each falls back so a single missing table
+  // (e.g. cron_runs on a fresh deploy) doesn't tank the whole endpoint.
+  const [lastCron, recentCronRows, frozen, ledger, replays, dms, shares] = await Promise.all([
+    env.DB.prepare(
+      "SELECT ran_at, dms_purged, room_tokens_purged, replay_shares_purged," +
+      "       room_invites_purged, errors_json" +
+      "  FROM cron_runs ORDER BY ran_at DESC LIMIT 1",
+    ).first<{
+      ran_at: number; dms_purged: number; room_tokens_purged: number;
+      replay_shares_purged: number; room_invites_purged: number;
+      errors_json: string | null;
+    }>().catch(() => null),
+    env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN errors_json IS NOT NULL THEN 1 ELSE 0 END) AS failed" +
+      "  FROM cron_runs WHERE ran_at >= ?",
+    ).bind(now - 7 * 86_400_000)
+     .first<{ n: number; failed: number }>().catch(() => ({ n: 0, failed: 0 })),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE frozen_at > 0")
+      .first<{ n: number }>().catch(() => ({ n: 0 })),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM chip_ledger WHERE created_at >= ?")
+      .bind(dayAgo).first<{ n: number }>().catch(() => ({ n: 0 })),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM replay_meta")
+      .first<{ n: number }>().catch(() => ({ n: 0 })),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM dms")
+      .first<{ n: number }>().catch(() => ({ n: 0 })),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM replay_shares WHERE expires_at > ?")
+      .bind(now).first<{ n: number }>().catch(() => ({ n: 0 })),
+  ]);
+
+  return Response.json({
+    now,
+    cron: {
+      lastRunAt:      lastCron?.ran_at ?? null,
+      lastResult:     lastCron && {
+        dmsPurged:          lastCron.dms_purged,
+        roomTokensPurged:   lastCron.room_tokens_purged,
+        replaySharesPurged: lastCron.replay_shares_purged,
+        roomInvitesPurged:  lastCron.room_invites_purged,
+        errors:             lastCron.errors_json ? JSON.parse(lastCron.errors_json) as string[] : [],
+      },
+      runsLast7d:     recentCronRows?.n      ?? 0,
+      failuresLast7d: recentCronRows?.failed ?? 0,
+    },
+    counts: {
+      frozenUsers:        frozen?.n  ?? 0,
+      ledgerRowsLast24h:  ledger?.n  ?? 0,
+      replayRows:         replays?.n ?? 0,
+      dmRows:             dms?.n     ?? 0,
+      activeReplayShares: shares?.n  ?? 0,
+    },
+  });
 }
 
 // Constant-time string compare to avoid leaking the admin secret length.
@@ -743,9 +810,9 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
   try {
     playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
   } catch (err) {
-    return Response.json(
-      { error: err instanceof JWTError ? err.message : "unauthorized" },
-      { status: 401 },
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED, 401,
+      err instanceof JWTError ? err.message : undefined,
     );
   }
 
