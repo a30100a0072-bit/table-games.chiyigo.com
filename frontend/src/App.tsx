@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { GameType, SettlementResult } from "./shared/types";
 import LoginScreen      from "./components/LoginScreen";
 import GameSelectScreen from "./components/GameSelectScreen";
@@ -6,6 +6,9 @@ import LobbyScreen      from "./components/LobbyScreen";
 import GameScreen       from "./components/GameScreen";
 import ResultScreen     from "./components/ResultScreen";
 import ReplaysModal     from "./components/ReplaysModal";
+// Admin dashboard is reached via ?admin=1 only; lazy-load so its bundle
+// doesn't tax the login/lobby chunks.
+const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
 import { listMyTournamentsApi } from "./api/http";
 import type { MyTournamentRow } from "./api/http";
 import { useT } from "./i18n/useT";
@@ -44,6 +47,12 @@ export default function App() {
     if (typeof window === "undefined") return null;
     const u = new URL(window.location.href);
     return u.searchParams.get("replay");
+  });
+  // ?admin=1 unhides the admin dashboard. Not advertised in any UI nav —
+  // discovery is by URL, the dashboard itself gates on the admin secret.
+  const [showAdmin, setShowAdmin] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return new URL(window.location.href).searchParams.get("admin") === "1";
   });
 
   async function copyRoomId(id: string) {
@@ -126,6 +135,22 @@ export default function App() {
         >
           {t("pwa.install")}
         </button>
+      )}
+      {showAdmin && (
+        <Suspense fallback={null}>
+          <AdminDashboard
+            onClose={() => {
+              if (typeof window !== "undefined") {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has("admin")) {
+                  url.searchParams.delete("admin");
+                  window.history.replaceState(null, "", url.toString());
+                }
+              }
+              setShowAdmin(false);
+            }}
+          />
+        </Suspense>
       )}
       {pendingReplayToken && (
         <ReplaysModal
