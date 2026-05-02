@@ -312,6 +312,17 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
 
   if (!takeToken(`wallet:${playerId}`, "wallet")) return rateLimited();
 
+  // Cursor pagination: ?ledgerCursor=N returns rows with ledger_id < N,
+  // newest first. Lets the wallet UI load older history without re-
+  // fetching everything. Cursor of 0 / unset = "from the top".
+  const url = new URL(request.url);
+  const cursorRaw = url.searchParams.get("ledgerCursor");
+  const cursor = cursorRaw && /^\d+$/.test(cursorRaw)
+    ? Number(cursorRaw)
+    : Number.MAX_SAFE_INTEGER;
+
+  const PAGE_SIZE = 20;
+
   const [walletRow, ledger] = await Promise.all([
     env.DB
       .prepare("SELECT display_name, chip_balance, updated_at FROM users WHERE player_id = ?")
@@ -320,21 +331,28 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
     env.DB
       .prepare(
         "SELECT ledger_id, game_id, delta, reason, created_at" +
-        " FROM chip_ledger WHERE player_id = ?" +
+        " FROM chip_ledger WHERE player_id = ? AND ledger_id < ?" +
         " ORDER BY ledger_id DESC LIMIT 20",
       )
-      .bind(playerId)
+      .bind(playerId, cursor)
       .all<{ ledger_id: number; game_id: string | null; delta: number; reason: string; created_at: number }>(),
   ]);
 
   if (!walletRow) return errorResponse(ErrorCode.WALLET_NOT_FOUND, 404);
+
+  const rows = ledger.results ?? [];
+  // nextCursor signals "there might be more" — we stamp it whenever we
+  // returned a full page. Caller passes it back as ledgerCursor to get
+  // the next chunk; null means "you've seen everything".
+  const nextLedgerCursor = rows.length === PAGE_SIZE ? rows[rows.length - 1]!.ledger_id : null;
 
   return Response.json({
     playerId,
     displayName: walletRow.display_name,
     chipBalance: walletRow.chip_balance,
     updatedAt:   walletRow.updated_at,
-    ledger:      ledger.results ?? [],
+    ledger:      rows,
+    nextLedgerCursor,
   });
 }
 

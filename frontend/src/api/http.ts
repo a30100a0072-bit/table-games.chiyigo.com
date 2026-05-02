@@ -20,6 +20,7 @@ export interface WalletResponse {
   chipBalance: number;
   updatedAt:   number;
   ledger:      LedgerEntry[];
+  nextLedgerCursor: number | null;
 }
 
 export class InsufficientChipsError extends Error {
@@ -71,8 +72,11 @@ export async function findMatch(token: string, gameType: GameType): Promise<Matc
   return { roomId: data.roomId, wsUrl, players: data.players, gameType: data.gameType };
 }
 
-export async function getWallet(token: string): Promise<WalletResponse> {
-  const res = await fetch(`${BASE}/api/me/wallet`, {
+export async function getWallet(token: string, ledgerCursor?: number): Promise<WalletResponse> {
+  const url = ledgerCursor !== undefined
+    ? `${BASE}/api/me/wallet?ledgerCursor=${ledgerCursor}`
+    : `${BASE}/api/me/wallet`;
+  const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);

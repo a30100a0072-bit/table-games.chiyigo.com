@@ -57,6 +57,7 @@ const ZH = {
   "stats.history.net":     "淨分",
   "wallet.balance":        "餘額",
   "wallet.empty":          "尚無流水紀錄",
+  "wallet.loadMore":       "載入更多",
   "wallet.bailout":        "🆘 領取救濟金（餘額 < {n}，每 24h 一次）",
   "wallet.bailoutLoading": "領取中…",
 
@@ -218,6 +219,8 @@ const ZH = {
   "rep.shareFailed":         "分享失敗",
   "rep.kbHint":              "鍵盤：← → 上下步｜空白播放／暫停｜Home/End 跳到首/末",
   "rep.download":            "下載 JSON",
+  "rep.filter.all":          "全部",
+  "rep.filter.winsOnly":     "只看勝場",
 
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
@@ -392,6 +395,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "stats.history.net":      "Net",
   "wallet.balance":         "Balance",
   "wallet.empty":           "No ledger entries",
+  "wallet.loadMore":        "Load more",
   "wallet.bailout":         "🆘 Claim relief (balance < {n}, once per 24h)",
   "wallet.bailoutLoading":  "Claiming…",
 
@@ -541,6 +545,8 @@ const EN: Partial<Record<DictKey, string>> = {
   "rep.shareFailed":          "Share failed",
   "rep.kbHint":               "Keys: ← → step · Space play/pause · Home/End jump",
   "rep.download":             "Download JSON",
+  "rep.filter.all":           "All",
+  "rep.filter.winsOnly":      "Wins only",
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",

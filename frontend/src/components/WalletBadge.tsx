@@ -140,6 +140,22 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
                   </span>
                 </li>
               ))}
+              {wallet.nextLedgerCursor !== null && (
+                <li className="flex justify-center pt-1">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const more = await getWallet(token, wallet.nextLedgerCursor!);
+                        setWallet({
+                          ...more,
+                          ledger: [...wallet.ledger, ...more.ledger],
+                        });
+                      } catch (e) { setError(formatApiError(e, t)); }
+                    }}
+                    className="rounded bg-green-800 px-3 py-0.5 text-[10px] font-bold text-yellow-200 hover:bg-green-700"
+                  >{t("wallet.loadMore")}</button>
+                </li>
+              )}
             </ul>
           )}
 

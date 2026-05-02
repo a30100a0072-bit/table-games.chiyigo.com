@@ -182,7 +182,7 @@ export default function GameSelectScreen({
           onEnter={(roomId, gameType) => { setInvites(false); onPrivateEnter(roomId, gameType); }}
         />
       )}
-      {replays && <ReplaysModal token={token} onClose={() => setReplays(false)} />}
+      {replays && <ReplaysModal token={token} playerId={playerId} onClose={() => setReplays(false)} />}
       {specOpen && onSpectate && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-green-900 p-5 shadow-2xl">

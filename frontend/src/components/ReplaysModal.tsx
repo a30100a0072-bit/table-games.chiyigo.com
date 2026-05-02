@@ -12,6 +12,9 @@ import { useT } from "../i18n/useT";
 interface Props {
   /** Required for the owner-side flow (list + per-game open + share). */
   token?:   string;
+  /** Caller's playerId — used by the "wins only" filter on the list view
+   *  so we can match against winnerId. Not needed for shared-link mode. */
+  playerId?: string;
   /** When set, skip the list and load this shared-replay token directly.
    *  No JWT needed — the underlying GET is public. */
   sharedReplayToken?: string;
@@ -181,7 +184,7 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
 
 // ─── Main modal ──────────────────────────────────────────────────────────
 
-export default function ReplaysModal({ token, sharedReplayToken, onClose }: Props) {
+export default function ReplaysModal({ token, playerId, sharedReplayToken, onClose }: Props) {
   useEscapeClose(onClose);
   const trapRef = useFocusTrap<HTMLDivElement>();
   const { t } = useT();
@@ -192,6 +195,11 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
   const [err,     setErr]     = useState<string | null>(null);
   const [shares,  setShares]  = useState<MyShareEntry[] | null>(null);
   const [showShares, setShowShares] = useState(false);
+  // Filter state — purely client-side over the existing `list` array.
+  // Re-fetching server-side filtered slices isn't worth it at our scale
+  // (list is capped at 30 rows by listMyReplays anyway).
+  const [filterGameType, setFilterGameType] = useState<GameType | "all">("all");
+  const [winsOnly,       setWinsOnly]       = useState(false);
 
   async function refreshShares() {
     if (!token) return;
@@ -384,8 +392,36 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                 <p className="text-center text-xs text-green-500">{t("rep.empty")}</p>
               )}
               {list && list.length > 0 && (
+                <>
+                  {/* Filter row — gameType pills + wins-only toggle */}
+                  <div className="mb-2 flex flex-wrap items-center gap-1 text-[10px]">
+                    {(["all", "bigTwo", "mahjong", "texas"] as const).map(g => (
+                      <button
+                        key={g}
+                        onClick={() => setFilterGameType(g)}
+                        className={[
+                          "rounded-full px-2 py-0.5 font-bold",
+                          filterGameType === g ? "bg-yellow-500 text-green-950" : "bg-green-800 text-green-300 hover:bg-green-700",
+                        ].join(" ")}
+                      >{g === "all" ? t("rep.filter.all") : ICON[g]}</button>
+                    ))}
+                    {playerId && (
+                      <label className="ml-auto flex items-center gap-1 text-green-300">
+                        <input
+                          type="checkbox"
+                          checked={winsOnly}
+                          onChange={e => setWinsOnly(e.target.checked)}
+                          className="accent-yellow-400"
+                        />
+                        🏆 {t("rep.filter.winsOnly")}
+                      </label>
+                    )}
+                  </div>
                 <ul className="flex flex-col gap-1.5">
-                  {list.map(r => (
+                  {list
+                    .filter(r => filterGameType === "all" || r.gameType === filterGameType)
+                    .filter(r => !winsOnly || r.winnerId === playerId)
+                    .map(r => (
                     <li
                       key={r.gameId}
                       className="flex items-center justify-between gap-2 rounded-md bg-green-800/60 px-3 py-2"
@@ -454,6 +490,7 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                     </li>
                   ))}
                 </ul>
+                </>
               )}
             </>
           )}
