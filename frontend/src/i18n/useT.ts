@@ -18,10 +18,12 @@ function detectInitial(): Locale {
   return "en";
 }
 
+export type TFunction = (key: DictKey, vars?: Record<string, string | number>) => string;
+
 interface Ctx {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  t: (key: DictKey, vars?: Record<string, string | number>) => string;
+  t: TFunction;
 }
 
 const I18nCtx = createContext<Ctx | null>(null);
