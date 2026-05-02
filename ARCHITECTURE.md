@@ -1,9 +1,44 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-02（Friend 推薦 + Block 列表 + Replay 分享 / 撤銷 / 點閱統計 + last_viewed_at + 離線快取 + 鍵盤快捷鍵 + JSON 下載 + 麻將進階台 v3 + GDPR delete/export + tail forwarder retry + 前端 game screens / admin code-split + chip_ledger 複合索引 + replay_participants 索引表 + cron retention sweep + ErrorCode 全 9 模組覆蓋 + 前端 ApiError class / errorCodes i18n 對應 / formatApiError 全 component catch 接線 + 全域 ErrorBoundary + 嚴格 CSP + Modal Escape 鍵關閉 + role/aria-modal + 全 modal focus-trap + TournamentModal/StatsModal 完整 i18n + WS 重連狀態 i18n + PWA SW stale-while-revalidate + Workers 整合測試擴充 + admin health 儀表（後端 + 前端） + rate limit invite/share 桶細分）
+> 最後更新：2026-05-02 — post-launch hardening 收尾。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
 >
-> **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅；CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅；**ES256 JWKS + 多 key 輪換**；**籌碼錢包 + 流水帳本 + ANTE + bailout + daily bonus + forfeit + admin freeze**；**Tournament 後端+前端（含 Texas blind escalation 10/20→20/40→50/100）**；**Mahjong `ENGINE_VERSION=3`（含搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）**；**i18n 雙語**；**PWA**；**結構化 JSON log → tail forwarder → 通用 webhook**；**Friends / Private rooms / Spectator (含 live listings) / Replay (含 token 分享) / Room invites / Friend DM**；**GDPR DELETE + export `/api/me`**
+> **核心架構**
+>   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
+>   - 三款 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅
+>   - CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅
+>   - ES256 JWKS + 多 key 輪換；結構化 JSON log → tail forwarder（含 retry/backoff）→ 通用 webhook
+>
+> **遊戲與經濟**
+>   - 籌碼錢包 + 流水帳本（cursor 分頁） + ANTE + bailout + daily bonus + forfeit + admin freeze
+>   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）
+>   - Mahjong `ENGINE_VERSION = 3`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）
+>   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong；Texas OESD draw + 位置感知 Chen 門檻
+>
+> **社交**
+>   - Friends（含**共玩推薦** `GET /api/friends/recommendations`，replay_participants self-join）
+>   - **Block 列表**（單向、雙向 gate 友情 / DM / 邀請、帳號刪除清雙向）
+>   - Private rooms / Spectator（含 live listings） / Room invites / Friend DM
+>   - Replay（token 分享、**手動撤銷**、**view_count + last_viewed_at**、JSON 下載、鍵盤快捷鍵、列表篩選）
+>
+> **可靠性與運維**
+>   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass
+>   - **WS keep-alive**：30s 週期 sync 防中介 proxy idle 斷線
+>   - **每日 cron retention sweep**（dms 7d / 過期 token / share / invite）+ `cron_runs` 稽核表
+>   - **`/api/admin/health` 儀表**（後端 + 前端 dashboard，session-stored secret，30s auto-refresh）
+>   - rate-limit 細分桶：token / match / wallet / bailout / friend / dm / **invite** / **share**
+>
+> **隱私與合規**
+>   - GDPR DELETE + export `/api/me`（hybrid：個人資料硬刪 / 審計列匿名化為 tombstone）
+>
+> **品質**
+>   - i18n 雙語（zh-TW + en，全 modal + game screens 完整覆蓋；含 WS 重連狀態、ErrorCode → 對應錯誤訊息）
+>   - 全域 ErrorBoundary（class component，i18n locale 從 localStorage 直讀以承受 provider 自身崩潰）
+>   - 全 7 modal a11y kit：Escape 關閉 / role="dialog" + aria-modal / focus-trap / 初始焦點 + 還原
+>   - 嚴格 CSP（`script-src 'self'` 無 inline、SW reg 移到外部檔）
+>   - 前端 code-split：login/lobby + 三遊戲 + admin dashboard 各為獨立 chunk
+>   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
+>   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
 >   - **Node 單元測試**：24 檔 / **273 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
@@ -301,15 +336,72 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - `.gitattributes`：commit 不再噴 CRLF 警告
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
 
-### ⏳ 真正剩下的
+### ⏳ 真正剩下的（2026-05-02 第七批之後）
 
 **需要外部資源**
-1. ~~**Sentry / Cloudflare Logpush 接線**~~ — 完成（2026-05-01 第三批）：自帶 tail forwarder worker `big-two-log-forwarder`（`src/forwarder/index.ts` + `wrangler.forwarder.toml`），CI 在主 worker 部署前先部署；接通用 webhook（Discord / Slack / 任意 sink）。**只剩手動一步**：`wrangler secret put WEBHOOK_URL --config wrangler.forwarder.toml` 設你的 webhook URL；secret 未設則 forwarder 收到事件後直接 return（安靜無動作，不會壞主 worker）
-2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**（2026-05-01 決議）：guest token + 帳號凍結 + ledger 已足夠跑 demo / 內測；待用戶量上來再啟動 IdP 申請
+1. ~~**Sentry / Cloudflare Logpush 接線**~~ — 完成（2026-05-01 第三批 / 2026-05-02 第七批加 retry + DLQ-via-stderr）
+2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**：guest token + 帳號凍結 + ledger 足夠跑 demo / 內測
 
-**麻將進階台（剩 1 項）**
-3. ~~**搶槓 / 七搶一 / 八仙過海**~~ — 完成（2026-05-01 第五批，bump `ENGINE_VERSION = 3`）
-4. **連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先把麻將改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）才有意義
+**真正待辦**
+3. **麻將連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）
+4. **e2e 測試（Cypress / Playwright in CI）** — 目前 Node 24 + Workers 6 個檔的 unit/integration coverage 都很厚；e2e 加上去能補完整 UI flow，但需要 CI runner 跑 vite dev + worker dev 雙進程，infrastructure cost 高
+5. **Replay 全域精選頁** — 需設計議題：誰能精選（admin / 自己 / 任何人）、保留期、隱私邊界（精選後別人能看的範圍）、是否與 share token 整合
+6. **Mahjong shanten / 真實 wait shape scoring** — bot discard 可從目前的 isolation+neighbour heuristic 升級到計算 shanten（離胡的步數）。需要寫一個 shanten 函式 + 測試套，是真的 algorithmic work。當前的 don't-feed-kong + kong-instead-of-pong 已經把 reactionphase 抓到能抓的便宜
+7. **Texas 後翻牌 paired-board kicker awareness** — bot 目前對 trips/quads 直接 raise，沒考慮自己的 kicker 是否被 board 蓋掉。現有 OESD + 位置感知 已經抓到 preflop 大部分修正空間
+
+### ✅ 後續補齊（2026-05-02 第七批 — post-launch hardening）
+
+長條 polish 收尾，分項見下；設計合約紀錄在 memory `project_post_launch_hardening.md`。
+
+**社交擴充**
+- **Block 列表**：`blocks(blocker, blockee)` PK + idx 反查；單向（blockee 收不到信號）；雙向 gate friend/DM/invite；`isBlockedEitherWay` helper 一個 SELECT 涵蓋兩端；帳號刪除清雙向；`ErrorCode.BLOCKED` 訊息中性不洩方向
+- **Friend 共玩推薦** `GET /api/friends/recommendations`：一個 prepared self-join over `replay_participants`（不需新 schema）；SQL 內排除 BOT/DELETED/self/既有 friendship/雙向 block；ORDER BY count DESC, last_at DESC LIMIT 10
+- **Replay 分享延伸**：手動撤銷（owner-scoped DELETE，非擁有者收 404 不洩 token 存在性）、`view_count + last_viewed_at`（resolve 時 best-effort 更新）、JSON 下載按鈕、播放鍵盤快捷鍵（←→/Space/Home/End）、列表篩選（gameType + 只看勝場）
+
+**API 錯誤鏈路（端到端）**
+- `src/utils/errors.ts`：`ErrorCode` enum + `errorResponse(code, status, message?, extras?)`；response 同時帶 legacy `error` 與新 `code`/`message`
+- 全 9 個 API module（gateway / lobby / friends / dms / privateRooms / roomInvites / replays / tournaments / account）migrated（97 處 `Response.json({error})` → `errorResponse(...)`）
+- 前端 `frontend/src/i18n/errorCodes.ts`：`ApiError` class（status / code / body）+ `formatApiError(source, t)` 翻譯
+- `http.ts` 的 30 處 `throw new Error(\`X failed: \${res.status}\`)` → `throw await readApiError(res)`
+- 10 個 component 的 catch site：`e instanceof Error ? e.message` → `formatApiError(e, t)`
+- `err.*` i18n key 涵蓋全 ErrorCode（zh-TW + en）
+
+**可靠性**
+- **PWA SW 重構**（multi-strategy）：app shell SWR / replay GET cache-first 30d TTL（`x-cached-at` header） / 動態端點 bypass；replay cache 用獨立 key `chiyigo-replays-v1` 升 SW 不掉
+- **WebSocket keep-alive**：`GameSocket.startKeepAlive` 每 30s sendSync 防中介 proxy idle；`keepAliveMs` 可設 0 停用；mirror 到 `frontend/src/shared/GameSocket.ts` + `src/client/GameSocket.ts`
+- **Tail forwarder retry**：`postWithRetry` 3 次嘗試 200/800ms 指數退避；4xx 立即放棄；終態失敗 `console.error` 落 forwarder 自己的 tail
+- **每日 cron retention sweep**：`scheduled` handler + `cronCleanup.runCleanup`；清 dms 7d 過期、room_tokens / replay_shares / room_invites 過期；新 `cron_runs` 稽核表記錄每次跑（含 errors_json）
+
+**運維儀表**
+- **`/api/admin/health`**：cron 最近執行 + 7 天 run/failure / 表計數（frozenUsers / ledger 24h / replays / dms / activeShares）；`X-Admin-Secret` gated
+- **AdminDashboard 前端**：`?admin=1` deeplink；secret 存 `sessionStorage`（隨 tab 死）；30s auto-refresh；bad-secret 自動清 + 重提示；React.lazy 獨立 chunk
+
+**a11y / i18n 補完**
+- `useEscapeClose` + `useFocusTrap` hooks：全 7 個 modal（FriendsModal / ReplaysModal / PrivateRoomModal / InvitesModal / AdminDashboard / TournamentModal / StatsModal）
+- 全 modal `role="dialog"` + `aria-modal="true"`
+- TournamentModal + StatsModal 完整 i18n 化（先前還是硬寫 zh-TW）
+- WS 重連狀態 i18n（`ws.reconnecting` 帶 `{attempt}` 計數器）
+- 全域 `ErrorBoundary`（class component；包在 I18nProvider 外側；locale 從 localStorage 直讀以承受 provider 自身崩潰）
+- ReplaysModal 分享/撤銷 UI 字串入字典 + icon-only 按鈕加 aria-label
+
+**安全 / 資源**
+- **嚴格 CSP**（`frontend/public/_headers`）：`script-src 'self'` 無 inline；inline SW 註冊移到 `/sw-register.js`；frame-ancestors 'none'；Permissions-Policy 鎖 camera/mic/geo
+- **Rate-limit 8 桶**：新增 `invite`（15/min）+ `share`（5/min）細分桶，roomInvites + shareReplay 切換到對應 bucket
+
+**效能**
+- **D1 索引調優**：新 `idx_chip_ledger_player_ledger(player_id, ledger_id DESC)` 複合索引；新 `replay_participants` 索引表 + `idx_replay_participants_player(player_id, finished_at DESC)`，`listMyReplays` + account export 從 LIKE-scan 換 indexed JOIN（含 idempotent backfill）
+- **Wallet 流水 cursor 分頁**：`/api/me/wallet?ledgerCursor=N` + `nextLedgerCursor` 回傳；前端「載入更多」按鈕
+- **前端 code-split**：`React.lazy` 切三個遊戲畫面 + admin dashboard 各為獨立 chunk（gzip 1.6–4.3 kB）
+
+**Bot AI 補強**
+- **BigTwo**：`pickLead` 加「single-shot win」分支（手牌剛好等於合法組合 → 直接清光），加「opponent-near-win 加壓」（對手剩 1 張時 lead 最高單張）
+- **Mahjong**：`pickDiscardTile` 加 danger set 不丟對手已碰的牌（避免被加槓）；reaction phase 在 pong 上方加 kong 分支（手中已 3 張時直接 kong）
+- **Texas**：post-flop 高牌分支加 OESD 偵測（兩端 open 4-連續 rank，等同 8-out flush draw 處理）；preflop Chen 門檻位置感知（button -1 / UTG +1 / BB-close -1），需在 `PokerSelfView` 加 `seatIdx`
+
+**測試矩陣**
+- Node 單元：23 → 24 檔（新增 blocks、cronCleanup、errors、friendRecommendations）；案例數 227 → 273（+46）
+- Workers 整合：2 → 6 檔（新增 replay-share / account-export / dms-flow / admin-health；shared `_schema.ts` helper）；案例數 6 → 16（+10）
+- **總計 289 測試**，三組 typecheck（src / test / frontend）皆 0 error
 
 ### ✅ 後續補齊（2026-05-02 第六批 — 互動延伸）
 - **Replay 分享 token**（`src/db/schema.sql` 加 `replay_shares` 表 + 兩索引 / `src/api/replays.ts` `shareReplay` + `resolveSharedReplay` / `src/workers/gateway.ts` 路由 `POST /api/replays/:gameId/share` + `GET /api/replays/by-token/:token` / `frontend/src/api/http.ts` `shareReplayApi` + `getSharedReplayApi` / `frontend/src/components/ReplaysModal.tsx` 加 🔗 按鈕產生 + 複製 URL，`token` 改為 optional 並加 `sharedReplayToken` prop / `frontend/src/App.tsx` 偵測 `?replay=<token>` deeplink、未登入也能看 / `test/replays.test.ts` +6 案）：仿 private-room token 模式；座位玩家簽發 capability token，TTL 預設 7 天上限 30 天下限 1 小時；公開 GET 走 sharedBy 標籤；舊 engine_version 仍保留 settlement-only fallback；deeplink 消費後 `history.replaceState` 移除 query 防 reload 重觸發
