@@ -107,7 +107,7 @@ function beatFiveCard(hand: Card[], minScore: number): { cards: Card[]; combo: C
  *  Endgame hold: never lead with a "2" unless it's the only option, since
  *  2s are the highest cards in Big Two and are best saved for closing
  *  tricks against opponents. Pairs/triples of 2 are also avoided. */
-function pickLead(hand: Card[]): { cards: Card[]; combo: ComboType } {
+function pickLead(hand: Card[], opponentMinCount: number = Infinity): { cards: Card[]; combo: ComboType } {
   const sorted = sortAsc(hand);
   // Opening turn 3♣ rule: if 3♣ is present, lead with it (machine enforces). // L3_邏輯安防
   const threeClub = sorted.find(c => c.rank === "3" && c.suit === "clubs");
@@ -133,6 +133,18 @@ function pickLead(hand: Card[]): { cards: Card[]; combo: ComboType } {
     }
   }
 
+  // Threat lead: an opponent with exactly 1 card wins the trick on
+  // their next turn unless we play something they can't beat. Their 1
+  // card can only beat us as a single, so leading our HIGHEST single
+  // gives them the fewest beats. Skipped when our hand is shorter than
+  // 3 — at 2 cards we're already in our own endgame and the
+  // single-shot branch above handles it; below that pickLead isn't
+  // even called.                                                             // L3_邏輯安防
+  if (opponentMinCount === 1 && sorted.length >= 3) {
+    const highest = sorted[sorted.length - 1]!;
+    return { cards: [highest], combo: "single" };
+  }
+
   const rankCount = new Map<Rank, number>();
   for (const c of sorted) rankCount.set(c.rank, (rankCount.get(c.rank) ?? 0) + 1);
 
@@ -154,6 +166,10 @@ export function getBigTwoBotAction(view: GameStateView, botHand: Card[]): Player
   const { lastPlay } = view;
 
   if (lastPlay === null) {
+    const opponentMinCount = view.opponents.length > 0
+      ? Math.min(...view.opponents.map(o => o.cardCount))
+      : Infinity;
+
     // Aggressive lead: when controlling the trick with ≥6 cards left,
     // dump a 5-card combo if we have one — burns through the hand fast
     // and forces opponents into reactive play. Falls back to pickLead.
@@ -161,7 +177,7 @@ export function getBigTwoBotAction(view: GameStateView, botHand: Card[]): Player
       const five = leadFiveCard(sorted);
       if (five) return { type: "play", cards: five.cards, combo: five.combo };
     }
-    const lead = pickLead(sorted);
+    const lead = pickLead(sorted, opponentMinCount);
     return { type: "play", cards: lead.cards, combo: lead.combo };
   }
 

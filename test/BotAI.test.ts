@@ -176,6 +176,46 @@ describe("Big Two bot", () => {
     expect(a.combo).toBe("straight");
   });
 
+  it("leads the highest single when an opponent has exactly 1 card left", () => {
+    // 3-card hand 5/9/K with opp on 1 card → play K to deny their winning trick.
+    const hand: Card[] = [
+      { rank: "5", suit: "hearts" },
+      { rank: "9", suit: "spades" },
+      { rank: "K", suit: "diamonds" },
+    ];
+    const v = bigTwoView({
+      self: { playerId: "BOT_1", hand, cardCount: 3 },
+      opponents: [
+        { playerId: "p2", cardCount: 1, exposedMelds: [], flowerCount: 0 } as never,
+        { playerId: "p3", cardCount: 5, exposedMelds: [], flowerCount: 0 } as never,
+      ],
+    });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.cards).toEqual([{ rank: "K", suit: "diamonds" }]);
+    expect(a.combo).toBe("single");
+  });
+
+  it("ignores threat heuristic when no opponent is at 1 card", () => {
+    // Same hand; opp at 5 cards → falls through to isolated-non-2 (lowest), here 5♥.
+    const hand: Card[] = [
+      { rank: "5", suit: "hearts" },
+      { rank: "9", suit: "spades" },
+      { rank: "K", suit: "diamonds" },
+    ];
+    const v = bigTwoView({
+      self: { playerId: "BOT_1", hand, cardCount: 3 },
+      opponents: [
+        { playerId: "p2", cardCount: 5, exposedMelds: [], flowerCount: 0 } as never,
+      ],
+    });
+    const a = getBigTwoBotAction(v, hand);
+    expect(a.type).toBe("play");
+    if (a.type !== "play") return;
+    expect(a.cards).toEqual([{ rank: "5", suit: "hearts" }]);
+  });
+
   it("falls back to single lead when 2-card hand isn't a pair", () => {
     const hand: Card[] = [
       { rank: "9", suit: "hearts" },
