@@ -24,11 +24,17 @@ export const ErrorCode = {
   INTERNAL:            "INTERNAL",
   // Domain-specific codes — extend here as new endpoints adopt the helper.
   ACCOUNT_DELETE_FAILED:    "ACCOUNT_DELETE_FAILED",
+  ACCOUNT_FROZEN:           "ACCOUNT_FROZEN",
   MISSING_CONFIRMATION:     "MISSING_CONFIRMATION",
   WALLET_NOT_FOUND:         "WALLET_NOT_FOUND",
   REPLAY_NOT_FOUND:         "REPLAY_NOT_FOUND",
   REPLAY_FORBIDDEN:         "REPLAY_FORBIDDEN",
   REPLAY_SHARE_EXPIRED:     "REPLAY_SHARE_EXPIRED",
+  INVALID_JSON:             "INVALID_JSON",
+  RESERVED_PREFIX:          "RESERVED_PREFIX",
+  ADMIN_DISABLED:           "ADMIN_DISABLED",
+  BAILOUT_INELIGIBLE:       "BAILOUT_INELIGIBLE",
+  OVERDRAW:                 "OVERDRAW",
 } as const;
 export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
 
@@ -42,11 +48,17 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   GONE:                   "gone",
   INTERNAL:               "internal error",
   ACCOUNT_DELETE_FAILED:  "deletion failed",
+  ACCOUNT_FROZEN:         "account frozen",
   MISSING_CONFIRMATION:   "missing confirmation header",
   WALLET_NOT_FOUND:       "wallet not found",
   REPLAY_NOT_FOUND:       "not found",
   REPLAY_FORBIDDEN:       "forbidden",
   REPLAY_SHARE_EXPIRED:   "share link expired",
+  INVALID_JSON:           "invalid JSON",
+  RESERVED_PREFIX:        "reserved prefix",
+  ADMIN_DISABLED:         "admin disabled",
+  BAILOUT_INELIGIBLE:     "bailout not eligible",
+  OVERDRAW:               "would overdraw",
 };
 
 /** Build a standard error Response. Carries both the legacy `error` field
