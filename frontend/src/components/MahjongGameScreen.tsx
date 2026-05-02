@@ -168,7 +168,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
   const [view,     setView]     = useState<MahjongStateView | null>(null);
   const [picked,   setPicked]   = useState<string | null>(null);  // tile key
   const [sysMsg,   setSysMsg]   = useState("");
-  const [connMsg,  setConnMsg]  = useState("連線中…");
+  const [connMsg,  setConnMsg]  = useState(t("ws.connecting"));
   const [reactLeft, setReactLeft] = useState(0);  // reaction phase countdown (s)
   const [chowPicker, setChowPicker] = useState(false);
   const socketRef = useRef<GameSocket | null>(null);
@@ -178,7 +178,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
     socketRef.current = sock;
 
     sock.on("connected",    ()    => setConnMsg(""));
-    sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? "重新連線中…" : "連線中斷"));
+    sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? t("ws.reconnecting", { attempt: i.attempt + 1 }) : t("ws.disconnected")));
     sock.on("state",        (v)   => {
       const next = v as unknown as MahjongStateView;
       setView(prev => {
@@ -241,7 +241,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
   if (!view)
     return (
       <div className="flex h-full items-center justify-center bg-green-950">
-        <p className="text-green-300">{connMsg || "等待遊戲開始…"}</p>
+        <p className="text-green-300">{connMsg || t("ws.waitingGame")}</p>
       </div>
     );
 

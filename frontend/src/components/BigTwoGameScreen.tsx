@@ -162,7 +162,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
   const [view,     setView]     = useState<GameStateView | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sysMsg,   setSysMsg]   = useState("");
-  const [connMsg,  setConnMsg]  = useState("連線中…");
+  const [connMsg,  setConnMsg]  = useState(t("ws.connecting"));
   const [timeLeft, setTimeLeft] = useState(0);
   // 快捷鍵循環狀態：同一鍵按多次會循環顯示同類型的下一個組合。              // L2_實作
   const [cycle,    setCycle]    = useState<{ type: QuickComboType; index: number } | null>(null);
@@ -175,7 +175,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
     socketRef.current = sock;
 
     sock.on("connected",    ()      => setConnMsg(""));
-    sock.on("disconnected", (info)  => setConnMsg(info.willReconnect ? "重新連線中…" : "連線中斷"));
+    sock.on("disconnected", (info)  => setConnMsg(info.willReconnect ? t("ws.reconnecting", { attempt: info.attempt + 1 }) : t("ws.disconnected")));
     sock.on("state",        (v)     => {
       const wasMyTurn = view?.currentTurn === playerId;
       const nowMyTurn = v.currentTurn === playerId;
@@ -256,7 +256,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
   if (!view) {
     return (
       <div className="flex h-full items-center justify-center bg-green-950">
-        <p className="text-green-300">{connMsg || "等待遊戲開始…"}</p>
+        <p className="text-green-300">{connMsg || t("ws.waitingGame")}</p>
       </div>
     );
   }

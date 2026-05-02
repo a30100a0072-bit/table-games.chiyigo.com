@@ -424,6 +424,28 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
                           aria-label={t("rep.share")}
                         >🔗</button>
                         <button
+                          onClick={async () => {
+                            if (!token) return;
+                            try {
+                              const d = await getReplayApi(token, r.gameId);
+                              const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+                              const a = document.createElement("a");
+                              a.href = URL.createObjectURL(blob);
+                              a.download = `replay-${r.gameId}.json`;
+                              document.body.appendChild(a);
+                              a.click();
+                              a.remove();
+                              URL.revokeObjectURL(a.href);
+                            } catch (e) {
+                              setErr(formatApiError(e, t));
+                            }
+                          }}
+                          disabled={busy}
+                          className="rounded bg-blue-600 px-2 py-1 text-[10px] font-bold text-blue-50 hover:bg-blue-500 disabled:opacity-50"
+                          title={t("rep.download")}
+                          aria-label={t("rep.download")}
+                        >⬇</button>
+                        <button
                           onClick={() => open(r.gameId)}
                           disabled={busy}
                           className="rounded bg-purple-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-purple-500 disabled:opacity-50"

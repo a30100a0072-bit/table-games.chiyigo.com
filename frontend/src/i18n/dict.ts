@@ -217,6 +217,7 @@ const ZH = {
   "rep.shareCopied":         "分享連結已複製：{preview}…",
   "rep.shareFailed":         "分享失敗",
   "rep.kbHint":              "鍵盤：← → 上下步｜空白播放／暫停｜Home/End 跳到首/末",
+  "rep.download":            "下載 JSON",
 
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
@@ -328,6 +329,12 @@ const ZH = {
   "boundary.body":           "畫面渲染時發生未預期的錯誤。重新整理頁面通常可以解決。",
   "boundary.reload":         "重新整理",
   "boundary.details":        "錯誤細節（可複製回報）",
+
+  // WebSocket connection state (top banner of the game screens)
+  "ws.connecting":           "連線中…",
+  "ws.reconnecting":         "🔄 重新連線中…（第 {attempt} 次嘗試）",
+  "ws.disconnected":         "⚠️ 連線中斷",
+  "ws.waitingGame":          "等待遊戲開始…",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -521,6 +528,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "rep.shareCopied":          "Link copied: {preview}…",
   "rep.shareFailed":          "Share failed",
   "rep.kbHint":               "Keys: ← → step · Space play/pause · Home/End jump",
+  "rep.download":             "Download JSON",
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",
@@ -624,6 +632,11 @@ const EN: Partial<Record<DictKey, string>> = {
   "boundary.body":            "The screen hit an unexpected error while rendering. Reloading the page usually fixes it.",
   "boundary.reload":          "Reload",
   "boundary.details":         "Error details (paste in a report)",
+
+  "ws.connecting":            "Connecting…",
+  "ws.reconnecting":          "🔄 Reconnecting… (attempt {attempt})",
+  "ws.disconnected":          "⚠️ Disconnected",
+  "ws.waitingGame":           "Waiting for game to start…",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {

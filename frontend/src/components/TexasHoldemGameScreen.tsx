@@ -39,7 +39,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
   const [view,    setView]    = useState<PokerStateView | null>(null);
   const [raise,   setRaise]   = useState<number>(0);
   const [sysMsg,  setSysMsg]  = useState("");
-  const [connMsg, setConnMsg] = useState("連線中…");
+  const [connMsg, setConnMsg] = useState(t("ws.connecting"));
   const socketRef = useRef<GameSocket | null>(null);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
     socketRef.current = sock;
 
     sock.on("connected",    ()    => setConnMsg(""));
-    sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? "重新連線中…" : "連線中斷"));
+    sock.on("disconnected", (i)   => setConnMsg(i.willReconnect ? t("ws.reconnecting", { attempt: i.attempt + 1 }) : t("ws.disconnected")));
     sock.on("state",        (v)   => {
       const pv = v as unknown as PokerStateView;
       setView(prev => {
@@ -83,7 +83,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
   if (!view)
     return (
       <div className="flex h-full items-center justify-center bg-green-950">
-        <p className="text-green-300">{connMsg || "等待遊戲開始…"}</p>
+        <p className="text-green-300">{connMsg || t("ws.waitingGame")}</p>
       </div>
     );
 
