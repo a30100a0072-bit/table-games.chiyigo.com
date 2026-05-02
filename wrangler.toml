@@ -105,3 +105,14 @@ database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
 
 [[env.production.tail_consumers]]
 service = "big-two-log-forwarder"
+
+# ── Cron Triggers ─────────────────────────────────────────────────────── # L3_架構含防禦觀測
+# Daily retention sweep — prunes expired tokens / invites / shares and
+# DMs older than 7 days. See src/workers/cronCleanup.ts for the SQL.
+# Cron is UTC; 03:17 keeps the sweep off round-hour spikes that other
+# Cloudflare account-level jobs tend to share.
+[triggers]
+crons = ["17 3 * * *"]
+
+[env.production.triggers]
+crons = ["17 3 * * *"]

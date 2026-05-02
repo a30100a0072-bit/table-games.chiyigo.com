@@ -4,6 +4,8 @@
 
 import { handleRequest }       from "./workers/gateway";
 import { handleQueue }         from "./workers/settlementConsumer";
+import { runCleanup }          from "./workers/cronCleanup";
+import { log }                 from "./utils/log";
 import type { GatewayEnv }     from "./workers/gateway";
 import type { SettlementQueueMessage } from "./types/game";
 
@@ -37,5 +39,19 @@ export default {
     _ctx:  ExecutionContext,
   ): Promise<void> {
     await handleQueue(batch as MessageBatch<SettlementQueueMessage>, env); // L2_隔離 wrangler 綁定保證型別
+  },
+
+  /**
+   * Cron entry point — daily retention sweep. Schedule lives in wrangler.toml
+   * (`[triggers] crons`). Errors here are logged but never thrown, because a
+   * cron failure should not page anyone — the next run will catch up.       // L3_架構含防禦觀測
+   */
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const summary = await runCleanup(env);
+    if (summary.errors.length > 0) {
+      log("error", "cron_cleanup_partial", summary as unknown as Record<string, unknown>);
+    } else {
+      log("info", "cron_cleanup_done", summary as unknown as Record<string, unknown>);
+    }
   },
 } satisfies ExportedHandler<Env>;
