@@ -5,41 +5,10 @@
 // in-memory D1 instance miniflare provisions from wrangler.toml.
 
 import { describe, expect, it, beforeAll } from "vitest";
-import { SELF, env } from "cloudflare:test";
+import { SELF } from "cloudflare:test";
+import { applyTestSchema } from "./_schema";
 
-// Apply schema once before any tests run. miniflare gives us a fresh D1
-// per test run, so the tables don't exist until we create them.
-beforeAll(async () => {
-  const ddl = `
-    CREATE TABLE IF NOT EXISTS GameRooms (
-      room_id TEXT PRIMARY KEY, player_ids TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'waiting', created_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS games (
-      game_id TEXT PRIMARY KEY, round_id TEXT NOT NULL, finished_at INTEGER NOT NULL,
-      reason TEXT NOT NULL, winner_id TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS player_settlements (
-      game_id TEXT NOT NULL, player_id TEXT NOT NULL, final_rank INTEGER NOT NULL,
-      score_delta INTEGER NOT NULL, remaining_json TEXT NOT NULL,
-      PRIMARY KEY (game_id, player_id));
-    CREATE TABLE IF NOT EXISTS users (
-      player_id TEXT PRIMARY KEY, display_name TEXT NOT NULL,
-      chip_balance INTEGER NOT NULL DEFAULT 1000,
-      last_bailout_at INTEGER NOT NULL DEFAULT 0,
-      last_login_at INTEGER NOT NULL DEFAULT 0,
-      frozen_at INTEGER NOT NULL DEFAULT 0, frozen_reason TEXT,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS chip_ledger (
-      ledger_id INTEGER PRIMARY KEY AUTOINCREMENT, player_id TEXT NOT NULL,
-      game_id TEXT, delta INTEGER NOT NULL, reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      UNIQUE (player_id, game_id, reason));
-  `;
-  // D1 binding is exposed by miniflare via the env from cloudflare:test.
-  const db = (env as unknown as { DB: D1Database }).DB;
-  for (const stmt of ddl.split(";").map(s => s.trim()).filter(Boolean)) {
-    await db.prepare(stmt).run();
-  }
-});
+beforeAll(applyTestSchema);
 
 describe("Worker (miniflare): full auth + wallet flow", () => {
   it("issues a token, lazy-creates wallet, then /api/me/wallet verifies", async () => {
