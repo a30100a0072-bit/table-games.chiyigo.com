@@ -32,6 +32,10 @@ export interface GameSocketConfig {
   maxDelay?:    number;
   /** Jitter fraction 0–1 (prevents thundering herd). Default: 0.25 */
   jitter?:      number;
+  /** Periodic sync interval (ms) while connected. Stops idle proxies
+   *  from closing the WS during long thinks. Set to 0 to disable.
+   *  Default: 30 000 */
+  keepAliveMs?: number;
 }
 
 // ── Server → Client message shapes ───────────────────────────────── L2_模組
@@ -101,17 +105,19 @@ export class GameSocket {
   private status:           SocketState      = "idle";
   private seq:              number           = 0;    // monotone; never reset across reconnects
   private attempt:          number           = 0;
-  private retryTimer:       ReturnType<typeof setTimeout> | null = null;
+  private retryTimer:       ReturnType<typeof setTimeout>  | null = null;
+  private keepAliveTimer:   ReturnType<typeof setInterval> | null = null;
   private everConnected:    boolean          = false; // true after first successful open
 
   private readonly reg = new Map<keyof GameSocketEventMap, Set<Listener<any>>>();
 
   constructor(cfg: GameSocketConfig) {
     this.cfg = {
-      maxRetries: Infinity,
-      baseDelay:  1_000,
-      maxDelay:   30_000,
-      jitter:     0.25,
+      maxRetries:  Infinity,
+      baseDelay:   1_000,
+      maxDelay:    30_000,
+      jitter:      0.25,
+      keepAliveMs: 30_000,
       ...cfg,
     };
   }
@@ -133,6 +139,7 @@ export class GameSocket {
     if (this.status === "terminated") return;
     this.status = "terminated";
     this.clearRetryTimer();                          // clear backoff timer // L3_代碼附資源清單
+    this.clearKeepAlive();                           // clear keep-alive    // L3_代碼附資源清單
     this.destroySocket(1000, "client disconnect");   // remove WS listeners // L3_代碼附資源清單
     this.reg.clear();                                // drop all listeners   // L3_代碼附資源清單
   }
@@ -215,6 +222,27 @@ export class GameSocket {
     }
   }
 
+  private clearKeepAlive(): void {
+    if (this.keepAliveTimer !== null) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;                                      // L3_代碼附資源清單
+    }
+  }
+
+  /** Periodic sync to keep idle proxies (Cloudflare's edge included
+   *  depending on config) from closing the socket during long thinks.
+   *  The frame is the same shape we send after reconnect, so the
+   *  server already handles it idempotently — no protocol change. */
+  private startKeepAlive(): void {
+    this.clearKeepAlive();
+    if (this.cfg.keepAliveMs <= 0) return;
+    this.keepAliveTimer = setInterval(() => {
+      // sendSync no-ops outside "connected" so a stale firing during
+      // reconnect is benign.
+      this.sendSync();
+    }, this.cfg.keepAliveMs);
+  }
+
   // ── WebSocket event handlers (arrow fns — bound to instance) ─────── L3_邏輯安防
 
   private onOpen = (): void => {
@@ -227,6 +255,7 @@ export class GameSocket {
 
     // After a reconnect, request the latest state from the server.   // L3_邏輯安防
     if (isReconnect) this.sendSync();
+    this.startKeepAlive();
   };
 
   private onMessage = (ev: MessageEvent): void => {
@@ -262,6 +291,7 @@ export class GameSocket {
     if (this.status === "terminated") return;  // explicit disconnect() — skip retry
 
     this.ws = null;
+    this.clearKeepAlive();
 
     const willReconnect = this.attempt < this.cfg.maxRetries;
     const nextDelayMs   = willReconnect ? this.nextDelay() : null;

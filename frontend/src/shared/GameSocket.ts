@@ -14,6 +14,14 @@ export interface GameSocketConfig {
   baseDelay?:  number;
   maxDelay?:   number;
   jitter?:     number;
+  /** Periodic sync interval (ms) while connected. The DO has nothing
+   *  built-in to keep the WS warm during long thinks — without traffic,
+   *  intermediate proxies (Cloudflare's edge included, depending on
+   *  config) eventually idle the connection out and force a reconnect.
+   *  Sending a sync every 30s costs one tiny frame + one state echo
+   *  back, well under any rate limit, and stops the silent dropouts.
+   *  Set to 0 to disable (e.g., for tests). */
+  keepAliveMs?: number;
 }
 
 type ServerMessage =
@@ -52,11 +60,15 @@ export class GameSocket {
   private seq:           number           = 0;
   private attempt:       number           = 0;
   private retryTimer:    ReturnType<typeof setTimeout> | null = null;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
   private everConnected: boolean          = false;
   private readonly reg = new Map<keyof GameSocketEventMap, Set<Listener<never>>>();
 
   constructor(cfg: GameSocketConfig) {
-    this.cfg = { maxRetries: Infinity, baseDelay: 1_000, maxDelay: 30_000, jitter: 0.25, spectator: false, ...cfg };
+    this.cfg = {
+      maxRetries: Infinity, baseDelay: 1_000, maxDelay: 30_000, jitter: 0.25,
+      spectator: false, keepAliveMs: 30_000, ...cfg,
+    };
   }
 
   connect(): this { if (this.status === "idle") this.openSocket(); return this; }
@@ -65,6 +77,7 @@ export class GameSocket {
     if (this.status === "terminated") return;
     this.status = "terminated";
     this.clearRetryTimer();
+    this.clearKeepAlive();
     this.destroySocket(1000, "client disconnect");
     this.reg.clear();
   }
@@ -113,11 +126,28 @@ export class GameSocket {
     if (this.retryTimer !== null) { clearTimeout(this.retryTimer); this.retryTimer = null; }
   }
 
+  private clearKeepAlive(): void {
+    if (this.keepAliveTimer !== null) { clearInterval(this.keepAliveTimer); this.keepAliveTimer = null; }
+  }
+
+  private startKeepAlive(): void {
+    this.clearKeepAlive();
+    if (this.cfg.keepAliveMs <= 0) return;
+    this.keepAliveTimer = setInterval(() => {
+      // sendSync is a no-op when not in "connected" state, so a stale
+      // timer firing during reconnect is benign. The frame itself is
+      // tiny and the server's response is the same state we already
+      // have — bandwidth-cheap.
+      this.sendSync();
+    }, this.cfg.keepAliveMs);
+  }
+
   private onOpen = (): void => {
     const isReconnect = this.everConnected;
     this.status = "connected"; this.everConnected = true; this.attempt = 0;
     this.clearRetryTimer(); this.emit("connected");
     if (isReconnect) this.sendSync();
+    this.startKeepAlive();
   };
 
   private onMessage = (ev: MessageEvent): void => {
@@ -139,6 +169,7 @@ export class GameSocket {
   private onClose = (ev: CloseEvent): void => {
     if (this.status === "terminated") return;
     this.ws = null;
+    this.clearKeepAlive();
     const willReconnect = this.attempt < this.cfg.maxRetries;
     const nextDelayMs   = willReconnect ? this.nextDelay() : null;
     this.emit("disconnected", { code: ev.code, reason: ev.reason, willReconnect, attempt: this.attempt, nextDelayMs });
