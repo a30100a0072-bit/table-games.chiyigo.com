@@ -1,0 +1,16 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer-when-downgrade
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+  # Strict CSP. Notes:
+  #  - script-src 'self': inline scripts removed; SW reg lives in /sw-register.js.
+  #    Vite-built modules are served from /assets/*.js so 'self' covers them.
+  #  - style-src 'self' 'unsafe-inline': React's `style={{}}` props compile to
+  #    inline style attributes. Tailwind itself emits a static external stylesheet,
+  #    so the only inline styles are React-managed.
+  #  - connect-src includes both the worker https:// and wss:// — VITE_WORKER_URL
+  #    is rewritten from http→ws at runtime, so both are needed.
+  #  - img-src allows data: URIs for the favicon + og:image SVGs in index.html.
+  #  - frame-ancestors 'none' is the modern equivalent of X-Frame-Options.
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://*.workers.dev wss://*.workers.dev; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
