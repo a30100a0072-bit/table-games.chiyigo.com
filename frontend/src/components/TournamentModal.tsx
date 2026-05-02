@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import {
   listTournaments, getTournament, createTournament, joinTournamentApi,
 } from "../api/http";
@@ -25,6 +26,7 @@ function fmtTime(ms: number): string {
 }
 
 export default function TournamentModal({ playerId, token, onClose, onJoinedRoom }: Props) {
+  useEscapeClose(onClose);
   const [list,    setList]    = useState<TournamentRow[] | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [busy,    setBusy]    = useState(false);
@@ -97,7 +99,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true">
       <div
         className="w-full max-w-md rounded-2xl bg-green-900 p-4 shadow-2xl ring-1 ring-yellow-700/40"
         onClick={e => e.stopPropagation()}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useEscapeClose } from "../hooks/useEscapeClose";
 import { getHistory, getLeaderboard } from "../api/http";
 import type { HistoryEntry, LeaderboardRow } from "../api/http";
 
@@ -26,6 +27,7 @@ function fmtTime(ms: number): string {
 }
 
 export default function StatsModal({ playerId, token, onClose }: Props) {
+  useEscapeClose(onClose);
   const [tab,         setTab]         = useState<Tab>("leaderboard");
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [history,     setHistory]     = useState<HistoryEntry[] | null>(null);
@@ -52,7 +54,7 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
   const netDelta = history?.reduce((n, g) => n + g.score_delta, 0) ?? 0;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="dialog" aria-modal="true">
       <div
         className="w-full max-w-md rounded-2xl bg-green-900 p-4 shadow-2xl ring-1 ring-yellow-700/40"
         onClick={e => e.stopPropagation()}
