@@ -332,6 +332,30 @@ describe("Mahjong bot", () => {
     }
   });
 
+  it("kong-upgrades the discard when already holding 3 of the same tile", () => {
+    // Hand has 3× s(5) + 13 other tiles. Opponent discards s(5) — kong is
+    // strictly better than pong (uses all 4, gains replacement draw + 1 fan).
+    const hand: MahjongTile[] = [
+      s(5), s(5), s(5),               // the kong-able trio
+      m(1), m(2), m(3),
+      p(1), p(2), p(3),
+      p(7), p(8), p(9),
+      z(1),
+    ];
+    const v = mahjongView({
+      phase: "pending_reactions",
+      hand,
+      currentTurn: "p2",
+      lastDiscard: { playerId: "p2", tile: s(5) },
+      awaitingReactionsFrom: ["BOT_1"],
+    });
+    const a = getMahjongBotAction(v);
+    expect(a.type).toBe("kong");
+    if (a.type !== "kong") return;
+    expect(a.tile).toEqual(s(5));
+    expect(a.source).toBe("exposed");
+  });
+
   it("avoids discarding a tile that would let an opponent kong-upgrade", () => {
     // Bot's only "isolated" tile is z(7). An opponent has an exposed pong of
     // z(7), so discarding it would feed a kong (gain a tile + 1 fan). With

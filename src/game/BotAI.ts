@@ -295,13 +295,23 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
         return { type: "hu", selfDrawn: false };
       }
 
-      // 2) Pong if we have ≥2 of the discarded tile AND our hand has many
+      const sameCount = view.self.hand.filter(t =>
+        t.suit === ld.tile.suit && t.rank === ld.tile.rank).length;
+
+      // 2a) Kong-instead-of-pong: if we already hold 3, kong is strictly
+      //     better — we use one extra tile (3 vs 2) but gain a replacement
+      //     draw and 1 fan. Holding 3 also means those tiles weren't part
+      //     of a pair candidate (a pair only has 2 of same), so the meld
+      //     never breaks an unrelated wait shape.                            // L3_邏輯安防
+      if (sameCount >= 3) {
+        return { type: "kong", tile: ld.tile, source: "exposed" };
+      }
+
+      // 2b) Pong if we have ≥2 of the discarded tile AND our hand has many
       //    isolated tiles. The threshold "≥3 isolated of utility < 50" keeps
       //    menqing for clean hands and only opens up for messy hands where
       //    the meld actually helps. Score utility here is the same as in
       //    pickDiscardTile.                                                  // L2_實作
-      const sameCount = view.self.hand.filter(t =>
-        t.suit === ld.tile.suit && t.rank === ld.tile.rank).length;
       if (sameCount >= 2) {
         const counts = new Uint8Array(34);
         for (const t of view.self.hand) counts[tileIndex(t)]!++;
