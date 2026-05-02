@@ -51,18 +51,53 @@ interface MaybeApiError {
   error?:   string;
 }
 
+/** Thrown by http.ts when a response is non-OK. Carries the parsed body
+ *  so consumers can switch on `code` or pull domain extras (`balance`,
+ *  `roomId`, etc.) without re-parsing. The `.message` field is the
+ *  server's English default — translate via formatApiError(err, t). */
+export class ApiError extends Error {
+  readonly code:   string;
+  readonly status: number;
+  readonly body:   Record<string, unknown>;
+  constructor(status: number, body: Record<string, unknown>) {
+    const msg = (body.message as string | undefined) ?? (body.error as string | undefined) ?? `HTTP ${status}`;
+    super(msg);
+    this.name   = "ApiError";
+    this.status = status;
+    this.code   = (body.code as string | undefined) ?? "UNKNOWN";
+    this.body   = body;
+  }
+}
+
+/** Best-effort: turn a non-OK fetch Response into an ApiError. Consumes
+ *  the body. Falls back to a stub ApiError if JSON parsing fails. */
+export async function readApiError(res: Response): Promise<ApiError> {
+  let body: Record<string, unknown>;
+  try { body = await res.json() as Record<string, unknown>; }
+  catch { body = { error: `HTTP ${res.status}` }; }
+  return new ApiError(res.status, body);
+}
+
 /** Translate an API error body. Pass the response JSON; we'll prefer
  *  body.code (new shape), fall back to body.message / body.error
  *  (legacy). The optional `defaultKey` is used when neither side
  *  provides anything — typically for non-JSON / network failures.    */
 export function formatApiError(
-  body: MaybeApiError | null | undefined,
-  t:    TFunction,
+  source: MaybeApiError | ApiError | unknown,
+  t:      TFunction,
   defaultKey = "err.unknown",
 ): string {
+  // ApiError carries the parsed body — read code from there.
+  if (source instanceof ApiError) {
+    if (CODE_TO_KEY[source.code])
+      return t(CODE_TO_KEY[source.code]! as DictKey, { message: source.message });
+    return source.message;
+  }
+  // Plain Error with no body — best we can do is its message.
+  if (source instanceof Error) return source.message;
+  // Direct body object (legacy callers that already json-parsed).
+  const body = source as MaybeApiError | null | undefined;
   if (body?.code && CODE_TO_KEY[body.code]) {
-    // The mapped key may itself be a no-op fallback to the server message;
-    // pass it through so dict.ts strings can interpolate `{message}`.
     return t(CODE_TO_KEY[body.code]! as DictKey, { message: body.message ?? body.error ?? "" });
   }
   return body?.message ?? body?.error ?? t(defaultKey as DictKey);

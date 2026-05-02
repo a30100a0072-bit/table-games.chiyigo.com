@@ -1,4 +1,6 @@
 import type { GameType } from "../shared/types";
+import { readApiError } from "../i18n/errorCodes";
+export { ApiError, formatApiError } from "../i18n/errorCodes";
 
 const BASE = import.meta.env.VITE_WORKER_URL as string;
 
@@ -44,10 +46,7 @@ export async function getToken(playerId: string): Promise<TokenResponse> {
     const body = await res.json().catch(() => ({})) as { reason?: string };
     throw new FrozenAccountError(body.reason ?? "");
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(body.error ?? `auth failed: ${res.status}`);
-  }
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -64,7 +63,7 @@ export async function findMatch(token: string, gameType: GameType): Promise<Matc
     const body = await res.json().catch(() => ({})) as { balance?: number; required?: number };
     throw new InsufficientChipsError(body.balance ?? 0, body.required ?? 0, gameType);
   }
-  if (!res.ok) throw new Error(`match failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   // Backend returns { matched, roomId, gameType, players }; wsUrl is derived client-side. // L2_鎖定
   const data = await res.json() as { roomId: string; gameType: GameType; players: string[] };
   const wsBase = BASE.replace(/^http/, "ws");
@@ -76,7 +75,7 @@ export async function getWallet(token: string): Promise<WalletResponse> {
   const res = await fetch(`${BASE}/api/me/wallet`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`wallet failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -111,7 +110,7 @@ export async function getHistory(token: string): Promise<{ playerId: string; gam
   const res = await fetch(`${BASE}/api/me/history`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`history failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -122,7 +121,7 @@ export interface LeaderboardRow {
 }
 export async function getLeaderboard(): Promise<{ updatedAt: number; rows: LeaderboardRow[] }> {
   const res = await fetch(`${BASE}/api/leaderboard`);
-  if (!res.ok) throw new Error(`leaderboard failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -183,19 +182,19 @@ export async function listMyTournamentsApi(token: string): Promise<{ rows: MyTou
   const res = await fetch(`${BASE}/api/me/tournaments`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`my tournaments failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function listTournaments(): Promise<{ rows: TournamentRow[]; required: number }> {
   const res = await fetch(`${BASE}/api/tournaments`);
-  if (!res.ok) throw new Error(`list failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function getTournament(id: string): Promise<TournamentDetail> {
   const res = await fetch(`${BASE}/api/tournaments/${id}`);
-  if (!res.ok) throw new Error(`get failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -207,7 +206,7 @@ export async function createTournament(token: string, gameType: GameType, buyIn:
     body: JSON.stringify({ gameType, buyIn }),
   });
   if (res.status === 402) throw new Error("insufficient chips");
-  if (!res.ok) throw new Error(`create failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -217,7 +216,7 @@ export async function joinTournamentApi(token: string, id: string): Promise<void
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 402) throw new Error("insufficient chips");
-  if (!res.ok) throw new Error(`join failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 // ── Friends ─────────────────────────────────────────────────────────
@@ -231,7 +230,7 @@ export async function listFriendsApi(token: string): Promise<FriendsResponse> {
   const res = await fetch(`${BASE}/api/friends`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`friends list failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -247,7 +246,7 @@ export async function requestFriendApi(token: string, targetPlayerId: string)
     const body = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? "conflict");
   }
-  if (!res.ok) throw new Error(`request failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -258,7 +257,7 @@ export async function respondFriendApi(
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`${action} failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 export async function unfriendApi(token: string, other: string): Promise<void> {
@@ -266,7 +265,7 @@ export async function unfriendApi(token: string, other: string): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`unfriend failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 // ── Private rooms ───────────────────────────────────────────────────
@@ -286,7 +285,7 @@ export async function createPrivateRoomApi(
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ gameType, ...(ttlMinutes ? { ttlMinutes } : {}) }),
   });
-  if (!res.ok) throw new Error(`create failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -298,7 +297,7 @@ export async function resolvePrivateRoomApi(
   });
   if (res.status === 404) throw new Error("token not found");
   if (res.status === 410) throw new Error("token expired");
-  if (!res.ok) throw new Error(`resolve failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -323,14 +322,14 @@ export async function inviteFriendToRoomApi(
   if (res.status === 403) throw new Error("not friends");
   if (res.status === 404) throw new Error("token not found");
   if (res.status === 410) throw new Error("token expired");
-  if (!res.ok) throw new Error(`invite failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 export async function listInvitesApi(token: string): Promise<{ invites: RoomInvite[] }> {
   const res = await fetch(`${BASE}/api/rooms/invites`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`list invites failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -339,7 +338,7 @@ export async function declineInviteApi(token: string, id: number): Promise<void>
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`decline failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 // ── Replays ─────────────────────────────────────────────────────────
@@ -374,7 +373,7 @@ export async function listMyReplaysApi(token: string)
   const res = await fetch(`${BASE}/api/me/replays`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`replays list failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -385,14 +384,19 @@ export async function shareReplayApi(token: string, gameId: string, ttlMs?: numb
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body:    JSON.stringify(ttlMs !== undefined ? { ttlMs } : {}),
   });
-  if (!res.ok) throw new Error(`replay share failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
-export interface MyShareEntry { token: string; gameId: string; createdAt: number; expiresAt: number; viewCount: number; }
+export interface MyShareEntry {
+  token: string; gameId: string;
+  createdAt: number; expiresAt: number;
+  viewCount: number;
+  lastViewedAt: number | null;
+}
 export async function listMySharesApi(token: string): Promise<{ shares: MyShareEntry[] }> {
   const res = await fetch(`${BASE}/api/me/shares`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`shares list failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -402,7 +406,7 @@ export async function revokeShareApi(token: string, shareToken: string): Promise
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 404) throw new Error("share not found");
-  if (!res.ok) throw new Error(`revoke failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
 }
 
 export interface AdminHealth {
@@ -434,7 +438,7 @@ export async function getAdminHealthApi(secret: string): Promise<AdminHealth> {
   });
   if (res.status === 401) throw new Error("invalid admin secret");
   if (res.status === 503) throw new Error("admin endpoints disabled");
-  if (!res.ok) throw new Error(`health failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -442,7 +446,7 @@ export async function getSharedReplayApi(token: string): Promise<ReplayDetail & 
   const res = await fetch(`${BASE}/api/replays/by-token/${encodeURIComponent(token)}`);
   if (res.status === 404) throw new Error("share link not found");
   if (res.status === 410) throw new Error("share link expired");
-  if (!res.ok) throw new Error(`shared replay get failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -452,7 +456,7 @@ export async function getReplayApi(token: string, gameId: string): Promise<Repla
   });
   if (res.status === 404) throw new Error("replay not found");
   if (res.status === 403) throw new Error("not your game");
-  if (!res.ok) throw new Error(`replay get failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -471,7 +475,7 @@ export async function sendDmApi(token: string, to: string, body: string): Promis
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ to, body }),
   });
-  if (!res.ok) throw new Error(`dm send failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -511,7 +515,7 @@ export async function exportAccountApi(token: string): Promise<void> {
   const res = await fetch(`${BASE}/api/me/export`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`account export failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -535,7 +539,7 @@ export async function deleteAccountApi(token: string): Promise<{ tombstone: stri
       "X-Confirm-Delete":  "yes",
     },
   });
-  if (!res.ok) throw new Error(`account delete failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
@@ -548,6 +552,6 @@ export async function claimBailout(token: string): Promise<BailoutResponse> {
     const body = await res.json().catch(() => ({})) as BailoutBlocked;
     throw new BailoutError(body);
   }
-  if (!res.ok) throw new Error(`bailout failed: ${res.status}`);
+  if (!res.ok) throw await readApiError(res);
   return res.json();
 }
