@@ -3,7 +3,7 @@
 // / forbidden-when-not-a-player paths.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { listMyReplays, getReplay, shareReplay, resolveSharedReplay } from "../src/api/replays";
+import { listMyReplays, getReplay, shareReplay, resolveSharedReplay, listMyShares, revokeShare } from "../src/api/replays";
 import type { ReplaysEnv } from "../src/api/replays";
 import { ENGINE_VERSION } from "../src/game/GameEngineAdapter";
 import { signJWT } from "../src/utils/auth";
@@ -51,6 +51,12 @@ class MockStmt {
       this.db.shares.push({ token, game_id: gameId, owner_id: ownerId, created_at: createdAt, expires_at: expiresAt });
       return { success: true, meta: { changes: 1 } };
     }
+    if (this.sql.startsWith("DELETE FROM replay_shares")) {
+      const [token, ownerId] = this.args as [string, string];
+      const before = this.db.shares.length;
+      this.db.shares = this.db.shares.filter(s => !(s.token === token && s.owner_id === ownerId));
+      return { success: true, meta: { changes: before - this.db.shares.length } };
+    }
     return { success: true, meta: { changes: 0 } };
   }
 
@@ -64,6 +70,15 @@ class MockStmt {
         .filter(r => (JSON.parse(r.player_ids) as string[]).includes(me))
         .sort((a, b) => b.finished_at - a.finished_at)
         .slice(0, 30);
+      return { results: out as unknown as T[] };
+    }
+    // listMyShares: caller's active (non-expired) shares.
+    if (this.sql.includes("FROM replay_shares") && this.sql.includes("owner_id = ?")) {
+      const [owner, now] = this.args as [string, number];
+      const out = this.db.shares
+        .filter(s => s.owner_id === owner && s.expires_at > now)
+        .sort((a, b) => b.created_at - a.created_at)
+        .slice(0, 50);
       return { results: out as unknown as T[] };
     }
     return { results: [] };
@@ -257,6 +272,63 @@ describe("replays API", () => {
 
   it("resolveSharedReplay returns 404 for an unknown token", async () => {
     const r = await resolveSharedReplay(env, "ghost");
+    expect(r.status).toBe(404);
+  });
+
+  // ── revoke + list-my-shares ─────────────────────────────────────────
+  it("listMyShares returns only the caller's non-expired tokens, newest first", async () => {
+    const now = Date.now();
+    db.shares.push({ token: "old",     game_id: "g1", owner_id: "alice", created_at: now - 1000, expires_at: now + 60_000 });
+    db.shares.push({ token: "new",     game_id: "g1", owner_id: "alice", created_at: now,        expires_at: now + 60_000 });
+    db.shares.push({ token: "expired", game_id: "g1", owner_id: "alice", created_at: now - 9999, expires_at: now - 1      });
+    db.shares.push({ token: "other",   game_id: "g2", owner_id: "bob",   created_at: now,        expires_at: now + 60_000 });
+
+    const tok = await tokFor("alice");
+    const r = await listMyShares(authedReq("GET", "/", tok), env);
+    expect(r.status).toBe(200);
+    const body = await r.json() as { shares: Array<{ token: string }> };
+    expect(body.shares.map(s => s.token)).toEqual(["new", "old"]);   // expired + bob's filtered out
+  });
+
+  it("revokeShare removes the row when the caller is the owner", async () => {
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+    });
+    const tok = await tokFor("alice");
+    const r = await revokeShare(authedReq("DELETE", "/", tok), env, "abc");
+    expect(r.status).toBe(200);
+    const body = await r.json() as { revoked: boolean };
+    expect(body.revoked).toBe(true);
+    expect(db.shares).toHaveLength(0);
+  });
+
+  it("revokeShare 404s when called by a non-owner — and does NOT delete the row (no token-existence leak)", async () => {
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+    });
+    const malloryTok = await tokFor("mallory");
+    const r = await revokeShare(authedReq("DELETE", "/", malloryTok), env, "abc");
+    expect(r.status).toBe(404);
+    expect(db.shares).toHaveLength(1);              // row preserved
+  });
+
+  it("revokeShare 404s on an unknown token", async () => {
+    const tok = await tokFor("alice");
+    const r = await revokeShare(authedReq("DELETE", "/", tok), env, "ghost");
+    expect(r.status).toBe(404);
+  });
+
+  it("after revoke, resolveSharedReplay falls through to 404", async () => {
+    db.rows.push(mkRow({ game_id: "g1" }));
+    db.shares.push({
+      token: "abc", game_id: "g1", owner_id: "alice",
+      created_at: Date.now(), expires_at: Date.now() + 60_000,
+    });
+    const tok = await tokFor("alice");
+    await revokeShare(authedReq("DELETE", "/", tok), env, "abc");
+    const r = await resolveSharedReplay(env, "abc");
     expect(r.status).toBe(404);
   });
 });

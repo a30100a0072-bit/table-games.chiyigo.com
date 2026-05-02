@@ -389,6 +389,22 @@ export async function shareReplayApi(token: string, gameId: string, ttlMs?: numb
   return res.json();
 }
 
+export interface MyShareEntry { token: string; gameId: string; createdAt: number; expiresAt: number; }
+export async function listMySharesApi(token: string): Promise<{ shares: MyShareEntry[] }> {
+  const res = await fetch(`${BASE}/api/me/shares`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`shares list failed: ${res.status}`);
+  return res.json();
+}
+
+export async function revokeShareApi(token: string, shareToken: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/replays/share/${encodeURIComponent(shareToken)}`, {
+    method:  "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) throw new Error("share not found");
+  if (!res.ok) throw new Error(`revoke failed: ${res.status}`);
+}
+
 export async function getSharedReplayApi(token: string): Promise<ReplayDetail & { sharedBy: string }> {
   const res = await fetch(`${BASE}/api/replays/by-token/${encodeURIComponent(token)}`);
   if (res.status === 404) throw new Error("share link not found");

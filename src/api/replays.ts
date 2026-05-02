@@ -162,6 +162,52 @@ export async function shareReplay(request: Request, env: ReplaysEnv, gameId: str
   return Response.json({ token, expiresAt: now + ttlMs }, { status: 201 });
 }
 
+// ── GET /api/me/shares ──────────────────────────────────────────────────
+// Active (non-expired) share tokens minted by the caller. Used by the
+// frontend revoke UI so the user can see what's currently public before
+// deciding whether to retract a link.
+export async function listMyShares(request: Request, env: ReplaysEnv): Promise<Response> {
+  const me = await authPlayer(request, env);
+  if (me instanceof Response) return me;
+
+  const rows = await env.DB
+    .prepare(
+      "SELECT token, game_id, created_at, expires_at" +
+      "  FROM replay_shares" +
+      " WHERE owner_id = ? AND expires_at > ?" +
+      " ORDER BY created_at DESC LIMIT 50",
+    )
+    .bind(me, Date.now())
+    .all<{ token: string; game_id: string; created_at: number; expires_at: number }>();
+
+  return Response.json({
+    shares: (rows.results ?? []).map(r => ({
+      token:     r.token,
+      gameId:    r.game_id,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+    })),
+  });
+}
+
+// ── DELETE /api/replays/share/:token ────────────────────────────────────
+// Manual revoke. Only the minter can retract their own token. Returns 200
+// with `{ revoked: true }` if the token existed and was owned by the
+// caller; 404 otherwise (intentionally identical for "doesn't exist" and
+// "exists but not yours" — don't leak token validity to non-owners).
+export async function revokeShare(request: Request, env: ReplaysEnv, token: string): Promise<Response> {
+  const me = await authPlayer(request, env);
+  if (me instanceof Response) return me;
+
+  const r = await env.DB
+    .prepare("DELETE FROM replay_shares WHERE token = ? AND owner_id = ?")
+    .bind(token, me)
+    .run();
+  const changes = (r.meta?.changes ?? 0) as number;
+  if (changes === 0) return Response.json({ error: "not found" }, { status: 404 });
+  return Response.json({ revoked: true });
+}
+
 // ── GET /api/replays/by-token/:token ────────────────────────────────────
 // Public read of a shared replay. No auth — the token is the capability.
 // 410 = expired, 404 = unknown.                                          // L2_實作

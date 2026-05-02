@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { listMyReplaysApi, getReplayApi, shareReplayApi, getSharedReplayApi } from "../api/http";
-import type { ReplayDetail, ReplaySummary, ReplayEvent } from "../api/http";
+import {
+  listMyReplaysApi, getReplayApi, shareReplayApi, getSharedReplayApi,
+  listMySharesApi, revokeShareApi,
+} from "../api/http";
+import type { ReplayDetail, ReplaySummary, ReplayEvent, MyShareEntry } from "../api/http";
 import type { GameType } from "../shared/types";
 import { useT } from "../i18n/useT";
 
@@ -183,6 +186,27 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
   const [detail,  setDetail]  = useState<(ReplayDetail & { sharedBy?: string }) | null>(null);
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState<string | null>(null);
+  const [shares,  setShares]  = useState<MyShareEntry[] | null>(null);
+  const [showShares, setShowShares] = useState(false);
+
+  async function refreshShares() {
+    if (!token) return;
+    try {
+      const r = await listMySharesApi(token);
+      setShares(r.shares);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "shares load failed");
+    }
+  }
+  async function revoke(shareToken: string) {
+    if (!token) return;
+    try {
+      await revokeShareApi(token, shareToken);
+      setShares(prev => (prev ?? []).filter(s => s.token !== shareToken));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "revoke failed");
+    }
+  }
 
   // Player state — only meaningful when `detail` is set.
   const [step,    setStep]    = useState(0);   // 0 = nothing played yet; events.length = all done
@@ -258,6 +282,50 @@ export default function ReplaysModal({ token, sharedReplayToken, onClose }: Prop
         {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
 
         <div className="mt-3 flex-1 overflow-y-auto">
+          {!detail && !isShared && (
+            <div className="mb-3 rounded-md bg-green-950/60 px-3 py-2">
+              <button
+                onClick={() => {
+                  const next = !showShares;
+                  setShowShares(next);
+                  if (next && shares === null) void refreshShares();
+                }}
+                className="flex w-full items-center justify-between text-[11px] font-bold text-yellow-200"
+                aria-expanded={showShares}
+              >
+                <span>🔗 已分享連結 {shares ? `(${shares.length})` : ""}</span>
+                <span className="text-green-400">{showShares ? "▾" : "▸"}</span>
+              </button>
+              {showShares && (
+                <div className="mt-2">
+                  {shares === null && (
+                    <p className="text-center text-[10px] text-green-500">…</p>
+                  )}
+                  {shares && shares.length === 0 && (
+                    <p className="text-center text-[10px] text-green-500">沒有作用中的分享</p>
+                  )}
+                  {shares && shares.length > 0 && (
+                    <ul className="flex flex-col gap-1">
+                      {shares.map(s => (
+                        <li key={s.token} className="flex items-center justify-between gap-2 text-[10px] text-green-200">
+                          <span className="flex-1 truncate font-mono">
+                            <span className="text-green-500">{s.gameId.slice(0, 8)}…</span>{" "}
+                            <span className="text-green-400">至 {fmtTime(s.expiresAt)}</span>
+                          </span>
+                          <button
+                            onClick={() => revoke(s.token)}
+                            className="rounded bg-red-700 px-2 py-0.5 text-[10px] font-bold text-red-50 hover:bg-red-600"
+                            title="撤銷此分享連結"
+                          >撤銷</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {!detail && (
             <>
               {!list && <p className="text-center text-xs text-green-500">{t("friends.loading")}</p>}
