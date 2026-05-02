@@ -1,13 +1,13 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-02（Replay 分享 + 麻將進階台 v3 + GDPR delete/export + tail forwarder）
+> 最後更新：2026-05-02（Replay 分享 + 麻將進階台 v3 + GDPR delete/export + tail forwarder retry + 前端 game screens code-split + chip_ledger 複合索引 + replay_participants 索引表 + cron retention sweep + ErrorCode enum + 嚴格 CSP）
 >
 > **部署狀態**：三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅；三款遊戲 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅；CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅；**ES256 JWKS + 多 key 輪換**；**籌碼錢包 + 流水帳本 + ANTE + bailout + daily bonus + forfeit + admin freeze**；**Tournament 後端+前端（含 Texas blind escalation 10/20→20/40→50/100）**；**Mahjong `ENGINE_VERSION=3`（含搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）**；**i18n 雙語**；**PWA**；**結構化 JSON log → tail forwarder → 通用 webhook**；**Friends / Private rooms / Spectator (含 live listings) / Replay (含 token 分享) / Room invites / Friend DM**；**GDPR DELETE + export `/api/me`**
 > **測試矩陣**：
->   - **Node 單元測試**：20 檔 / **221 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account），全綠
+>   - **Node 單元測試**：22 檔 / **234 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：2 檔 / **6 案例**，真 workerd / miniflare runtime
->   - **總計 227 測試**
+>   - **總計 240 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
