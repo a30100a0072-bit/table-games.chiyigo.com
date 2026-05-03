@@ -15,7 +15,11 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run build && npm run preview -- --port 4173 --strictPort",
+    // `--host 127.0.0.1` makes vite preview bind v4 explicitly so the
+    // Playwright readiness probe (also v4) can reach it; vite's default
+    // "localhost" resolves v6-first on some platforms (Windows in
+    // particular) and fails the probe.                                    // L2_實作
+    command: "npm run build && npm run preview -- --port 4173 --strictPort --host 127.0.0.1",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
