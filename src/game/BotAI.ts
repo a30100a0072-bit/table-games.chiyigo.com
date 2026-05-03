@@ -19,7 +19,7 @@ import type {
 import { detectCombo, cardVal } from "./BigTwoStateMachine";
 import { canWin } from "./MahjongStateMachine";
 import { rankFiveCardKey } from "./TexasHoldemStateMachine";
-import { mahjongShanten } from "./MahjongShanten";
+import { mahjongShanten, mahjongTileIndex, tilesToCounts } from "./MahjongShanten";
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Big Two
@@ -327,27 +327,31 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
         return { type: "kong", tile: ld.tile, source: "exposed" };
       }
 
-      // 2b) Pong if we have ≥2 of the discarded tile AND our hand has many
-      //    isolated tiles. The threshold "≥3 isolated of utility < 50" keeps
-      //    menqing for clean hands and only opens up for messy hands where
-      //    the meld actually helps. Score utility here is the same as in
-      //    pickDiscardTile.                                                  // L2_實作
-      if (sameCount >= 2) {
-        const counts = new Uint8Array(34);
-        for (const t of view.self.hand) counts[tileIndex(t)]!++;
-        let isolated = 0;
-        for (const t of view.self.hand) {
-          if (tileUtility(counts, tileIndex(t)) < 50) isolated++;
-        }
-        if (isolated >= 3) {
+      // 2b/3) Pong / Chow only if it strictly reduces shanten — taking a meld
+      //       commits us (loses menqing fan, exposes information). The
+      //       isolation heuristic was a crude proxy; comparing shanten before
+      //       vs after the meld answers the underlying question directly.    // L2_實作
+      const handCounts = tilesToCounts(view.self.hand);
+      const exposedCount = view.self.exposed.length;
+      const baseShanten = mahjongShanten(handCounts, exposedCount);
+
+      // After taking a meld: 2 tiles leave the hand and the meld becomes
+      // exposed (exposedCount + 1). The dropped tiles depend on meld type.
+      const evalMeld = (removeIdx: readonly number[]): number => {
+        for (const i of removeIdx) handCounts[i]!--;
+        const s = mahjongShanten(handCounts, exposedCount + 1);
+        for (const i of removeIdx) handCounts[i]!++;
+        return s;
+      };
+
+      const ldIdx = mahjongTileIndex(ld.tile.suit, ld.tile.rank);
+
+      if (sameCount >= 2 && ldIdx >= 0) {
+        if (evalMeld([ldIdx, ldIdx]) < baseShanten) {
           return { type: "pong", tile: ld.tile };
         }
       }
 
-      // 3) Chow if both flanking tiles exist for any window AND we'd
-      //    otherwise sit on isolated junk. Only the upstream player's
-      //    discard is chowable in real play but the SM will validate that;
-      //    we just propose, server arbitrates.                              // L3_邏輯安防
       if (ld.tile.suit !== "z") {
         const r = ld.tile.rank;
         const same = view.self.hand.filter(t => t.suit === ld.tile.suit);
@@ -356,13 +360,9 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
         for (const [a, b] of windows) {
           const ta = at(a); const tb = at(b);
           if (ta && tb) {
-            const counts = new Uint8Array(34);
-            for (const t of view.self.hand) counts[tileIndex(t)]!++;
-            let isolated = 0;
-            for (const t of view.self.hand) {
-              if (tileUtility(counts, tileIndex(t)) < 50) isolated++;
-            }
-            if (isolated >= 4) {
+            const ia = mahjongTileIndex(ta.suit, ta.rank);
+            const ib = mahjongTileIndex(tb.suit, tb.rank);
+            if (evalMeld([ia, ib]) < baseShanten) {
               return { type: "chow", tiles: [ta, tb, ld.tile] };
             }
           }

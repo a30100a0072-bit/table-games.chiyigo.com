@@ -387,6 +387,47 @@ describe("Mahjong bot", () => {
     expect(a.tile).not.toEqual(z(7));
   });
 
+  it("pongs a discard when it strictly reduces shanten", () => {
+    // 16-tile hand: pair of m(5) + lots of isolated junk. Pong-ing m(5)
+    // converts a partial pair (1 progress) into a complete set (2 progress)
+    // while consuming 2 tiles → shanten drops by 1.
+    const hand: MahjongTile[] = [
+      m(5), m(5),                            // the pair to pong
+      m(1), p(2), p(7), s(3), s(6), s(9),
+      z(1), z(2), z(3), z(4), z(5), z(6), z(7), p(4),
+    ];
+    const v = mahjongView({
+      phase: "pending_reactions",
+      hand,
+      currentTurn: "p2",
+      lastDiscard: { playerId: "p2", tile: m(5) },
+      awaitingReactionsFrom: ["BOT_1"],
+    });
+    expect(getMahjongBotAction(v).type).toBe("pong");
+  });
+
+  it("passes on a pong that would worsen shanten (sacrifices the only pair)", () => {
+    // Tenpai hand: 4 complete chows + pair s(3)s(3) + partial s(7)s(8).
+    // Ponging s(3) consumes the pair → lose pair claim, gain a set we
+    // already had progress for; shanten goes 0 → 1. Bot should pass.
+    const hand: MahjongTile[] = [
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      m(7), m(8), m(9),
+      p(1), p(2), p(3),
+      s(3), s(3),                                  // the only pair
+      s(7), s(8),                                  // partial chow draw
+    ];
+    const v = mahjongView({
+      phase: "pending_reactions",
+      hand,
+      currentTurn: "p2",
+      lastDiscard: { playerId: "p2", tile: s(3) },
+      awaitingReactionsFrom: ["BOT_1"],
+    });
+    expect(getMahjongBotAction(v).type).toBe("mj_pass");
+  });
+
   it("returns mj_pass defensively when called outside a valid action context", () => {
     const hand: MahjongTile[] = [m(1)];
     const v = mahjongView({
