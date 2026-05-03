@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-02 — post-launch hardening 收尾。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-03 — Bot AI 第八批：Mahjong shanten-based discard scoring + Texas paired-board kicker awareness。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
@@ -40,9 +40,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：24 檔 / **273 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：25 檔 / **286 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 289 測試**
+>   - **總計 302 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -346,8 +346,8 @@ gateway.ts ──verifyJWT──► GameRoomDO
 3. **麻將連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）
 4. **e2e 測試（Cypress / Playwright in CI）** — 目前 Node 24 + Workers 6 個檔的 unit/integration coverage 都很厚；e2e 加上去能補完整 UI flow，但需要 CI runner 跑 vite dev + worker dev 雙進程，infrastructure cost 高
 5. **Replay 全域精選頁** — 需設計議題：誰能精選（admin / 自己 / 任何人）、保留期、隱私邊界（精選後別人能看的範圍）、是否與 share token 整合
-6. **Mahjong shanten / 真實 wait shape scoring** — bot discard 可從目前的 isolation+neighbour heuristic 升級到計算 shanten（離胡的步數）。需要寫一個 shanten 函式 + 測試套，是真的 algorithmic work。當前的 don't-feed-kong + kong-instead-of-pong 已經把 reactionphase 抓到能抓的便宜
-7. **Texas 後翻牌 paired-board kicker awareness** — bot 目前對 trips/quads 直接 raise，沒考慮自己的 kicker 是否被 board 蓋掉。現有 OESD + 位置感知 已經抓到 preflop 大部分修正空間
+6. ~~**Mahjong shanten / 真實 wait shape scoring**~~ — **完成（2026-05-03）**：`src/game/MahjongShanten.ts`（5 melds + 1 pair 標準分解，pair anchor + chow / pong / partial-chow / partial-pair backtrack）；`pickDiscardTile` 改為 shanten 主鍵 + isolation tiebreak + danger 大常數覆蓋；10 案例覆蓋（test/MahjongShanten.test.ts）
+7. ~~**Texas 後翻牌 paired-board kicker awareness**~~ — **完成（2026-05-03）**：`tripsKickerWeak()` 偵測「paired board + 1 hole match」（kicker < J 視為弱）以及「trips on board」（hole 高張 < K 視為弱）；命中時降為 call/check + 0.5 pot odds 上限；3 新案例
 
 ### ✅ 後續補齊（2026-05-02 第七批 — post-launch hardening）
 

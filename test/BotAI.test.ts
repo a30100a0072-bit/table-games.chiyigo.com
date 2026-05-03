@@ -559,6 +559,60 @@ describe("Texas Hold'em bot", () => {
     expect(getTexasBotAction(v).type).toBe("call");
   });
 
+  it("does not raise paired-board trips with a weak kicker (K-K-7 + K-4)", () => {
+    // Board pairs Ks; we have K-4 → trips Ks with kicker 4. Anyone with K-X
+    // where X>4 dominates us. Bot should call, not fire a raise.
+    const v = texasView({
+      street: "flop",
+      hole: [{ rank: "K", suit: "clubs" }, { rank: "4", suit: "diamonds" }],
+      communityCards: [
+        { rank: "K", suit: "spades" },
+        { rank: "K", suit: "hearts" },
+        { rank: "7", suit: "diamonds" },
+      ],
+      currentBet: 20,
+      self: { betThisStreet: 0 } as PokerStateView["self"],
+      pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
+    });
+    expect(getTexasBotAction(v).type).toBe("call");
+  });
+
+  it("still raises paired-board trips when kicker is strong (K-K-7 + K-A)", () => {
+    // K-A has the nut kicker — no domination concern, value-bet.
+    const v = texasView({
+      street: "flop",
+      hole: [{ rank: "K", suit: "clubs" }, { rank: "A", suit: "diamonds" }],
+      communityCards: [
+        { rank: "K", suit: "spades" },
+        { rank: "K", suit: "hearts" },
+        { rank: "7", suit: "diamonds" },
+      ],
+      currentBet: 0,
+      self: { betThisStreet: 0 } as PokerStateView["self"],
+    });
+    expect(getTexasBotAction(v).type).toBe("raise");
+  });
+
+  it("does not raise trips-on-board (9-9-9-K-2) when our hole is small (Q-J)", () => {
+    // Three 9s on board → everyone has trips. Kicker is top-of-hole; Q-J both
+    // < K so we have no edge. Bot should check rather than raise into a board
+    // that can hide AK / AA / KK / pocket pairs.
+    const v = texasView({
+      street: "river",
+      hole: [{ rank: "Q", suit: "clubs" }, { rank: "J", suit: "diamonds" }],
+      communityCards: [
+        { rank: "9", suit: "spades" },
+        { rank: "9", suit: "hearts" },
+        { rank: "9", suit: "diamonds" },
+        { rank: "K", suit: "clubs" },
+        { rank: "2", suit: "spades" },
+      ],
+      currentBet: 0,
+      self: { betThisStreet: 0 } as PokerStateView["self"],
+    });
+    expect(getTexasBotAction(v).type).toBe("check");
+  });
+
   it("folds a one-sided straight draw at the bottom (A-2-3-4) — only 4 outs", () => {
     // Hole A♣ 2♦ + flop 3♥ 4♠ K♣ → A-2-3-4 needs a 5; one-sided.
     // Bot's hasOpenEndedStraightDraw excludes wheel-side draws, so this

@@ -19,6 +19,7 @@ import type {
 import { detectCombo, cardVal } from "./BigTwoStateMachine";
 import { canWin } from "./MahjongStateMachine";
 import { rankFiveCardKey } from "./TexasHoldemStateMachine";
+import { mahjongShanten } from "./MahjongShanten";
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Big Two
@@ -245,17 +246,21 @@ function tileUtility(counts: Uint8Array, idx: number): number {
   return score;
 }
 
-/** Pick the most isolated tile to discard. Lone honors leave first.          // L3_邏輯安防
+/** Pick a discard by computing each candidate's resulting shanten.            // L3_邏輯安防
  *
- *  When opponents have exposed pongs we add a heavy penalty (>> any
- *  in-hand utility) for matching tiles, since discarding one lets the
- *  opponent upgrade pong → kong (gain a replacement tile + 1 fan).
- *  The penalty is large enough that danger tiles only get picked when
- *  the entire hand is dangerous, which in practice is a degenerate
- *  end-of-wall situation we'd lose anyway.                                   // L3_邏輯安防 */
+ *  Primary key: shanten of the post-discard hand (lower = closer to win).
+ *  Tiebreak 1: isolation utility (tileUtility) — prefer dropping tiles
+ *              with thinner neighbour support among shanten-equivalent picks.
+ *  Tiebreak 2: stable index. The danger penalty (matching opponent's exposed
+ *              pong, which they could upgrade to kong) is added on top, large
+ *              enough to override shanten in all but degenerate hands.       // L3_邏輯安防
+ *
+ *  The shanten function dominates the cost (one decomposition search per
+ *  unique discard), so we deduplicate by tile index before searching.        // L2_實作 */
 function pickDiscardTile(
   hand: MahjongTile[],
   opponentExposed: readonly (readonly { kind: string; tiles: MahjongTile[] }[])[] = [],
+  exposedSelf: number = 0,
 ): MahjongTile {
   const counts = new Uint8Array(34);
   for (const t of hand) counts[tileIndex(t)]!++;
@@ -263,21 +268,36 @@ function pickDiscardTile(
   const dangerTileIndices = new Set<number>();
   for (const melds of opponentExposed) {
     for (const m of melds) {
-      // Pongs are upgrade-able to kongs by discarding the matching tile.
-      // Existing kongs / chows are sealed — cannot grow.
       if (m.kind === "pong" && m.tiles[0]) {
         dangerTileIndices.add(tileIndex(m.tiles[0]));
       }
     }
   }
 
+  // Cache shanten by tile index — many hands have duplicates.
+  const shantenCache = new Map<number, number>();
+  const shantenForDiscardingIdx = (idx: number): number => {
+    const cached = shantenCache.get(idx);
+    if (cached !== undefined) return cached;
+    counts[idx]!--;
+    const s = mahjongShanten(counts, exposedSelf);
+    counts[idx]!++;
+    shantenCache.set(idx, s);
+    return s;
+  };
+
   let bestI = 0;
-  let bestScore = Infinity;
+  let bestKey = Infinity;
   for (let i = 0; i < hand.length; i++) {
     const idx = tileIndex(hand[i]!);
-    let score = tileUtility(counts, idx);
-    if (dangerTileIndices.has(idx)) score += 10_000;
-    if (score < bestScore) { bestScore = score; bestI = i; }
+    const sh  = shantenForDiscardingIdx(idx);
+    const iso = tileUtility(counts, idx);
+    // Composite key: shanten dominates (×100000), iso is tiebreak (×1).
+    // Danger overrides shanten by adding 10_000_000 — bigger than any
+    // shanten×100000 product in 16-tile hands (max shanten ≤ 10 → 1_000_000).
+    let key = sh * 100_000 + iso;
+    if (dangerTileIndices.has(idx)) key += 10_000_000;
+    if (key < bestKey) { bestKey = key; bestI = i; }
   }
   return hand[bestI]!;
 }
@@ -358,7 +378,7 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
     if (canWin(view.self.hand, view.self.exposed.length)) {
       return { type: "hu", selfDrawn: true };
     }
-    return { type: "discard", tile: pickDiscardTile(view.self.hand, view.opponents.map(o => o.exposed)) };
+    return { type: "discard", tile: pickDiscardTile(view.self.hand, view.opponents.map(o => o.exposed), view.self.exposed.length) };
   }
 
   // Defensive fallback — DO will guard against scheduling us in wrong phase. // L3_架構含防禦觀測
@@ -463,6 +483,48 @@ function hasOpenEndedStraightDraw(cards: Card[]): boolean {
   return false;
 }
 
+/** True when our `cat===3` trips comes from a paired or tripped board and
+ *  our playing kicker is easily dominated by any villain holding the same
+ *  trip rank with a higher kicker. Sets (pocket pair + 1 board match) are
+ *  immune — both our hole cards make the trips, kicker is the top remaining
+ *  card. The dangerous shapes are:                                            // L3_邏輯安防
+ *    - paired board + 1 hole match: kicker = our other hole; weak if < J
+ *    - trips on board (3 of a rank in community): kicker = top hole; weak < K */
+function tripsKickerWeak(hole: [Card, Card], community: Card[]): boolean {
+  const all = [...hole, ...community];
+  const counts = new Map<Rank, number>();
+  for (const c of all) counts.set(c.rank, (counts.get(c.rank) ?? 0) + 1);
+
+  let tripRank: Rank | null = null;
+  let tripVal = -1;
+  for (const [r, n] of counts) {
+    if (n >= 3 && RANK_VAL_TX[r] > tripVal) { tripRank = r; tripVal = RANK_VAL_TX[r]; }
+  }
+  if (!tripRank) return false;
+
+  const boardOfTrip = community.filter(c => c.rank === tripRank).length;
+  const holeOfTrip  = hole.filter(c => c.rank === tripRank).length;
+
+  // Set (pocket pair + 1 board match) — kicker irrelevant.
+  if (holeOfTrip === 2) return false;
+
+  // Paired board + 1 hole card → kicker = our other hole card.
+  if (holeOfTrip === 1 && boardOfTrip === 2) {
+    const kickerVal = hole[0].rank === tripRank
+      ? RANK_VAL_TX[hole[1].rank]
+      : RANK_VAL_TX[hole[0].rank];
+    return kickerVal < 11;        // < J
+  }
+
+  // Trips on board — kicker = our highest hole card.
+  if (boardOfTrip >= 3) {
+    const holeHi = Math.max(RANK_VAL_TX[hole[0].rank], RANK_VAL_TX[hole[1].rank]);
+    return holeHi < 13;           // < K
+  }
+
+  return false;
+}
+
 export function getTexasBotAction(view: PokerStateView): PlayerAction {
   const me = view.self;
   const owe = Math.max(0, view.currentBet - me.betThisStreet);
@@ -509,8 +571,15 @@ export function getTexasBotAction(view: PokerStateView): PlayerAction {
   const avail = [me.holeCards[0], me.holeCards[1], ...view.communityCards];
   const cat = bestCategory(avail);
 
-  // Trips or better → value-bet aggressively
+  // Trips or better → value-bet aggressively, except paired/tripped-board
+  // trips where our kicker is dominated: flat-call instead of raise.       // L2_實作
   if (cat >= 3) {
+    if (cat === 3 && tripsKickerWeak(me.holeCards, view.communityCards)) {
+      if (canCheck) return { type: "check" };
+      const potTotal = view.pots.reduce((s, p) => s + p.amount, 0);
+      const callOdds = owe / (potTotal + owe);
+      return callOdds <= 0.5 ? { type: "call" } : { type: "fold" };
+    }
     return buildRaise() ?? (canCheck ? { type: "check" } : { type: "call" });
   }
   // Pair / two-pair → see cheap cards, fold to large bets
