@@ -88,7 +88,7 @@ function sortTiles(tiles: MahjongTile[]): MahjongTile[] {
 
 // ─── views ────────────────────────────────────────────────────────────────────
 
-function TileView({ tile, selected, onClick }: { tile: MahjongTile; selected: boolean; onClick?: () => void }) {
+function TileView({ tile, selected, onClick, danger }: { tile: MahjongTile; selected: boolean; onClick?: () => void; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -96,9 +96,12 @@ function TileView({ tile, selected, onClick }: { tile: MahjongTile; selected: bo
       className={[
         "flex h-14 w-10 flex-shrink-0 items-center justify-center rounded-md border-2 bg-white text-sm font-bold shadow-md",
         "transition-transform active:scale-95 disabled:cursor-default",
-        selected ? "-translate-y-3 border-yellow-400 shadow-yellow-300/50" : "border-gray-300",
+        selected ? "-translate-y-3 border-yellow-400 shadow-yellow-300/50"
+          : danger ? "border-red-500 ring-2 ring-red-400/60 shadow-red-300/40"
+          : "border-gray-300",
         tileColor(tile),
       ].join(" ")}
+      title={danger ? "對手副露多 — 此花色危險" : undefined}
     >
       {tileLabel(tile)}
     </button>
@@ -251,6 +254,17 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
   const pickedTile = handSorted.find(t => tileKey(t) === picked) ?? null;
   const ld = view.lastDiscard;
 
+  // 防守視覺化：對手副露 ≥3 副的花色標紅。同 BotAI.pickDiscardTile 的
+  // soft-danger 規則（僅自己回合提示，避免分散反應期注意力）。              // L2_實作
+  const dangerSuits = new Set<string>();
+  for (const op of view.opponents) {
+    if (op.exposed.length < 3) continue;
+    for (const m of op.exposed) {
+      const s = m.tiles[0]?.suit;
+      if (s && s !== "f") dangerSuits.add(s);
+    }
+  }
+
   // ─── action availability ─────
   const canDiscard = isMyTurn && pickedTile !== null && view.phase === "playing";
   const canPong    = inReact && ld !== null && view.self.hand.filter(t => tileEq(t, ld.tile)).length >= 2;
@@ -383,6 +397,7 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
               key={tileKey(t)}
               tile={t}
               selected={picked === tileKey(t)}
+              danger={isMyTurn && dangerSuits.has(t.suit)}
               onClick={() => setPicked(p => p === tileKey(t) ? null : tileKey(t))}
             />
           ))}

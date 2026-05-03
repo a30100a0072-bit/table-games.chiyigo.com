@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — 第十一批：Replay 精選頁（admin curation + public 公開 feed）+ Playwright e2e smoke（login → 三遊戲卡片，page.route 攔截不需真 backend）。詳細見下方 roster；近期重點：連莊 N 全套、Replay 精選、e2e smoke、Block 列表、Friend 推薦、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-03 — 第十二批：多局 replay 接通（hand_boundary）+ admin featured UI + shanten cross-turn memo + match summary + 防守視覺化 + e2e lobby 場景。詳細見下方 roster；近期重點：連莊 N 全套（含 replay）、Replay 精選 + admin UI、e2e（smoke + lobby）、Block 列表、Friend 推薦、PWA 離線快取、WS keep-alive。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
