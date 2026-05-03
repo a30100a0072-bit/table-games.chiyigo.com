@@ -337,7 +337,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - `.gitattributes`：commit 不再噴 CRLF 警告
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
 
-### ⏳ 真正剩下的（2026-05-02 第七批之後）
+### ✅ 全部清空（2026-05-03 第八批：e2e 擴到「完整一手」收尾）
 
 **需要外部資源**
 1. ~~**Sentry / Cloudflare Logpush 接線**~~ — 完成（2026-05-01 第三批 / 2026-05-02 第七批加 retry + DLQ-via-stderr）
@@ -345,7 +345,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 **真正待辦**
 3. ~~**麻將連莊 N**~~ — **完成（2026-05-03）**：SM + DO + lobby + 前端全套接通。SM `targetHands` ctor 參數、`between_hands` phase、`startNextHand` 含 dealer 連莊規則 + per-hand gameId/roundId 輪轉；`SettlementResult.matchOver` + `matchProgress`；`MahjongStateView.match` 帶當前 handNumber/targetHands/dealerIdx/bankerStreak。`GameRoomDO.handleSettlement` 收到 `matchOver=false` 時：仍 emit queue + 廣播（per-hand 入帳），跳過 cleanup/replay/tournament，呼叫 `engine.startNextHand()` mint `gameId-h{n}`/`r-h{n}`（避免 chip_ledger UNIQUE 衝突），**append `hand_boundary` event 到 replay buffer**（含 snapshot + 連莊資訊），重新排程 turn alarm。`/api/match` 接 `mahjongHands: 1..16`，ANTE 改為 N 倍；LobbyDO 桶化 `${gameType}:${hands}`（不同局數玩家不互配）；GameSelectScreen 顯示局數選單（1/4/8/16）；MahjongGameScreen 顯示「第 N/M 局」+ 連莊 ×N 標。**Replay viewer**：`ReplayEvent.kind` 加 `"hand_boundary"`，事件卡顯示「🀄 第 N 局開始」+ 連莊徽章，所有手 events 都在末局結算寫入 replay_meta。
-4. **e2e 測試（Playwright smoke）** — 完成基礎（2026-05-03）：`frontend/playwright.config.ts` + `frontend/e2e/smoke.spec.ts`（login → 看到三遊戲卡片，全套用 page.route 攔截 fetch — 不需要真的 worker / D1）+ `.github/workflows/e2e.yml`（push master + PR 觸發，chromium-only，10 min timeout）。目前只覆蓋 login → select 一個 happy path；後續可擴：lobby 配對 → mahjong 連莊 進局 → 完整一手。
+4. ~~**e2e 測試（Playwright smoke）**~~ — **完成（2026-05-03 → 擴 2026-05-03 第八批）**：`frontend/playwright.config.ts` + `frontend/e2e/smoke.spec.ts`（全套用 page.route / `page.routeWebSocket` 攔截 — 不需要真的 worker / D1）+ `.github/workflows/e2e.yml`（push master + PR 觸發，chromium-only，10 min timeout）。**5 個 case**：(1) login → 三遊戲卡片可見；(2) 點 bigTwo → 進 lobby 看見 cancel 鈕；(3) 麻將局數選擇器把 `mahjongHands: 4` 寫進 `/api/match` request body；(4) **完整一手 happy path**：stub `/api/match` + `routeWebSocket` 注入 alice 1 張手牌 state → 點卡 → 點 Play → 客戶端送 action frame → stub 回 settlement → ResultScreen 顯示「You won!」；(5) match 成功轉場到 GameScreen 看見 connecting/reconnecting 狀態。`playwright.config.ts` 改 vite preview `--host 127.0.0.1`（Windows 上 `localhost` 預設 v6-first，會卡死 Playwright 的 v4 readiness probe 120s）。
 5. ~~**Replay 全域精選頁**~~ — **完成（2026-05-03）**：`replay_featured` 表、admin POST/DELETE 端點、公開 `GET /api/replays/featured`，前端 ⭐ 按鈕 + `FeaturedReplaysModal` 列表（觀看 → 走既有 share-token 觀戰 viewer）。隱私契約：精選 row 公開 player_ids + finished_at + admin note；牌面仍透過 share_token 走擁有者座位的 view-isolation。Cron sweep 過期清理（featured 必須先於 share，FK ordering）。
 6. ~~**Mahjong shanten / 真實 wait shape scoring**~~ — **完成（2026-05-03）**：`src/game/MahjongShanten.ts`（5 melds + 1 pair 標準分解，pair anchor + chow / pong / partial-chow / partial-pair backtrack）；`pickDiscardTile` 改為 shanten 主鍵 + isolation tiebreak + danger 大常數覆蓋；10 案例覆蓋（test/MahjongShanten.test.ts）
 7. ~~**Texas 後翻牌 paired-board kicker awareness**~~ — **完成（2026-05-03）**：`tripsKickerWeak()` 偵測「paired board + 1 hole match」（kicker < J 視為弱）以及「trips on board」（hole 高張 < K 視為弱）；命中時降為 call/check + 0.5 pot odds 上限；3 新案例
