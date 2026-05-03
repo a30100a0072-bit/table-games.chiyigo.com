@@ -384,7 +384,7 @@ export class MahjongStateMachine {
    *    - winnerIdx !== dealerIdx              → dealer rotates CCW (next seat)
    *    - draw exhaustion / forfeit            → dealer rotates (simplification)
    *  After rotation, deal a fresh wall + hands; phase returns to "playing".              // L2_實作 */
-  startNextHand(prevWinnerIdx: number | null, isDraw: boolean): void {
+  startNextHand(prevWinnerIdx: number | null, isDraw: boolean, nextGameId?: string, nextRoundId?: string): void {
     if (this.s.phase !== "between_hands") throw new Error("NOT_BETWEEN_HANDS");
     if (this.s.handNumber >= this.s.targetHands) throw new Error("MATCH_ALREADY_OVER");
 
@@ -403,6 +403,11 @@ export class MahjongStateMachine {
     this.s.dealerIdx = newDealer;
     this.s.bankerStreak = newStreak;
     this.s.handNumber += 1;
+    // Rotate ids so each hand emits a distinct settlement target — keeps the
+    // chip_ledger UNIQUE(player_id, game_id, reason) constraint from
+    // collapsing N hands into one row.                                      // L2_實作
+    if (nextGameId)  this.s.gameId  = nextGameId;
+    if (nextRoundId) this.s.roundId = nextRoundId;
     this.s.lastDiscard = null;
     this.s.pendingReactions = [];
     this.s.reactionDeadlineMs = 0;

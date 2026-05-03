@@ -79,6 +79,13 @@ export interface IGameEngine {
    * Returns a ProcessOutcome — the DO handles the settlement if any.        // L3_架構含防禦觀測
    */
   autoActionOnTimeout(playerId: PlayerId): ProcessOutcome;
+
+  /** Multi-hand only: advance to the next hand after a non-final settlement.
+   *  Engines without multi-hand support throw `MULTIHAND_NOT_SUPPORTED`.
+   *  Caller passes the next hand's distinct gameId/roundId so the chip
+   *  ledger's UNIQUE(player_id, game_id, reason) doesn't collapse.
+   *  Caller must observe `settlement.matchOver === false` first.            // L3_架構含防禦觀測 */
+  startNextHand(prevWinnerId: PlayerId | null, isDraw: boolean, nextGameId?: string, nextRoundId?: string): void;
 }
 
 // ──────────────────────────────────────────────
@@ -138,6 +145,7 @@ class BigTwoEngine implements IGameEngine {
     const r = this.m.processAction(playerId, action);
     return { settlement: r.settlement ?? null, appliedAction: action };
   }
+  startNextHand(): void { throw new Error("MULTIHAND_NOT_SUPPORTED"); }
 }
 
 // ──────────────────────────────────────────────
@@ -213,6 +221,13 @@ class MahjongEngine implements IGameEngine {
     if (!r.ok) throw new Error(r.error);
     return { settlement: r.settlement ?? null, appliedAction: fallback };
   }
+  startNextHand(prevWinnerId: PlayerId | null, isDraw: boolean, nextGameId?: string, nextRoundId?: string): void {
+    const snap = this.m.snapshot() as MahjongSnapshot;
+    const winnerIdx = prevWinnerId
+      ? snap.players.findIndex(p => p.playerId === prevWinnerId)
+      : null;
+    this.m.startNextHand(winnerIdx === -1 ? null : winnerIdx, isDraw, nextGameId, nextRoundId);
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -277,6 +292,7 @@ class TexasEngine implements IGameEngine {
     if (!r.ok) throw new Error(r.error);
     return { settlement: r.settlement ?? null, appliedAction: { type: "fold" } };
   }
+  startNextHand(): void { throw new Error("MULTIHAND_NOT_SUPPORTED"); }
 }
 
 // ──────────────────────────────────────────────
@@ -293,6 +309,8 @@ export interface CreateEngineOptions {
   bigBlind?: number;
   /** Texas 專用 — 預設每人 1000 籌碼。                                       // L2_實作 */
   startingStack?: number;
+  /** Mahjong 專用 — 連莊 N 局（預設 1 = 單局）。                              // L2_實作 */
+  mahjongTargetHands?: number;
 }
 
 export function createEngine(opts: CreateEngineOptions): IGameEngine {
@@ -300,7 +318,9 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
     case "bigTwo":
       return new BigTwoEngine(new BigTwoStateMachine(opts.gameId, opts.roundId, opts.playerIds));
     case "mahjong":
-      return new MahjongEngine(new MahjongStateMachine(opts.gameId, opts.roundId, opts.playerIds));
+      return new MahjongEngine(new MahjongStateMachine(
+        opts.gameId, opts.roundId, opts.playerIds, undefined, opts.mahjongTargetHands ?? 1,
+      ));
     case "texas": {
       const sb    = opts.smallBlind   ?? 10;
       const bb    = opts.bigBlind     ?? 20;

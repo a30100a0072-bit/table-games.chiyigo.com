@@ -80,6 +80,8 @@ interface RoomMeta {
   /** Texas-only — overrides default 10/20 (tournament rounds escalate). */
   smallBlind?:      number;
   bigBlind?:        number;
+  /** Mahjong-only — 連莊 N 局；預設 1 = 單局制（不變更現行行為）。     // L2_實作 */
+  mahjongTargetHands?: number;
 }
 
 const RECONNECT_MS  = 60_000;
@@ -140,11 +142,11 @@ export class GameRoomDO implements DurableObject {
     const {
       gameId, roundId, gameType, capacity,
       botIds = [], prefilledPlayerIds, tournamentId,
-      smallBlind, bigBlind,
+      smallBlind, bigBlind, mahjongTargetHands,
     } = await request.json<{
       gameId: string; roundId: string; gameType?: string; capacity: number;
       botIds?: string[]; prefilledPlayerIds?: string[]; tournamentId?: string;
-      smallBlind?: number; bigBlind?: number;
+      smallBlind?: number; bigBlind?: number; mahjongTargetHands?: number;
     }>();
     if (capacity < 2 || capacity > 4)
       return new Response("capacity must be 2–4", { status: 400 });
@@ -167,6 +169,13 @@ export class GameRoomDO implements DurableObject {
         return new Response("invalid blinds", { status: 400 });
     }
 
+    if (mahjongTargetHands !== undefined) {
+      if (gt !== "mahjong")
+        return new Response("mahjongTargetHands only valid for mahjong", { status: 400 });
+      if (!Number.isInteger(mahjongTargetHands) || mahjongTargetHands < 1 || mahjongTargetHands > 16)
+        return new Response("mahjongTargetHands must be 1..16", { status: 400 });
+    }
+
     this.room = {
       gameId, roundId, gameType: gt, phase: "waiting",
       playerIds: [...botIds], capacity,
@@ -174,6 +183,7 @@ export class GameRoomDO implements DurableObject {
       ...(prefilledPlayerIds ? { allowedPlayers: prefilledPlayerIds } : {}),
       ...(smallBlind !== undefined ? { smallBlind } : {}),
       ...(bigBlind   !== undefined ? { bigBlind }   : {}),
+      ...(mahjongTargetHands !== undefined ? { mahjongTargetHands } : {}),
     };
     await this.state.storage.put(SK.ROOM, this.room);
 
@@ -261,6 +271,7 @@ export class GameRoomDO implements DurableObject {
       playerIds: this.room.playerIds,
       ...(this.room.smallBlind !== undefined ? { smallBlind: this.room.smallBlind } : {}),
       ...(this.room.bigBlind   !== undefined ? { bigBlind:   this.room.bigBlind   } : {}),
+      ...(this.room.mahjongTargetHands !== undefined ? { mahjongTargetHands: this.room.mahjongTargetHands } : {}),
     });
     // Capture the post-deal snapshot so a replay can restoreEngine()
     // with identical state and reapply events deterministically.        // L3_架構
@@ -617,6 +628,41 @@ export class GameRoomDO implements DurableObject {
       try { ws.send(frame); } catch {}
     }
     await this.env.SETTLEMENT_QUEUE.send({ type: "settlement", payload: result });
+
+    // Multi-hand mid-match: chip economy + UI already updated above; skip
+    // replay/tournament/cleanup, mint the next hand's ids, advance the SM,
+    // and re-arm timers for the new dealer's first turn.                    // L2_實作
+    if (result.matchOver === false && this.engine && this.room) {
+      try {
+        const nextHand = (result.matchProgress?.handNumber ?? 1) + 1;
+        const nextGameId  = `${this.room.gameId.split("-h")[0]}-h${nextHand}`;
+        const nextRoundId = `${this.room.roundId.split("-h")[0]}-h${nextHand}`;
+        const isDraw = result.players.every(p => p.scoreDelta === 0);
+        const winnerId = isDraw ? null : result.winnerId;
+        this.engine.startNextHand(winnerId, isDraw, nextGameId, nextRoundId);
+        this.room.gameId = nextGameId;
+        this.room.roundId = nextRoundId;
+        // Reset replay buffer per hand (we only persist the final hand's
+        // events; multi-hand replay viewer is a follow-up).                 // L2_實作
+        this.replay = {
+          startedAt: Date.now(),
+          initialSnapshot: this.engine.snapshot(),
+          events: [],
+        };
+        await Promise.all([
+          this.persistMachine(),
+          this.state.storage.put(SK.ROOM, this.room),
+          this.state.storage.put(SK.REPLAY, this.replay),
+        ]);
+        this.broadcastViews();
+        await this.scheduleNextDeadline();
+        await this.checkBotTurn();
+      } catch (err) {
+        console.error("[multihand] startNextHand failed:", err);
+        // Fall through to cleanup so the DO doesn't wedge.
+      }
+      return;
+    }
 
     // Replay flush: one row per finished game. INSERT OR IGNORE so a
     // forceSettle that runs twice (e.g. timeout + reconnect-expired race)

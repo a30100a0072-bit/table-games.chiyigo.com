@@ -245,3 +245,51 @@ describe("GameRoomDO replay recording", () => {
     // the engine adapter / replay handler suites.
   });
 });
+
+describe("GameRoomDO multi-hand mahjong (連莊 N)", () => {
+  it("/init validates mahjongTargetHands range", async () => {
+    const room = new GameRoomDO(store as unknown as DurableObjectState, env);
+    const body = (h: number) => JSON.stringify({
+      gameId: "mj1", roundId: "r1", gameType: "mahjong", capacity: 4,
+      botIds: ["BOT_1", "BOT_2", "BOT_3", "BOT_4"],
+      mahjongTargetHands: h,
+    });
+
+    const tooLow  = await room.fetch(new Request("https://room.local/init", { method: "POST", body: body(0) }));
+    expect(tooLow.status).toBe(400);
+    const tooHigh = await room.fetch(new Request("https://room.local/init", { method: "POST", body: body(99) }));
+    expect(tooHigh.status).toBe(400);
+  });
+
+  it("/init rejects mahjongTargetHands on non-mahjong gameType", async () => {
+    const room = new GameRoomDO(store as unknown as DurableObjectState, env);
+    const res = await room.fetch(new Request("https://room.local/init", {
+      method: "POST",
+      body: JSON.stringify({
+        gameId: "g", roundId: "r", gameType: "bigTwo", capacity: 4,
+        botIds: ["BOT_1", "BOT_2", "BOT_3", "BOT_4"],
+        mahjongTargetHands: 4,
+      }),
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it("/init persists mahjongTargetHands in room and into the engine", async () => {
+    const room = new GameRoomDO(store as unknown as DurableObjectState, env);
+    const res = await room.fetch(new Request("https://room.local/init", {
+      method: "POST",
+      body: JSON.stringify({
+        gameId: "mj1", roundId: "r1", gameType: "mahjong", capacity: 4,
+        botIds: ["BOT_1", "BOT_2", "BOT_3", "BOT_4"],
+        mahjongTargetHands: 4,
+      }),
+    }));
+    expect(res.ok).toBe(true);
+
+    const persisted = store.storage.store.get("room") as { mahjongTargetHands?: number };
+    expect(persisted.mahjongTargetHands).toBe(4);
+
+    const machine = store.storage.store.get("machine") as { targetHands: number };
+    expect(machine.targetHands).toBe(4);
+  });
+});
