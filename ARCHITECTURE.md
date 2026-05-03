@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — 第十批：麻將連莊 N 多局賽事全套（SM + DO + lobby + 前端）。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive、連莊 N。
+> 最後更新：2026-05-03 — 第十一批：Replay 精選頁（admin curation + public 公開 feed）+ Playwright e2e smoke（login → 三遊戲卡片，page.route 攔截不需真 backend）。詳細見下方 roster；近期重點：連莊 N 全套、Replay 精選、e2e smoke、Block 列表、Friend 推薦、PWA 離線快取、WS keep-alive。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
@@ -41,9 +41,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：26 檔 / **306 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：27 檔 / **316 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 322 測試**
+>   - **總計 332 測試**（+ Playwright e2e smoke 1 案，跑於獨立 GitHub Actions workflow）
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -345,8 +345,8 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 **真正待辦**
 3. ~~**麻將連莊 N**~~ — **完成（2026-05-03）**：SM + DO + lobby + 前端全套接通。SM `targetHands` ctor 參數、`between_hands` phase、`startNextHand` 含 dealer 連莊規則 + per-hand gameId/roundId 輪轉；`SettlementResult.matchOver` + `matchProgress`；`MahjongStateView.match` 帶當前 handNumber/targetHands/dealerIdx/bankerStreak。`GameRoomDO.handleSettlement` 收到 `matchOver=false` 時：仍 emit queue + 廣播（per-hand 入帳），跳過 cleanup/replay/tournament，呼叫 `engine.startNextHand()` mint `gameId-h{n}`/`r-h{n}`（避免 chip_ledger UNIQUE 衝突），重置 replay buffer，重新排程 turn alarm。`/api/match` 接 `mahjongHands: 1..16`，ANTE 改為 N 倍；LobbyDO 桶化 `${gameType}:${hands}`（不同局數玩家不互配）；GameSelectScreen 顯示局數選單（1/4/8/16）；MahjongGameScreen 顯示「第 N/M 局」+ 連莊 ×N 標。**已知限制**：replay_meta 只記錄末局 events（多局 replay viewer 是 follow-up）。
-4. **e2e 測試（Cypress / Playwright in CI）** — 目前 Node 24 + Workers 6 個檔的 unit/integration coverage 都很厚；e2e 加上去能補完整 UI flow，但需要 CI runner 跑 vite dev + worker dev 雙進程，infrastructure cost 高
-5. **Replay 全域精選頁** — 需設計議題：誰能精選（admin / 自己 / 任何人）、保留期、隱私邊界（精選後別人能看的範圍）、是否與 share token 整合
+4. **e2e 測試（Playwright smoke）** — 完成基礎（2026-05-03）：`frontend/playwright.config.ts` + `frontend/e2e/smoke.spec.ts`（login → 看到三遊戲卡片，全套用 page.route 攔截 fetch — 不需要真的 worker / D1）+ `.github/workflows/e2e.yml`（push master + PR 觸發，chromium-only，10 min timeout）。目前只覆蓋 login → select 一個 happy path；後續可擴：lobby 配對 → mahjong 連莊 進局 → 完整一手。
+5. ~~**Replay 全域精選頁**~~ — **完成（2026-05-03）**：`replay_featured` 表、admin POST/DELETE 端點、公開 `GET /api/replays/featured`，前端 ⭐ 按鈕 + `FeaturedReplaysModal` 列表（觀看 → 走既有 share-token 觀戰 viewer）。隱私契約：精選 row 公開 player_ids + finished_at + admin note；牌面仍透過 share_token 走擁有者座位的 view-isolation。Cron sweep 過期清理（featured 必須先於 share，FK ordering）。
 6. ~~**Mahjong shanten / 真實 wait shape scoring**~~ — **完成（2026-05-03）**：`src/game/MahjongShanten.ts`（5 melds + 1 pair 標準分解，pair anchor + chow / pong / partial-chow / partial-pair backtrack）；`pickDiscardTile` 改為 shanten 主鍵 + isolation tiebreak + danger 大常數覆蓋；10 案例覆蓋（test/MahjongShanten.test.ts）
 7. ~~**Texas 後翻牌 paired-board kicker awareness**~~ — **完成（2026-05-03）**：`tripsKickerWeak()` 偵測「paired board + 1 hole match」（kicker < J 視為弱）以及「trips on board」（hole 高張 < K 視為弱）；命中時降為 call/check + 0.5 pot odds 上限；3 新案例
 
