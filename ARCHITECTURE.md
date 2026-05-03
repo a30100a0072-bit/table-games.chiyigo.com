@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — Bot AI 第九批：Mahjong tenpai UI（聽牌指示 + 聽張清單）+ defensive discard（對手 ≥3 副露時降級該花色）+ outs-based discard 次鍵 + Texas paired-board kicker awareness。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-03 — 第十批：麻將連莊 N 多局賽事 SM scaffold（targetHands / between_hands / startNextHand / matchOver flag）— DO/lobby/UI 待後續 commit。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
@@ -41,9 +41,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：25 檔 / **293 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：25 檔 / **300 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 309 測試**
+>   - **總計 316 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -344,7 +344,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**：guest token + 帳號凍結 + ledger 足夠跑 demo / 內測
 
 **真正待辦**
-3. **麻將連莊 N** — 需要多局 dealer 傳遞與 round counter；目前麻將是單局制，要做需先改成多輪賽事架構（類似 Texas tournament 的 round-result 累積）
+3. **麻將連莊 N** — SM scaffold 完成（2026-05-03）：`MahjongStateMachine` ctor 加 `targetHands` 參數（預設 1）、`between_hands` phase、`startNextHand(winnerIdx, isDraw)` 方法、莊家胡→連莊規則、`SettlementResult.matchOver` + `matchProgress` 旗標、`cumulativeScores` 累積。**仍待**：lobby 端 plumbing（局數選擇 + match 請求）、DO 收到 `matchOver=false` 時不要 cleanup 而 reset SM、前端 Mahjong 局數 / 連莊指示 UI。
 4. **e2e 測試（Cypress / Playwright in CI）** — 目前 Node 24 + Workers 6 個檔的 unit/integration coverage 都很厚；e2e 加上去能補完整 UI flow，但需要 CI runner 跑 vite dev + worker dev 雙進程，infrastructure cost 高
 5. **Replay 全域精選頁** — 需設計議題：誰能精選（admin / 自己 / 任何人）、保留期、隱私邊界（精選後別人能看的範圍）、是否與 share token 整合
 6. ~~**Mahjong shanten / 真實 wait shape scoring**~~ — **完成（2026-05-03）**：`src/game/MahjongShanten.ts`（5 melds + 1 pair 標準分解，pair anchor + chow / pong / partial-chow / partial-pair backtrack）；`pickDiscardTile` 改為 shanten 主鍵 + isolation tiebreak + danger 大常數覆蓋；10 案例覆蓋（test/MahjongShanten.test.ts）

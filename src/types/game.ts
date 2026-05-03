@@ -199,6 +199,7 @@ export type MahjongPhase =
   | "dealing"
   | "playing"             // 當前回合者抽牌→打牌中
   | "pending_reactions"   // 收集其他玩家對剛打牌的反應      // L3_架構
+  | "between_hands"       // 多局賽事：本局已 settle，等待下一局 startNextHand
   | "settled";
 
 export interface MahjongSelfView {
@@ -329,6 +330,17 @@ export interface SettlementResult {
   winnerId: PlayerId;
   // 麻將獨有：贏家台數明細，純資訊性，前端可顯示。其他遊戲為 undefined。 // L2_實作
   fanDetail?: { fan: number; base: number; detail: string[] };
+  /** 多局賽事中間局結算為 false；單局或末局為 true（預設）。DO 收到
+   *  matchOver=false 時 ledger 仍照記但不 cleanup，等待下一局。           // L2_鎖定 */
+  matchOver?: boolean;
+  /** 連莊資訊（多局麻將）：handNumber=當前局、targetHands=總局數、
+   *  bankerStreak=本任莊家連莊次數、dealerIdx=莊家座位 idx。前端顯示用。 */
+  matchProgress?: {
+    handNumber: number;
+    targetHands: number;
+    dealerIdx: number;
+    bankerStreak: number;
+  };
 }
 
 /** D1 Queue 訊息包裝，對應 Cloudflare Queue Producer 格式 */

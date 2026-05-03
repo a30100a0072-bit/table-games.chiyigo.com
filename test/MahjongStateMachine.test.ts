@@ -488,3 +488,97 @@ describe("八仙過海 / 七搶一", () => {
     }
   });
 });
+
+describe("多局賽事 / 連莊 N", () => {
+  it("ctor 預設 targetHands=1，與單局行為相容", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1));
+    expect(sm.getTargetHands()).toBe(1);
+    expect(sm.getHandNumber()).toBe(1);
+    expect(sm.isMatchOver()).toBe(false);
+  });
+
+  it("targetHands=2，第一局 hu → matchOver=false + phase=between_hands；第二局 hu → matchOver=true", () => {
+    const make = (mut: (snap: MahjongSnapshot) => void): MahjongStateMachine => {
+      const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 2);
+      const snap = sm.snapshot();
+      mut(snap);
+      return MahjongStateMachine.restore(snap, seededRng(2));
+    };
+
+    // 第一局：搶槓 hu 模板（p1 加槓 m5、p2 食胡）。改成 targetHands=2。
+    const sm = make(st => {
+      st.phase = "playing";
+      st.turnIdx = 0;
+      st.players[0]!.hand = [m(5), m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), s(1), s(2), s(3)];
+      st.players[0]!.exposed = [{ kind: "pong", tiles: [m(5), m(5), m(5)] }];
+      st.drawnThisTurn = m(5);
+      st.players[1]!.hand = [m(1), m(2), m(3), m(4), m(6), m(7), m(8), m(9), p(1), p(2), p(3), p(4), p(5), p(6), z(1), z(1)];
+      st.players[1]!.exposed = [];
+    });
+    sm.process("p1", { type: "kong", source: "added", tile: m(5) });
+    sm.process("p2", { type: "hu", selfDrawn: false });
+    sm.process("p3", { type: "mj_pass" });
+    const r1 = sm.process("p4", { type: "mj_pass" });
+    expect(r1.ok).toBe(true);
+    if (!r1.ok || !r1.settlement) throw new Error("expected settlement");
+    expect(r1.settlement.matchOver).toBe(false);
+    expect(r1.settlement.matchProgress?.handNumber).toBe(1);
+    expect(r1.settlement.matchProgress?.targetHands).toBe(2);
+    expect(sm.viewFor("p1").phase).toBe("between_hands");
+    expect(sm.isMatchOver()).toBe(false);
+
+    // p2 是 winner（idx=1），dealer 是 p1（idx=0）— winner ≠ dealer → 莊家輪轉
+    sm.startNextHand(1, false);
+    expect(sm.getHandNumber()).toBe(2);
+    expect(sm.viewFor("p1").phase).toBe("playing");
+
+    // 第二局：直接造 winning shape，p2 自摸（同一手牌）。
+    // 用 forceSettle 結束最後一局，預期 matchOver=true。
+    const r2 = sm.forceSettle("disconnect", "p4");
+    expect(r2.matchOver).toBe(true);
+    expect(r2.matchProgress?.handNumber).toBe(2);
+    expect(sm.isMatchOver()).toBe(true);
+  });
+
+  it("startNextHand 規則：莊家胡 → 連莊（dealer 不變、bankerStreak++）", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 3);
+    // 強制進入 between_hands 狀態以驗證 startNextHand 純粹的輪轉邏輯
+    const snap = sm.snapshot();
+    snap.phase = "between_hands";
+    snap.dealerIdx = 0;
+    snap.bankerStreak = 0;
+    snap.handNumber = 1;
+    const m2 = MahjongStateMachine.restore(snap, seededRng(2));
+    m2.startNextHand(0, false);   // winnerIdx === dealerIdx → 連莊
+    const view = m2.viewFor("p1");
+    expect(view.currentTurn).toBe("p1");                 // 仍由 p1 莊
+  });
+
+  it("startNextHand 規則：非莊家胡 → 莊家輪轉到下一座", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 3);
+    const snap = sm.snapshot();
+    snap.phase = "between_hands";
+    snap.dealerIdx = 0;
+    snap.handNumber = 1;
+    const m2 = MahjongStateMachine.restore(snap, seededRng(2));
+    m2.startNextHand(2, false);   // winnerIdx=2 ≠ dealerIdx=0 → rotate to 1
+    expect(m2.viewFor("p2").currentTurn).toBe("p2");
+  });
+
+  it("startNextHand 在 phase ≠ between_hands 時拋錯", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 2);
+    expect(() => sm.startNextHand(0, false)).toThrow();
+  });
+
+  it("targetHands 必須是正整數", () => {
+    expect(() => new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 0)).toThrow();
+    expect(() => new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 1.5)).toThrow();
+  });
+
+  it("forceSettle 在多局賽事中也短路為 matchOver=true（不繼續下一局）", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 4);
+    const r = sm.forceSettle("disconnect", "p1");
+    expect(r.matchOver).toBe(true);
+    expect(sm.isMatchOver()).toBe(true);
+  });
+});

@@ -266,7 +266,7 @@ interface InternalState {
   players: PlayerState[];                        // 固定 4 人，順時鐘
   wall: MahjongTile[];                           // 牌牆剩餘
   turnIdx: number;                               // 當前行動者索引
-  dealerIdx: number;                             // 莊家座位（單局簡化：開局即莊，預設 0） // L2_實作
+  dealerIdx: number;                             // 莊家座位（連莊期間不變） // L2_實作
   lastDiscard: { tile: MahjongTile; playerIdx: number } | null;
   pendingReactions: PendingReaction[];           // L3_架構
   reactionDeadlineMs: number;
@@ -278,6 +278,15 @@ interface InternalState {
   /** 加槓 進行中 — 開放搶槓反應視窗。null = 普通 lastDiscard 視窗。
    *  搶槓胡 = food-hu on this tile，否則視窗結束後完成槓+補張。           // L2_實作 */
   kongUpgradeContext: { tile: MahjongTile; kongerIdx: number } | null;
+  // ── 連莊 / 多局賽事 ────────────────────────────
+  /** 整場目標局數。1 = 單局（預設行為，無連莊）；> 1 = 多局賽事。       // L2_實作 */
+  targetHands: number;
+  /** 當前局序，1..targetHands。                                          // L2_實作 */
+  handNumber: number;
+  /** 同一玩家連任莊家的次數（不含開局首莊）。                           // L2_實作 */
+  bankerStreak: number;
+  /** 整場累積分數（每局 settle 時加總），最終局結算可寫成 ledger 摘要。 */
+  cumulativeScores: Record<PlayerId, number>;
 }
 
 export type ProcessResult =
@@ -291,51 +300,153 @@ export class MahjongStateMachine {
   private s: InternalState;
 
   /** DO Hibernation 還原入口；不重新洗牌，直接接續既有狀態。              // L3_架構含防禦觀測 */
-  static restore(snap: MahjongSnapshot): MahjongStateMachine {
+  static restore(snap: MahjongSnapshot, rng: () => number = Math.random): MahjongStateMachine {
     const m = Object.create(MahjongStateMachine.prototype) as MahjongStateMachine;
     // 深複製避免外部 mutation 污染                                          // L2_隔離
-    (m as unknown as { s: InternalState }).s = JSON.parse(JSON.stringify(snap)) as InternalState;
+    const s = JSON.parse(JSON.stringify(snap)) as InternalState;
+    // Backwards-compat: snapshots taken before the multi-hand fields existed
+    // hydrate to single-hand defaults so a legacy DO can still restore.    // L2_實作
+    if (s.targetHands == null)      s.targetHands = 1;
+    if (s.handNumber == null)       s.handNumber = 1;
+    if (s.bankerStreak == null)     s.bankerStreak = 0;
+    if (s.cumulativeScores == null) {
+      s.cumulativeScores = {};
+      for (const p of s.players) s.cumulativeScores[p.playerId] = 0;
+    }
+    (m as unknown as { s: InternalState }).s = s;
+    (m as unknown as { rng: () => number }).rng = rng;
     return m;
   }
 
-  constructor(gameId: string, roundId: string, players: PlayerId[], rng: () => number = Math.random) {
+  constructor(gameId: string, roundId: string, players: PlayerId[], rng: () => number = Math.random, targetHands: number = 1) {
     if (players.length !== 4) throw new Error("MJ_REQUIRES_4_PLAYERS");
-    const wall = buildShuffledWall(rng);
-    const playerStates: PlayerState[] = players.map((pid, i) => ({
-      playerId: pid,
-      hand: wall.splice(0, HAND_SIZE),
-      exposed: [],
-      flowers: [],
-    }));
-    // 開局補花：每家把手中花牌移到 flowers，從牆頭抽新牌補（可能再花）   // L2_實作
-    for (const ps of playerStates) drainFlowers(ps.hand, ps.flowers, wall);
+    if (targetHands < 1 || !Number.isInteger(targetHands)) throw new Error("MJ_INVALID_TARGET_HANDS");
+    this.rng = rng;
 
-    // 莊家補一張（從牆尾抽，遇花吸收）
-    const banker = 0;
-    const bankerSeat = playerStates[banker]!;
-    let drawn = drawNonFlower(wall, bankerSeat.flowers);
-    if (!drawn) throw new Error("WALL_EXHAUSTED_BEFORE_GAME_START");
-    bankerSeat.hand.push(drawn);
+    const dealt = MahjongStateMachine.dealHand(rng, 0);
+    const cumulativeScores: Record<PlayerId, number> = {};
+    for (const pid of players) cumulativeScores[pid] = 0;
 
     this.s = {
       gameId,
       roundId,
       phase: "playing",
-      players: playerStates,
-      wall,
-      turnIdx: banker,
-      dealerIdx: banker,
+      players: players.map((pid, i) => ({
+        playerId: pid,
+        hand: dealt.hands[i]!,
+        exposed: [],
+        flowers: dealt.flowers[i]!,
+      })),
+      wall: dealt.wall,
+      turnIdx: dealt.bankerIdx,
+      dealerIdx: dealt.bankerIdx,
       lastDiscard: null,
       pendingReactions: [],
       reactionDeadlineMs: 0,
       turnDeadlineMs: Date.now() + TURN_WINDOW_MS,
-      drawnThisTurn: drawn,
+      drawnThisTurn: dealt.bankerDraw,
       drewFromKongReplacement: false,
-      drewLastWallTile: wall.length === 0,
+      drewLastWallTile: dealt.wall.length === 0,
       lastDiscardOnEmptyWall: false,
       kongUpgradeContext: null,
+      targetHands,
+      handNumber: 1,
+      bankerStreak: 0,
+      cumulativeScores,
     };
   }
+
+  /** 切牌洗牌 + 補花 + 莊家摸第一張的共用流程。給 ctor + startNextHand 共用。 // L2_實作 */
+  private static dealHand(rng: () => number, bankerIdx: number): {
+    wall: MahjongTile[];
+    hands: MahjongTile[][];
+    flowers: MahjongTile[][];
+    bankerDraw: MahjongTile;
+    bankerIdx: number;
+  } {
+    const wall = buildShuffledWall(rng);
+    const hands: MahjongTile[][] = [];
+    const flowers: MahjongTile[][] = [[], [], [], []];
+    for (let i = 0; i < 4; i++) {
+      hands.push(wall.splice(0, HAND_SIZE));
+    }
+    for (let i = 0; i < 4; i++) drainFlowers(hands[i]!, flowers[i]!, wall);
+    const bankerDraw = drawNonFlower(wall, flowers[bankerIdx]!);
+    if (!bankerDraw) throw new Error("WALL_EXHAUSTED_BEFORE_GAME_START");
+    hands[bankerIdx]!.push(bankerDraw);
+    return { wall, hands, flowers, bankerDraw, bankerIdx };
+  }
+
+  // ── 多局賽事：開新局 ────────────────────────────
+  /** Reset board state for the next hand. Caller must check `phase === "between_hands"`. // L2_實作
+   *  Dealer rotation rule (Taiwan):
+   *    - winnerIdx === dealerIdx (dealer hu)  → dealer 連莊 (stays, bankerStreak++)
+   *    - winnerIdx !== dealerIdx              → dealer rotates CCW (next seat)
+   *    - draw exhaustion / forfeit            → dealer rotates (simplification)
+   *  After rotation, deal a fresh wall + hands; phase returns to "playing".              // L2_實作 */
+  startNextHand(prevWinnerIdx: number | null, isDraw: boolean): void {
+    if (this.s.phase !== "between_hands") throw new Error("NOT_BETWEEN_HANDS");
+    if (this.s.handNumber >= this.s.targetHands) throw new Error("MATCH_ALREADY_OVER");
+
+    const dealerStays = !isDraw && prevWinnerIdx === this.s.dealerIdx;
+    const newDealer = dealerStays ? this.s.dealerIdx : (this.s.dealerIdx + 1) % 4;
+    const newStreak = dealerStays ? this.s.bankerStreak + 1 : 0;
+
+    const dealt = MahjongStateMachine.dealHand(this.rng, newDealer);
+    for (let i = 0; i < 4; i++) {
+      this.s.players[i]!.hand = dealt.hands[i]!;
+      this.s.players[i]!.flowers = dealt.flowers[i]!;
+      this.s.players[i]!.exposed = [];
+    }
+    this.s.wall = dealt.wall;
+    this.s.turnIdx = newDealer;
+    this.s.dealerIdx = newDealer;
+    this.s.bankerStreak = newStreak;
+    this.s.handNumber += 1;
+    this.s.lastDiscard = null;
+    this.s.pendingReactions = [];
+    this.s.reactionDeadlineMs = 0;
+    this.s.turnDeadlineMs = Date.now() + TURN_WINDOW_MS;
+    this.s.drawnThisTurn = dealt.bankerDraw;
+    this.s.drewFromKongReplacement = false;
+    this.s.drewLastWallTile = dealt.wall.length === 0;
+    this.s.lastDiscardOnEmptyWall = false;
+    this.s.kongUpgradeContext = null;
+    this.s.phase = "playing";
+  }
+
+  /** True iff this hand was the final hand of the match.                    // L2_實作 */
+  private isFinalHand(): boolean {
+    return this.s.handNumber >= this.s.targetHands;
+  }
+
+  /** Common settle epilogue: stamp matchOver + matchProgress, accumulate
+   *  cumulativeScores, set phase to between_hands or settled.               // L2_實作 */
+  private finalizeSettlement(result: SettlementResult, prevWinnerIdx: number | null, isDraw: boolean): SettlementResult {
+    for (const ps of result.players) {
+      this.s.cumulativeScores[ps.playerId] = (this.s.cumulativeScores[ps.playerId] ?? 0) + ps.scoreDelta;
+    }
+    const matchOver = this.isFinalHand();
+    this.s.phase = matchOver ? "settled" : "between_hands";
+    return {
+      ...result,
+      matchOver,
+      matchProgress: {
+        handNumber: this.s.handNumber,
+        targetHands: this.s.targetHands,
+        dealerIdx: this.s.dealerIdx,
+        bankerStreak: this.s.bankerStreak,
+      },
+    };
+  }
+
+  /** Public accessor for tests + DO orchestration: was this match's final hand reached? */
+  isMatchOver(): boolean { return this.s.phase === "settled"; }
+  getHandNumber(): number { return this.s.handNumber; }
+  getTargetHands(): number { return this.s.targetHands; }
+  getCumulativeScores(): Readonly<Record<PlayerId, number>> { return this.s.cumulativeScores; }
+
+  private rng: () => number = Math.random;
 
   // ─── 對外快照 ────────────────────────────────
   viewFor(playerId: PlayerId): MahjongStateView {
@@ -579,7 +690,10 @@ export class MahjongStateMachine {
    */
   forceSettle(reason: "timeout" | "disconnect", forfeitPlayerId?: PlayerId): SettlementResult {
     if (this.s.phase === "settled") throw new Error("already settled");
-    this.s.phase = "settled";
+    // Forfeits short-circuit the entire match — no point continuing without
+    // an offender; mark as final regardless of handNumber.                  // L3_邏輯安防
+    const wasFinalHand = this.s.handNumber;
+    this.s.handNumber = this.s.targetHands;
 
     const offenderIdx = forfeitPlayerId
       ? this.s.players.findIndex(p => p.playerId === forfeitPlayerId)
@@ -591,7 +705,7 @@ export class MahjongStateMachine {
     const totalLoss = split * otherIdxs.length;
     const winnerIdx = offenderIdx >= 0 ? otherIdxs[0]! : 0;
 
-    return {
+    const result: SettlementResult = {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
@@ -604,6 +718,8 @@ export class MahjongStateMachine {
         scoreDelta: i === offenderIdx ? -totalLoss : (offenderIdx >= 0 ? split : 0),
       })),
     };
+    void wasFinalHand;
+    return this.finalizeSettlement(result, offenderIdx >= 0 ? winnerIdx : null, offenderIdx < 0);
   }
 
   /** 由外部 alarm 在 reactionDeadlineMs 觸發；對未回應者視為 pass */    // L3_架構
@@ -763,11 +879,10 @@ export class MahjongStateMachine {
   /** 八仙過海 / 七搶一 共用結算。8 台 + 1 底；八仙視為「自摸」三家攤付，
    *  七搶一視為「食胡」由 payerIdx 一家付。                                // L2_實作 */
   private settleFlowerWin(winnerIdx: number, kind: "八仙過海" | "七搶一", payerIdx: number | null): SettlementResult {
-    this.s.phase = "settled";
     const fan = 8;
     const score = 1 + fan;
     const selfDrawn = kind === "八仙過海";
-    return {
+    const result: SettlementResult = {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
@@ -787,11 +902,11 @@ export class MahjongStateMachine {
       }),
       fanDetail: { fan, base: 1, detail: [kind] },
     };
+    return this.finalizeSettlement(result, winnerIdx, false);
   }
 
   private drawExhaustion(): ProcessResult {
-    this.s.phase = "settled";
-    const settlement: SettlementResult = {
+    const result: SettlementResult = {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
@@ -804,7 +919,7 @@ export class MahjongStateMachine {
       })),
       winnerId: this.s.players[0]!.playerId,
     };
-    return { ok: true, settlement };
+    return { ok: true, settlement: this.finalizeSettlement(result, null, true) };
   }
 
   /**
@@ -814,7 +929,6 @@ export class MahjongStateMachine {
    * payerIdx 在自摸時為 null；食胡時為 lastDiscard.playerIdx。
    */
   private settle(winnerIdx: number, selfDrawn: boolean, payerIdx: number | null, chiangKong = false): SettlementResult {
-    this.s.phase = "settled";
     const winner = this.s.players[winnerIdx]!;
     // 自摸時贏牌即 drawnThisTurn；食胡時贏牌即 lastDiscard.tile。
     const winningTile: MahjongTile = selfDrawn
@@ -836,7 +950,7 @@ export class MahjongStateMachine {
       chiangKong,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
-    return {
+    const result: SettlementResult = {
       gameId: this.s.gameId,
       roundId: this.s.roundId,
       finishedAt: Date.now(),
@@ -860,6 +974,7 @@ export class MahjongStateMachine {
       }),
       fanDetail: { fan: fan.fan, base: fan.base, detail: fan.detail },
     };
+    return this.finalizeSettlement(result, winnerIdx, false);
   }
 }
 

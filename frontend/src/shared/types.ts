@@ -56,7 +56,7 @@ export interface ExposedMeld {
   fromPlayerId?: PlayerId;
 }
 
-export type MahjongPhase = "dealing" | "playing" | "pending_reactions" | "settled";
+export type MahjongPhase = "dealing" | "playing" | "pending_reactions" | "between_hands" | "settled";
 
 export interface MahjongSelfView {
   playerId: PlayerId;
