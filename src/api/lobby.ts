@@ -47,6 +47,18 @@ const isBot = (id: string): boolean => id.startsWith(BOT_PREFIX);
 interface LobbyJoinBody {
   playerId: string;
   gameType: GameType;
+  /** Mahjong-only — 連莊 N 局；預設 1。Lobby 桶化 key = `${gameType}:${hands}`，
+   *  讓不同局數的麻將玩家不會配進同一桌。                              // L2_隔離 */
+  mahjongTargetHands?: number;
+}
+
+/** Lobby DO 名稱 = `${gameType}` 或 `${gameType}:${mahjongTargetHands}`。
+ *  單局（hands=1 或非麻將）走原 key 維持相容；多局麻將走 `:N` 後綴。 // L2_隔離 */
+export function lobbyKey(gameType: GameType, mahjongHands?: number): string {
+  if (gameType === "mahjong" && mahjongHands && mahjongHands > 1) {
+    return `mahjong:${mahjongHands}`;
+  }
+  return gameType;
 }
 
 /** Live-room entry for spectator listings. Reach via the dedicated
@@ -71,20 +83,23 @@ export class LobbyDO implements DurableObject {
   private deadlines = new Map<string, number>();
   private botFillAt: number | null = null;        // epoch ms when bots should fill remainder // L2_實作
   private gameType:  GameType | null = null;      // bound on first join, immutable thereafter // L2_隔離
+  private mahjongTargetHands: number = 1;          // bound on first join (mahjong-only) // L2_隔離
   private liveRooms = new Map<string, LiveRoomEntry>();
 
   constructor(state: DurableObjectState, env: LobbyEnv) {
     this.state = state;
     this.env   = env;
     this.state.blockConcurrencyWhile(async () => {
-      const [saved, savedBotFill, savedType, savedLive] = await Promise.all([
+      const [saved, savedBotFill, savedType, savedHands, savedLive] = await Promise.all([
         this.state.storage.get<[string, number][]>("deadlines"),
         this.state.storage.get<number>("botFillAt"),
         this.state.storage.get<GameType>("gameType"),
+        this.state.storage.get<number>("mahjongTargetHands"),
         this.state.storage.get<[string, LiveRoomEntry][]>("liveRooms"),
       ]);
       if (saved)        this.deadlines = new Map(saved);
       if (savedBotFill) this.botFillAt = savedBotFill;
+      if (savedHands)   this.mahjongTargetHands = savedHands;
       if (savedType)    this.gameType  = savedType;
       if (savedLive)    this.liveRooms = new Map(savedLive);
     });
@@ -134,15 +149,29 @@ export class LobbyDO implements DurableObject {
   private async join(request: Request): Promise<Response> {
     const body = await request.json<LobbyJoinBody>();
     const { playerId, gameType } = body;
+    const requestedHands = body.mahjongTargetHands ?? 1;
     if (!isGameType(gameType))
       return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "invalid gameType");
+    if (gameType === "mahjong") {
+      if (!Number.isInteger(requestedHands) || requestedHands < 1 || requestedHands > 16)
+        return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjongTargetHands must be 1..16");
+    } else if (body.mahjongTargetHands !== undefined && body.mahjongTargetHands !== 1) {
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjongTargetHands only valid for mahjong");
+    }
 
     // 同一 LobbyDO 實例只能服務單一 gameType。                              // L2_隔離
     if (this.gameType === null) {
       this.gameType = gameType;
-      await this.state.storage.put("gameType", this.gameType);
+      this.mahjongTargetHands = requestedHands;
+      await Promise.all([
+        this.state.storage.put("gameType", this.gameType),
+        this.state.storage.put("mahjongTargetHands", this.mahjongTargetHands),
+      ]);
     } else if (this.gameType !== gameType) {
       return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "gameType mismatch for this lobby");
+    } else if (gameType === "mahjong" && this.mahjongTargetHands !== requestedHands) {
+      // 不同局數的玩家不該共桌；handleMatch 已用 lobbyKey 桶化避免，但仍守一道。 // L2_隔離
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjongTargetHands mismatch for this lobby");
     }
 
     if (this.deadlines.has(playerId))
@@ -221,6 +250,8 @@ export class LobbyDO implements DurableObject {
           gameType: this.gameType,
           capacity: ROOM_SIZE,
           botIds,
+          ...(this.gameType === "mahjong" && this.mahjongTargetHands > 1
+            ? { mahjongTargetHands: this.mahjongTargetHands } : {}),
         }),
       }));
     } catch (err) {
@@ -341,15 +372,26 @@ export async function handleMatch(
 
   // gameType 從請求 body 帶入；預設 bigTwo 以保留既有客戶端相容性。        // L2_隔離
   let gameType: GameType = "bigTwo";
+  let mahjongHands = 1;
   try {
-    const body = await request.json<{ gameType?: string }>();
+    const body = await request.json<{ gameType?: string; mahjongHands?: number }>();
     if (isGameType(body.gameType)) gameType = body.gameType;
+    if (typeof body.mahjongHands === "number") mahjongHands = body.mahjongHands;
   } catch { /* default */ }
 
-  // Chip floor — the wallet must cover this game's ANTE. Returning users
-  // get this row from /auth/token's lazy create; if the row is missing we
-  // treat balance as 0 (which fails the check).                          // L2_實作
-  const ante = ANTE_BY_GAME[gameType];
+  // Validate mahjongHands range + applicability before chip check so an
+  // invalid request fails fast without freezing chips.                  // L3_邏輯安防
+  if (mahjongHands !== 1) {
+    if (gameType !== "mahjong")
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjongHands only valid for mahjong");
+    if (!Number.isInteger(mahjongHands) || mahjongHands < 1 || mahjongHands > 16)
+      return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjongHands must be 1..16");
+  }
+
+  // Chip floor — the wallet must cover this match's total ANTE (per-hand × N).
+  // Returning users get this row from /auth/token's lazy create; if the row is
+  // missing we treat balance as 0 (which fails the check).             // L2_實作
+  const ante = ANTE_BY_GAME[gameType] * (gameType === "mahjong" ? mahjongHands : 1);
   const wallet = await env.DB
     .prepare("SELECT chip_balance FROM users WHERE player_id = ?")
     .bind(playerId)
@@ -383,13 +425,16 @@ export async function handleMatch(
     }
   }
 
-  // 每個 gameType 擁有獨立 LobbyDO 實例。                                // L2_隔離
-  const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName(gameType));
+  // 每個 (gameType, hands) 組合擁有獨立 LobbyDO — 不同局數的麻將玩家不會配對。 // L2_隔離
+  const stub = env.LOBBY_DO.get(env.LOBBY_DO.idFromName(lobbyKey(gameType, mahjongHands)));
   return stub.fetch(
     new Request("https://lobby.internal/join", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ playerId, gameType }),
+      body:    JSON.stringify({
+        playerId, gameType,
+        ...(gameType === "mahjong" && mahjongHands > 1 ? { mahjongTargetHands: mahjongHands } : {}),
+      }),
     }),
   );
 }

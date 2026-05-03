@@ -280,6 +280,19 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
       <div className="flex-1 overflow-y-auto px-2 pt-3">
         <OpponentRow view={view} currentTurn={view.currentTurn} />
 
+        {view.match && view.match.targetHands > 1 && (
+          <div className="mx-auto mt-2 flex w-fit items-center gap-2 rounded-full bg-green-900/60 px-3 py-1 ring-1 ring-green-700">
+            <span className="text-[11px] font-bold text-yellow-300">
+              {t("mj.handProgress", { n: view.match.handNumber, m: view.match.targetHands })}
+            </span>
+            {view.match.bankerStreak > 0 && (
+              <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold text-amber-50">
+                {t("mj.bankerStreak", { n: view.match.bankerStreak })}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 flex flex-col items-center gap-2">
           <div className="text-[10px] text-green-400">{t("mj.wallRemaining", { n: view.wall.remaining, phase: view.phase })}</div>
           {ld

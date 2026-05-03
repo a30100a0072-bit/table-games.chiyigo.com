@@ -241,6 +241,13 @@ export interface MahjongStateView {
   awaitingReactionsFrom: PlayerId[];
   reactionDeadlineMs: number;          // Unix ms             // L2_鎖定
   turnDeadlineMs: number;
+  /** 多局賽事進度（單局時 handNumber=1, targetHands=1, bankerStreak=0）。  // L2_隔離 */
+  match: {
+    handNumber: number;
+    targetHands: number;
+    dealerIdx: number;
+    bankerStreak: number;
+  };
 }
 
 // ──────────────────────────────────────────────

@@ -41,7 +41,7 @@ interface Props {
   playerId:    string;
   token:       string;
   dailyBonus?: number | null;
-  onPick:      (gameType: GameType) => void;
+  onPick:      (gameType: GameType, mahjongHands?: number) => void;
   onJoinedTournamentRoom?: (roomId: string, gameType: GameType) => void;
   onSpectate?: (roomId: string, gameType: GameType) => void;
   onPrivateEnter?: (roomId: string, gameType: GameType) => void;
@@ -67,6 +67,8 @@ export default function GameSelectScreen({
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
   const [liveRooms, setLiveRooms] = useState<LiveRoom[]>([]);
+  const [mjHands, setMjHands] = useState<number>(1);
+  const MJ_HAND_OPTIONS = [1, 4, 8, 16] as const;
 
   // Refresh live rooms list whenever the spectator modal opens; cheap +
   // accurate enough for an opt-in panel.                                  // L2_實作
@@ -283,20 +285,41 @@ export default function GameSelectScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-col gap-3">
-        {GAME_TYPES.map(g => (
-          <button
-            key={g}
-            onClick={() => onPick(g)}
-            className="flex items-center gap-4 rounded-2xl bg-green-900 p-4 text-left shadow-lg transition hover:bg-green-800 active:scale-[0.98]"
-          >
-            <span className="text-4xl">{ICON[g]}</span>
-            <span className="flex flex-col">
-              <span className="text-lg font-bold text-yellow-300">{t(LABEL_KEY[g])}</span>
-              <span className="text-xs text-green-400">{t(TAG_KEY[g])}</span>
-              <span className="mt-0.5 text-[10px] text-yellow-500/80">{t("select.minAnte", { n: ANTE[g] })}</span>
-            </span>
-          </button>
-        ))}
+        {GAME_TYPES.map(g => {
+          const ante = ANTE[g] * (g === "mahjong" ? mjHands : 1);
+          return (
+            <div key={g} className="flex flex-col gap-2">
+              <button
+                onClick={() => onPick(g, g === "mahjong" ? mjHands : undefined)}
+                className="flex items-center gap-4 rounded-2xl bg-green-900 p-4 text-left shadow-lg transition hover:bg-green-800 active:scale-[0.98]"
+              >
+                <span className="text-4xl">{ICON[g]}</span>
+                <span className="flex flex-col">
+                  <span className="text-lg font-bold text-yellow-300">{t(LABEL_KEY[g])}</span>
+                  <span className="text-xs text-green-400">{t(TAG_KEY[g])}</span>
+                  <span className="mt-0.5 text-[10px] text-yellow-500/80">{t("select.minAnte", { n: ante })}</span>
+                </span>
+              </button>
+              {g === "mahjong" && (
+                <div className="flex items-center gap-2 px-2">
+                  <span className="text-[11px] text-green-400">{t("select.mjHands")}</span>
+                  {MJ_HAND_OPTIONS.map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setMjHands(n)}
+                      className={[
+                        "rounded-full px-3 py-0.5 text-xs ring-1 transition",
+                        mjHands === n
+                          ? "bg-yellow-400 text-green-950 ring-yellow-300"
+                          : "bg-green-900/50 text-green-300 ring-green-700 hover:bg-green-800",
+                      ].join(" ")}
+                    >{n}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

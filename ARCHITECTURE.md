@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — 第十批：麻將連莊 N 多局賽事 SM + DO orchestration（targetHands / between_hands / startNextHand / matchOver flag / per-hand gameId rotation / DO 不 cleanup 直到末局）— lobby/UI 待後續 commit。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-03 — 第十批：麻將連莊 N 多局賽事全套（SM + DO + lobby + 前端）。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive、連莊 N。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
@@ -41,9 +41,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：25 檔 / **303 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：26 檔 / **306 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 319 測試**
+>   - **總計 322 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -344,7 +344,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 2. ~~**OAuth 真登入**（Google / Apple）~~ — **延後**：guest token + 帳號凍結 + ledger 足夠跑 demo / 內測
 
 **真正待辦**
-3. **麻將連莊 N** — SM + DO 完成（2026-05-03）：`MahjongStateMachine` ctor 加 `targetHands` 參數（預設 1）、`between_hands` phase、`startNextHand(winnerIdx, isDraw, nextGameId, nextRoundId)`、莊家胡→連莊規則、`SettlementResult.matchOver` + `matchProgress` 旗標、`cumulativeScores`。`GameRoomDO.handleSettlement` 收到 `matchOver=false` 時：仍 emit queue + 廣播給 client（per-hand 結算入帳），但跳過 cleanup/replay/tournament，呼叫 `engine.startNextHand()` 並 mint 新 `gameId-h{n}`/`r-h{n}`（避免 chip_ledger UNIQUE 衝突），重置 replay buffer，重新排程 turn alarm。`/init` 接受 `mahjongTargetHands: 1..16`。**仍待**：lobby `/api/match` 接 `mahjongHands` 參數 + ANTE 改為 N 倍；前端 GameSelectScreen 加局數選單、MahjongGameScreen 顯示「第 N/M 局」+ 連莊條；多局 replay 整合（目前只記錄最後一局）。
+3. ~~**麻將連莊 N**~~ — **完成（2026-05-03）**：SM + DO + lobby + 前端全套接通。SM `targetHands` ctor 參數、`between_hands` phase、`startNextHand` 含 dealer 連莊規則 + per-hand gameId/roundId 輪轉；`SettlementResult.matchOver` + `matchProgress`；`MahjongStateView.match` 帶當前 handNumber/targetHands/dealerIdx/bankerStreak。`GameRoomDO.handleSettlement` 收到 `matchOver=false` 時：仍 emit queue + 廣播（per-hand 入帳），跳過 cleanup/replay/tournament，呼叫 `engine.startNextHand()` mint `gameId-h{n}`/`r-h{n}`（避免 chip_ledger UNIQUE 衝突），重置 replay buffer，重新排程 turn alarm。`/api/match` 接 `mahjongHands: 1..16`，ANTE 改為 N 倍；LobbyDO 桶化 `${gameType}:${hands}`（不同局數玩家不互配）；GameSelectScreen 顯示局數選單（1/4/8/16）；MahjongGameScreen 顯示「第 N/M 局」+ 連莊 ×N 標。**已知限制**：replay_meta 只記錄末局 events（多局 replay viewer 是 follow-up）。
 4. **e2e 測試（Cypress / Playwright in CI）** — 目前 Node 24 + Workers 6 個檔的 unit/integration coverage 都很厚；e2e 加上去能補完整 UI flow，但需要 CI runner 跑 vite dev + worker dev 雙進程，infrastructure cost 高
 5. **Replay 全域精選頁** — 需設計議題：誰能精選（admin / 自己 / 任何人）、保留期、隱私邊界（精選後別人能看的範圍）、是否與 share token 整合
 6. ~~**Mahjong shanten / 真實 wait shape scoring**~~ — **完成（2026-05-03）**：`src/game/MahjongShanten.ts`（5 melds + 1 pair 標準分解，pair anchor + chow / pong / partial-chow / partial-pair backtrack）；`pickDiscardTile` 改為 shanten 主鍵 + isolation tiebreak + danger 大常數覆蓋；10 案例覆蓋（test/MahjongShanten.test.ts）

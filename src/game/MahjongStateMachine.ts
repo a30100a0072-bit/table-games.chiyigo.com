@@ -494,6 +494,12 @@ export class MahjongStateMachine {
         .filter(r => !r.declared).map(r => r.playerId),
       reactionDeadlineMs: this.s.reactionDeadlineMs,
       turnDeadlineMs: this.s.turnDeadlineMs,
+      match: {
+        handNumber: this.s.handNumber,
+        targetHands: this.s.targetHands,
+        dealerIdx: this.s.dealerIdx,
+        bankerStreak: this.s.bankerStreak,
+      },
     };
   }
 

@@ -51,14 +51,17 @@ export async function getToken(playerId: string): Promise<TokenResponse> {
   return res.json();
 }
 
-export async function findMatch(token: string, gameType: GameType): Promise<MatchResponse> {
+export async function findMatch(token: string, gameType: GameType, mahjongHands?: number): Promise<MatchResponse> {
   const res = await fetch(`${BASE}/api/match`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type":  "application/json",
     },
-    body: JSON.stringify({ gameType }),
+    body: JSON.stringify({
+      gameType,
+      ...(gameType === "mahjong" && mahjongHands && mahjongHands > 1 ? { mahjongHands } : {}),
+    }),
   });
   if (res.status === 402) {
     const body = await res.json().catch(() => ({})) as { balance?: number; required?: number };

@@ -78,6 +78,12 @@ export interface MahjongStateView {
   gameId: string;
   roundId: string;
   phase: MahjongPhase;
+  match?: {
+    handNumber: number;
+    targetHands: number;
+    dealerIdx: number;
+    bankerStreak: number;
+  };
   self: MahjongSelfView;
   opponents: MahjongOpponentView[];
   wall: { remaining: number };

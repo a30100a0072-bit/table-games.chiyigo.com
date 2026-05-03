@@ -21,7 +21,7 @@ interface BeforeInstallPromptEvent extends Event {
 type Screen =
   | { name: "login" }
   | { name: "select"; playerId: string; token: string; dailyBonus: number | null }
-  | { name: "lobby";  playerId: string; token: string; gameType: GameType }
+  | { name: "lobby";  playerId: string; token: string; gameType: GameType; mahjongHands?: number }
   | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType; spectator?: boolean }
   | { name: "result"; playerId: string; settlement: SettlementResult };
 
@@ -229,8 +229,8 @@ export default function App() {
         playerId={screen.playerId}
         token={screen.token}
         dailyBonus={screen.dailyBonus}
-        onPick={(gameType) =>
-          setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType })
+        onPick={(gameType, mahjongHands) =>
+          setScreen({ name: "lobby", playerId: screen.playerId, token: screen.token, gameType, mahjongHands })
         }
         onJoinedTournamentRoom={(roomId, gameType) =>
           setScreen({
@@ -283,6 +283,7 @@ export default function App() {
         playerId={screen.playerId}
         token={screen.token}
         gameType={screen.gameType}
+        mahjongHands={screen.mahjongHands}
         onMatched={(roomId, wsUrl, _players, gameType) =>
           setScreen({ name: "game", playerId: screen.playerId, token: screen.token, roomId, wsUrl, gameType })
         }

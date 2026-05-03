@@ -13,11 +13,13 @@ interface Props {
   playerId: string;
   token:    string;
   gameType: GameType;
+  /** Mahjong-only — 連莊 N 局；undefined / 1 = 單局制。 */
+  mahjongHands?: number;
   onMatched: (roomId: string, wsUrl: string, players: string[], gameType: GameType) => void;
   onBack:    () => void;
 }
 
-export default function LobbyScreen({ playerId, token, gameType, onMatched, onBack }: Props) {
+export default function LobbyScreen({ playerId, token, gameType, mahjongHands, onMatched, onBack }: Props) {
   const { t } = useT();
   const [dots,  setDots]  = useState(".");
   const [error, setError] = useState("");
@@ -26,10 +28,10 @@ export default function LobbyScreen({ playerId, token, gameType, onMatched, onBa
   useEffect(() => {
     if (called.current) return;
     called.current = true;
-    findMatch(token, gameType)
+    findMatch(token, gameType, mahjongHands)
       .then(({ roomId, wsUrl, players, gameType: gt }) => onMatched(roomId, wsUrl, players, gt))
       .catch(err => setError(formatApiError(err, t)));
-  }, [token, gameType, onMatched, t]);
+  }, [token, gameType, mahjongHands, onMatched, t]);
 
   useEffect(() => {
     const id = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 500);
