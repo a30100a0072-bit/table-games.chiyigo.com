@@ -169,6 +169,14 @@ export interface SettlementResult {
   players:     PlayerSettlement[];
   winnerId:    PlayerId;
   fanDetail?:  { fan: number; base: number; detail: string[] };
+  matchOver?:  boolean;
+  matchProgress?: {
+    handNumber:        number;
+    targetHands:       number;
+    dealerIdx:         number;
+    bankerStreak:      number;
+    cumulativeScores?: Record<PlayerId, number>;
+  };
 }
 
 // ─── Discriminated union for any state-view payload ──────────────────────────

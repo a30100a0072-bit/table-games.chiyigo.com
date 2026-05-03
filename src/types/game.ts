@@ -341,12 +341,14 @@ export interface SettlementResult {
    *  matchOver=false 時 ledger 仍照記但不 cleanup，等待下一局。           // L2_鎖定 */
   matchOver?: boolean;
   /** 連莊資訊（多局麻將）：handNumber=當前局、targetHands=總局數、
-   *  bankerStreak=本任莊家連莊次數、dealerIdx=莊家座位 idx。前端顯示用。 */
+   *  bankerStreak=本任莊家連莊次數、dealerIdx=莊家座位 idx、cumulativeScores
+   *  整場累積分數（本局結算後）。前端顯示用。                              // L2_隔離 */
   matchProgress?: {
     handNumber: number;
     targetHands: number;
     dealerIdx: number;
     bankerStreak: number;
+    cumulativeScores?: Record<PlayerId, number>;
   };
 }
 

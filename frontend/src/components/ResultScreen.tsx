@@ -47,6 +47,27 @@ export default function ResultScreen({ playerId, settlement, onPlayAgain }: Prop
         ))}
       </div>
 
+      {/* 多局賽事結算摘要 — 顯示整場累積分排名（per-hand scoreDelta 上方已列） */}
+      {settlement.matchProgress && settlement.matchProgress.targetHands > 1 && settlement.matchProgress.cumulativeScores && (
+        <div className="w-72 rounded-2xl border border-amber-700/40 bg-amber-900/30 p-3 text-sm shadow-inner">
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="font-bold text-amber-200">
+              {t("result.matchSummary", { n: settlement.matchProgress.handNumber, m: settlement.matchProgress.targetHands })}
+            </span>
+          </div>
+          {[...Object.entries(settlement.matchProgress.cumulativeScores)]
+            .sort(([, a], [, b]) => b - a)
+            .map(([pid, total]) => (
+              <div key={pid} className="flex items-center justify-between py-1 text-[12px]">
+                <span className={pid === playerId ? "font-bold text-yellow-300" : "text-amber-100"}>{pid}</span>
+                <span className={total >= 0 ? "font-mono text-green-300" : "font-mono text-red-300"}>
+                  {total >= 0 ? "+" : ""}{total}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+
       {/* 麻將台數明細 — 只有麻將會帶 fanDetail，其他遊戲為 undefined */}
       {settlement.fanDetail && (
         <div className="w-72 rounded-2xl border border-yellow-700/40 bg-green-900/50 p-3 text-sm shadow-inner">

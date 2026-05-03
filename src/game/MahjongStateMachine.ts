@@ -441,6 +441,7 @@ export class MahjongStateMachine {
         targetHands: this.s.targetHands,
         dealerIdx: this.s.dealerIdx,
         bankerStreak: this.s.bankerStreak,
+        cumulativeScores: { ...this.s.cumulativeScores },
       },
     };
   }

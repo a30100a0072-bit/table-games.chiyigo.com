@@ -104,11 +104,37 @@ function bestMeldProgress(c: Uint8Array, meldsLeft: number): number {
   return recur(0, 0, 0);
 }
 
+/** Cross-call memo. Hands recur within a turn (pickDiscardTile evaluates
+ *  ~16 candidates) AND across turns (the same tile shape can revisit
+ *  thousands of times in long matches). Keys are derived from the
+ *  counts byte array as a 64-char hex string + meldsLeft suffix.            // L2_實作
+ *
+ *  Capped to MEMO_MAX entries with naive eviction (clear when full) — for
+ *  16-tile hands distinct keys per session stay small, but bounding it
+ *  keeps memory predictable in adversarial cases.                           // L3_邏輯安防 */
+const MEMO_MAX = 5000;
+const shantenMemo = new Map<string, number>();
+
+function countsKey(c: Uint8Array, meldsLeft: number): string {
+  // 34 bytes → 68 hex chars. Bytes are 0..4 in practice so 1 hex char each
+  // would suffice; 2-char hex is fine and keeps the encoder trivial.
+  let s = "";
+  for (let i = 0; i < MAHJONG_TILE_SLOTS; i++) {
+    const v = c[i]!;
+    s += v < 10 ? "0" + v : v.toString();
+  }
+  return s + "|" + meldsLeft;
+}
+
 /** Shanten of the hand (post-discard) with `exposedMelds` already-claimed
  *  melds. Returns -1 (won), 0 (tenpai), 1+ (steps to tenpai).                // L2_實作 */
 export function mahjongShanten(handCounts: Uint8Array, exposedMelds: number): number {
   const meldsLeft = MAHJONG_TARGET_MELDS - exposedMelds;
   if (meldsLeft < 0) return Infinity;
+
+  const key = countsKey(handCounts, meldsLeft);
+  const cached = shantenMemo.get(key);
+  if (cached !== undefined) return cached;
 
   const winProgress = 2 * meldsLeft + 1; // melds × 2 + pair × 1
 
@@ -128,8 +154,14 @@ export function mahjongShanten(handCounts: Uint8Array, exposedMelds: number): nu
     if (total > bestProgress) bestProgress = total;
   }
 
-  return winProgress - bestProgress - 1;
+  const result = winProgress - bestProgress - 1;
+  if (shantenMemo.size >= MEMO_MAX) shantenMemo.clear();
+  shantenMemo.set(key, result);
+  return result;
 }
+
+/** Test-only: drop the memo. Avoids cross-test pollution under vitest. */
+export function _resetShantenMemo(): void { shantenMemo.clear(); }
 
 /** Inverse of `mahjongTileIndex` — recover the tile spec from a 0..33 slot. */
 export function indexToTile(idx: number): MahjongTile | null {

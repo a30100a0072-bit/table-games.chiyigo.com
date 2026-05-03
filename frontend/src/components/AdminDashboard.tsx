@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useEscapeClose } from "../hooks/useEscapeClose";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { formatApiError } from "../api/http";
-import { getAdminHealthApi } from "../api/http";
-import type { AdminHealth } from "../api/http";
+import { getAdminHealthApi, listFeaturedReplaysApi, adminFeatureReplayApi, adminUnfeatureReplayApi } from "../api/http";
+import type { AdminHealth, FeaturedReplay } from "../api/http";
 import { useT } from "../i18n/useT";
 
 // localStorage key for the admin secret. Using session-scoped storage
@@ -32,6 +32,18 @@ export default function AdminDashboard({ onClose }: Props) {
   const [loading,  setLoading]  = useState(false);
   const [err,      setErr]      = useState<string | null>(null);
 
+  const [featured, setFeatured] = useState<FeaturedReplay[]>([]);
+  const [featDraft, setFeatDraft] = useState({ gameId: "", note: "", ttlDays: 30 });
+  const [featBusy, setFeatBusy] = useState(false);
+  const [featErr, setFeatErr] = useState<string | null>(null);
+
+  const refreshFeatured = useCallback(async () => {
+    try {
+      const r = await listFeaturedReplaysApi(undefined, 50);
+      setFeatured(r.featured);
+    } catch (e) { setFeatErr(formatApiError(e, t)); }
+  }, [t]);
+
   const refresh = useCallback(async () => {
     if (!secret) return;
     setLoading(true);
@@ -57,9 +69,34 @@ export default function AdminDashboard({ onClose }: Props) {
   useEffect(() => {
     if (!secret) return;
     void refresh();
+    void refreshFeatured();
     const id = setInterval(refresh, 30_000);
     return () => clearInterval(id);
-  }, [secret, refresh]);
+  }, [secret, refresh, refreshFeatured]);
+
+  async function submitFeature(e: React.FormEvent) {
+    e.preventDefault();
+    if (!secret) return;
+    const id = featDraft.gameId.trim();
+    if (!id) return;
+    setFeatBusy(true); setFeatErr(null);
+    try {
+      await adminFeatureReplayApi(secret, id, featDraft.note.trim() || undefined, featDraft.ttlDays);
+      setFeatDraft({ gameId: "", note: "", ttlDays: 30 });
+      await refreshFeatured();
+    } catch (e) { setFeatErr(formatApiError(e, t)); }
+    finally { setFeatBusy(false); }
+  }
+
+  async function unfeature(gameId: string) {
+    if (!secret) return;
+    setFeatBusy(true); setFeatErr(null);
+    try {
+      await adminUnfeatureReplayApi(secret, gameId);
+      await refreshFeatured();
+    } catch (e) { setFeatErr(formatApiError(e, t)); }
+    finally { setFeatBusy(false); }
+  }
 
   function submitSecret(e: React.FormEvent) {
     e.preventDefault();
@@ -171,6 +208,57 @@ export default function AdminDashboard({ onClose }: Props) {
                     <dt>{t("admin.counts.activeShares")}</dt>
                     <dd className="text-right font-mono text-yellow-200">{health.counts.activeReplayShares}</dd>
                   </dl>
+                </section>
+
+                <section className="rounded-md bg-green-950/60 p-3">
+                  <h3 className="mb-2 text-sm font-bold text-yellow-200">⭐ {t("admin.featured")}</h3>
+                  <form onSubmit={submitFeature} className="mb-3 flex flex-col gap-1.5">
+                    <input
+                      value={featDraft.gameId}
+                      onChange={e => setFeatDraft({ ...featDraft, gameId: e.target.value })}
+                      placeholder={t("admin.featured.gameIdPh")}
+                      className="rounded bg-green-900 px-2 py-1 text-[11px] text-green-100 placeholder-green-600 ring-1 ring-green-700 focus:ring-yellow-400"
+                    />
+                    <input
+                      value={featDraft.note}
+                      onChange={e => setFeatDraft({ ...featDraft, note: e.target.value })}
+                      placeholder={t("admin.featured.notePh")}
+                      maxLength={200}
+                      className="rounded bg-green-900 px-2 py-1 text-[11px] text-green-100 placeholder-green-600 ring-1 ring-green-700 focus:ring-yellow-400"
+                    />
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <label className="text-green-300">{t("admin.featured.ttlDays")}</label>
+                      <input
+                        type="number" min={1} max={365}
+                        value={featDraft.ttlDays}
+                        onChange={e => setFeatDraft({ ...featDraft, ttlDays: Number(e.target.value) || 30 })}
+                        className="w-16 rounded bg-green-900 px-2 py-1 text-green-100 ring-1 ring-green-700 focus:ring-yellow-400"
+                      />
+                      <button
+                        type="submit" disabled={featBusy || !featDraft.gameId.trim()}
+                        className="ml-auto rounded bg-yellow-500 px-3 py-1 font-bold text-green-950 hover:bg-yellow-400 disabled:opacity-50"
+                      >{featBusy ? "…" : t("admin.featured.add")}</button>
+                    </div>
+                    {featErr && <p className="text-[11px] text-red-300" role="alert">{featErr}</p>}
+                  </form>
+                  <ul className="flex flex-col gap-1.5">
+                    {featured.length === 0
+                      ? <li className="text-center text-[11px] italic text-green-500">{t("admin.featured.empty")}</li>
+                      : featured.map(f => (
+                          <li key={f.gameId} className="flex items-center gap-2 rounded bg-green-900/60 p-2 text-[11px]">
+                            <span className="flex-1 truncate">
+                              <span className="font-mono text-green-200">{f.gameId}</span>
+                              {f.note && <span className="ml-1 text-green-400">— {f.note}</span>}
+                              <span className="ml-1 text-green-500">({f.viewCount} 👁)</span>
+                            </span>
+                            <button
+                              onClick={() => unfeature(f.gameId)}
+                              disabled={featBusy}
+                              className="rounded bg-red-800 px-2 py-0.5 text-[10px] font-bold text-red-50 hover:bg-red-700 disabled:opacity-50"
+                            >{t("admin.featured.remove")}</button>
+                          </li>
+                        ))}
+                  </ul>
                 </section>
               </>
             )}
