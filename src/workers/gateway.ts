@@ -14,7 +14,7 @@ import {
 } from "../api/friends";
 import { createPrivateRoom, resolvePrivateRoom } from "../api/privateRooms";
 import { inviteToRoom, listInvites, declineInvite } from "../api/roomInvites";
-import { listMyReplays, getReplay, shareReplay, resolveSharedReplay, listMyShares, revokeShare } from "../api/replays";
+import { listMyReplays, getReplay, shareReplay, resolveSharedReplay, listMyShares, revokeShare, featureReplay, unfeatureReplay, listFeaturedReplays } from "../api/replays";
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
 import { blockPlayer, unblockPlayer, listMyBlocks } from "../api/blocks";
 import { deleteAccount, exportAccount } from "../api/account";
@@ -177,6 +177,17 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
 
   if (request.method === "GET" && url.pathname === "/api/me/shares")
     return cors(await listMyShares(request, env));
+
+  // Public featured feed (no auth) — list before by-token so the static path wins.
+  if (request.method === "GET" && url.pathname === "/api/replays/featured")
+    return cors(await listFeaturedReplays(request, env));
+
+  // Admin curation
+  if (request.method === "POST" && url.pathname === "/api/admin/replays/feature")
+    return cors(await featureReplay(request, env));
+  const adminUnfeatureMatch = url.pathname.match(/^\/api\/admin\/replays\/feature\/([^/]+)$/);
+  if (request.method === "DELETE" && adminUnfeatureMatch)
+    return cors(await unfeatureReplay(request, env, decodeURIComponent(adminUnfeatureMatch[1]!)));
 
   const repByToken = url.pathname.match(/^\/api\/replays\/by-token\/([^/]+)$/);
   if (request.method === "GET" && repByToken)

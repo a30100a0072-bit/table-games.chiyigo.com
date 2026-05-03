@@ -33,36 +33,39 @@ describe("runCleanup", () => {
     const db = new MockDb();
     await runCleanup(ENV(db), 10_000_000_000);
     const sqls = db.statements.map(s => s.sql);
-    expect(sqls).toHaveLength(5);
+    expect(sqls).toHaveLength(6);
     expect(sqls[0]).toContain("DELETE FROM dms");
     expect(sqls[1]).toContain("DELETE FROM room_tokens");
-    expect(sqls[2]).toContain("DELETE FROM replay_shares");
-    expect(sqls[3]).toContain("DELETE FROM room_invites");
+    // featured rows must precede shares — FK dependency.                    // L3_邏輯安防
+    expect(sqls[2]).toContain("DELETE FROM replay_featured");
+    expect(sqls[3]).toContain("DELETE FROM replay_shares");
+    expect(sqls[4]).toContain("DELETE FROM room_invites");
     // The audit row goes last so a partial sweep still records what got done.
-    expect(sqls[4]).toContain("INSERT INTO cron_runs");
+    expect(sqls[5]).toContain("INSERT INTO cron_runs");
   });
 
   it("audit row carries per-section counts and null errors when clean", async () => {
     const db = new MockDb();
     db.responses = [{ match: "FROM room_tokens", changes: 4 }];
     await runCleanup(ENV(db), 10_000_000_000);
-    const audit = db.statements[4]!;
+    const audit = db.statements[5]!;
     expect(audit.sql).toContain("INSERT INTO cron_runs");
-    // ran_at, dms_purged, room_tokens_purged, replay_shares_purged, room_invites_purged, errors_json
+    // ran_at, dms, room_tokens, replay_shares, room_invites, replay_featured, errors_json
     expect(audit.args[0]).toBe(10_000_000_000);
     expect(audit.args[1]).toBe(0);     // dms
     expect(audit.args[2]).toBe(4);     // room_tokens (matched response)
-    expect(audit.args[3]).toBe(0);
-    expect(audit.args[4]).toBe(0);
-    expect(audit.args[5]).toBeNull();  // no errors
+    expect(audit.args[3]).toBe(0);     // replay_shares
+    expect(audit.args[4]).toBe(0);     // room_invites
+    expect(audit.args[5]).toBe(0);     // replay_featured
+    expect(audit.args[6]).toBeNull();  // no errors
   });
 
   it("audit row carries the JSON-serialised error list when a section failed", async () => {
     const db = new MockDb();
     db.responses = [{ match: "FROM dms", throws: "no such table" }];
     await runCleanup(ENV(db), 1);
-    const audit = db.statements[4]!;
-    const errs = JSON.parse(audit.args[5] as string) as string[];
+    const audit = db.statements[5]!;
+    const errs = JSON.parse(audit.args[6] as string) as string[];
     expect(errs).toHaveLength(1);
     expect(errs[0]).toContain("dmsPurged");
   });
@@ -76,6 +79,7 @@ describe("runCleanup", () => {
     expect(db.statements[1]!.args[0]).toBe(now);
     expect(db.statements[2]!.args[0]).toBe(now);
     expect(db.statements[3]!.args[0]).toBe(now);
+    expect(db.statements[4]!.args[0]).toBe(now);
   });
 
   it("returns per-section changes counts", async () => {

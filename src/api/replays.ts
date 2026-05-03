@@ -271,3 +271,138 @@ export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promi
     sharedBy:        share.owner_id,
   });
 }
+
+// ── Featured replays (admin curation) ────────────────────────────────────
+// Admins pick interesting games from replay_meta and surface them at the
+// public /api/replays/featured feed. Each feature row carries its own
+// long-TTL share_token so anonymous viewers can read the replay through
+// the existing per-seat view-isolation.                                  // L2_隔離
+//
+// Privacy: the featured feed exposes player_ids, finished_at, and a short
+// admin note. Hand contents are still rendered through the share_token's
+// owner-seat perspective — opponent hands stay hidden. Admins choosing to
+// feature a game implicitly accept that participant ids become public.
+const FEATURE_TTL_DEFAULT_DAYS = 30;
+const FEATURE_TTL_MIN_DAYS     = 1;
+const FEATURE_TTL_MAX_DAYS     = 365;
+
+/** POST /api/admin/replays/feature  body: { gameId, note?, ttlDays? } */
+export async function featureReplay(request: Request, env: ReplaysEnv & { ADMIN_SECRET?: string }): Promise<Response> {
+  if (!env.ADMIN_SECRET) return errorResponse(ErrorCode.ADMIN_DISABLED, 503);
+  const provided = request.headers.get("X-Admin-Secret") ?? "";
+  // Cheap timing-safe — same length + char-by-char XOR. Avoids importing
+  // the gateway helper directly to keep this module's env shape minimal.
+  if (provided.length !== env.ADMIN_SECRET.length) return errorResponse(ErrorCode.UNAUTHORIZED, 401);
+  let diff = 0;
+  for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ env.ADMIN_SECRET.charCodeAt(i);
+  if (diff !== 0) return errorResponse(ErrorCode.UNAUTHORIZED, 401);
+
+  let body: { gameId?: string; note?: string; ttlDays?: number };
+  try { body = await request.json(); }
+  catch { return errorResponse(ErrorCode.INVALID_JSON, 400); }
+
+  const gameId = (body.gameId ?? "").trim();
+  if (!gameId) return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "gameId required");
+  const note = (body.note ?? "").trim().slice(0, 200) || null;
+  const ttlDays = body.ttlDays ?? FEATURE_TTL_DEFAULT_DAYS;
+  if (!Number.isInteger(ttlDays) || ttlDays < FEATURE_TTL_MIN_DAYS || ttlDays > FEATURE_TTL_MAX_DAYS)
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "ttlDays out of range");
+
+  // Replay must exist; we mint the share_token using a synthetic owner ("admin")
+  // — featured shares aren't tied to a seated player.                    // L2_實作
+  const meta = await env.DB
+    .prepare("SELECT game_id FROM replay_meta WHERE game_id = ?")
+    .bind(gameId)
+    .first<{ game_id: string }>();
+  if (!meta) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404);
+
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  const token = btoa(String.fromCharCode(...buf))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  const now = Date.now();
+  const expiresAt = now + ttlDays * 86_400_000;
+
+  // Two-row insert as a batch so a partial failure (token without feature row,
+  // or vice versa) can't leave the FK pointing nowhere.                  // L3_邏輯安防
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO replay_shares (token, game_id, owner_id, created_at, expires_at)" +
+      " VALUES (?, ?, 'admin', ?, ?)",
+    ).bind(token, gameId, now, expiresAt),
+    env.DB.prepare(
+      "INSERT OR REPLACE INTO replay_featured (game_id, featured_by, featured_at, note, share_token, expires_at)" +
+      " VALUES (?, 'admin', ?, ?, ?, ?)",
+    ).bind(gameId, now, note, token, expiresAt),
+  ]);
+
+  return Response.json({ gameId, shareToken: token, expiresAt }, { status: 201 });
+}
+
+/** DELETE /api/admin/replays/feature/:gameId */
+export async function unfeatureReplay(request: Request, env: ReplaysEnv & { ADMIN_SECRET?: string }, gameId: string): Promise<Response> {
+  if (!env.ADMIN_SECRET) return errorResponse(ErrorCode.ADMIN_DISABLED, 503);
+  const provided = request.headers.get("X-Admin-Secret") ?? "";
+  if (provided.length !== env.ADMIN_SECRET.length) return errorResponse(ErrorCode.UNAUTHORIZED, 401);
+  let diff = 0;
+  for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ env.ADMIN_SECRET.charCodeAt(i);
+  if (diff !== 0) return errorResponse(ErrorCode.UNAUTHORIZED, 401);
+
+  const r = await env.DB
+    .prepare("DELETE FROM replay_featured WHERE game_id = ?")
+    .bind(gameId)
+    .run();
+  if ((r.meta?.changes ?? 0) === 0) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404);
+  // Note: share_token row is intentionally left alive so any direct-link
+  // viewers (e.g. someone who copied the URL) aren't broken. Admin can
+  // separately revoke the share if they want a hard takedown.            // L2_實作
+  return Response.json({ ok: true });
+}
+
+/** GET /api/replays/featured — public, no auth. Paginated by featured_at. */
+export async function listFeaturedReplays(request: Request, env: ReplaysEnv): Promise<Response> {
+  const url = new URL(request.url);
+  const limitRaw = parseInt(url.searchParams.get("limit") ?? "20", 10);
+  const limit = Math.min(Math.max(limitRaw || 20, 1), 50);
+  const cursorRaw = url.searchParams.get("before");
+  const cursor = cursorRaw ? parseInt(cursorRaw, 10) : null;
+
+  // Surface only non-expired features. Cron sweep also clears expired
+  // share_tokens, but we filter here defensively.                         // L3_邏輯安防
+  const now = Date.now();
+  const rows = await env.DB
+    .prepare(
+      "SELECT f.game_id, f.featured_at, f.note, f.share_token, f.expires_at," +
+      "       m.game_type, m.player_ids, m.finished_at, m.winner_id," +
+      "       s.view_count" +
+      "  FROM replay_featured f" +
+      "  JOIN replay_meta     m ON m.game_id = f.game_id" +
+      "  JOIN replay_shares   s ON s.token   = f.share_token" +
+      " WHERE f.expires_at > ?" +
+      (cursor !== null ? " AND f.featured_at < ?" : "") +
+      " ORDER BY f.featured_at DESC LIMIT ?",
+    )
+    .bind(...(cursor !== null ? [now, cursor, limit] : [now, limit]))
+    .all<{
+      game_id: string; featured_at: number; note: string | null;
+      share_token: string; expires_at: number;
+      game_type: string; player_ids: string; finished_at: number;
+      winner_id: string | null; view_count: number | null;
+    }>();
+
+  const featured = (rows.results ?? []).map(r => ({
+    gameId:      r.game_id,
+    gameType:    r.game_type,
+    playerIds:   JSON.parse(r.player_ids) as string[],
+    finishedAt:  r.finished_at,
+    winnerId:    r.winner_id,
+    note:        r.note,
+    shareToken:  r.share_token,
+    featuredAt:  r.featured_at,
+    expiresAt:   r.expires_at,
+    viewCount:   r.view_count ?? 0,
+  }));
+  const nextCursor = featured.length === limit ? featured[featured.length - 1]!.featuredAt : null;
+  return Response.json({ featured, nextCursor });
+}

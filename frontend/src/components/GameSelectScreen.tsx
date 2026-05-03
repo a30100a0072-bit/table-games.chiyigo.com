@@ -8,6 +8,7 @@ import FriendsModal from "./FriendsModal";
 import PrivateRoomModal from "./PrivateRoomModal";
 import InvitesModal from "./InvitesModal";
 import ReplaysModal from "./ReplaysModal";
+import FeaturedReplaysModal from "./FeaturedReplaysModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
 import { listInvitesApi, listLiveRoomsApi } from "../api/http";
@@ -63,6 +64,8 @@ export default function GameSelectScreen({
   const [invites,  setInvites]  = useState(false);
   const [inviteCount, setInviteCount] = useState(0);
   const [replays,  setReplays]  = useState(false);
+  const [featured, setFeatured] = useState(false);
+  const [sharedToken, setSharedToken] = useState<string | null>(null);
   const [specOpen, setSpecOpen] = useState(false);
   const [specRoom, setSpecRoom] = useState("");
   const [specType, setSpecType] = useState<GameType>("bigTwo");
@@ -153,6 +156,13 @@ export default function GameSelectScreen({
         >
           🎬
         </button>
+        <button
+          onClick={() => setFeatured(true)}
+          title={t("rep.featured")}
+          className="rounded-full bg-green-800 px-4 py-1.5 text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-green-700 active:scale-95"
+        >
+          ⭐
+        </button>
         {onSpectate && (
           <button
             onClick={() => setSpecOpen(true)}
@@ -185,6 +195,20 @@ export default function GameSelectScreen({
         />
       )}
       {replays && <ReplaysModal token={token} playerId={playerId} onClose={() => setReplays(false)} />}
+      {featured && (
+        <FeaturedReplaysModal
+          onOpenShared={(tok) => { setFeatured(false); setSharedToken(tok); }}
+          onClose={() => setFeatured(false)}
+        />
+      )}
+      {sharedToken && (
+        <ReplaysModal
+          token={token}
+          playerId={playerId}
+          sharedReplayToken={sharedToken}
+          onClose={() => setSharedToken(null)}
+        />
+      )}
       {specOpen && onSpectate && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-green-900 p-5 shadow-2xl">

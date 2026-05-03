@@ -83,6 +83,7 @@ jobs:
           npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN frozen_reason TEXT" --env production --remote || true
           npx wrangler d1 execute big-two-db --command="ALTER TABLE replay_shares ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0" --env production --remote || true
           npx wrangler d1 execute big-two-db --command="ALTER TABLE replay_shares ADD COLUMN last_viewed_at INTEGER" --env production --remote || true
+          npx wrangler d1 execute big-two-db --command="ALTER TABLE cron_runs ADD COLUMN replay_featured_purged INTEGER NOT NULL DEFAULT 0" --env production --remote || true
 
       # ── 6b-pre. Deploy tail-forwarder worker ─────────────────────────
       # The main worker's wrangler.toml references `big-two-log-forwarder`

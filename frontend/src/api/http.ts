@@ -416,6 +416,48 @@ export async function revokeShareApi(token: string, shareToken: string): Promise
   if (!res.ok) throw await readApiError(res);
 }
 
+export interface FeaturedReplay {
+  gameId:     string;
+  gameType:   GameType;
+  playerIds:  string[];
+  finishedAt: number;
+  winnerId:   string | null;
+  note:       string | null;
+  shareToken: string;
+  featuredAt: number;
+  expiresAt:  number;
+  viewCount:  number;
+}
+export async function listFeaturedReplaysApi(before?: number, limit?: number)
+  : Promise<{ featured: FeaturedReplay[]; nextCursor: number | null }> {
+  const qs = new URLSearchParams();
+  if (before !== undefined) qs.set("before", String(before));
+  if (limit  !== undefined) qs.set("limit",  String(limit));
+  const url = `${BASE}/api/replays/featured${qs.toString() ? "?" + qs : ""}`;
+  const res = await fetch(url);
+  if (!res.ok) throw await readApiError(res);
+  return res.json();
+}
+
+export async function adminFeatureReplayApi(secret: string, gameId: string, note?: string, ttlDays?: number)
+  : Promise<{ gameId: string; shareToken: string; expiresAt: number }> {
+  const res = await fetch(`${BASE}/api/admin/replays/feature`, {
+    method: "POST",
+    headers: { "X-Admin-Secret": secret, "Content-Type": "application/json" },
+    body: JSON.stringify({ gameId, ...(note ? { note } : {}), ...(ttlDays ? { ttlDays } : {}) }),
+  });
+  if (!res.ok) throw await readApiError(res);
+  return res.json();
+}
+
+export async function adminUnfeatureReplayApi(secret: string, gameId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/admin/replays/feature/${encodeURIComponent(gameId)}`, {
+    method: "DELETE",
+    headers: { "X-Admin-Secret": secret },
+  });
+  if (!res.ok) throw await readApiError(res);
+}
+
 export interface FriendRecommendation { playerId: string; together: number; lastPlayed: number; }
 export async function getFriendRecommendationsApi(token: string): Promise<{ recommendations: FriendRecommendation[] }> {
   const res = await fetch(`${BASE}/api/friends/recommendations`, { headers: { Authorization: `Bearer ${token}` } });

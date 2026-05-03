@@ -137,13 +137,14 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit (created_at DE
 -- and any errors raised. Powers /api/admin/health so the operator can
 -- see at a glance whether the daily sweep is healthy without tailing.
 CREATE TABLE IF NOT EXISTS cron_runs (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-  ran_at               INTEGER NOT NULL,
-  dms_purged           INTEGER NOT NULL DEFAULT 0,
-  room_tokens_purged   INTEGER NOT NULL DEFAULT 0,
-  replay_shares_purged INTEGER NOT NULL DEFAULT 0,
-  room_invites_purged  INTEGER NOT NULL DEFAULT 0,
-  errors_json          TEXT             -- NULL when clean; JSON array of strings otherwise
+  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+  ran_at                 INTEGER NOT NULL,
+  dms_purged             INTEGER NOT NULL DEFAULT 0,
+  room_tokens_purged     INTEGER NOT NULL DEFAULT 0,
+  replay_shares_purged   INTEGER NOT NULL DEFAULT 0,
+  room_invites_purged    INTEGER NOT NULL DEFAULT 0,
+  replay_featured_purged INTEGER NOT NULL DEFAULT 0,
+  errors_json            TEXT             -- NULL when clean; JSON array of strings otherwise
 );
 
 CREATE INDEX IF NOT EXISTS idx_cron_runs_ran_at ON cron_runs (ran_at DESC);
@@ -317,3 +318,22 @@ CREATE TABLE IF NOT EXISTS replay_shares (
 
 CREATE INDEX IF NOT EXISTS idx_replay_shares_game    ON replay_shares (game_id);
 CREATE INDEX IF NOT EXISTS idx_replay_shares_expires ON replay_shares (expires_at);
+
+-- ── replay_featured ──────────────────────────────────────────────────────
+-- Admin-curated replay highlights, surfaced as a public read-only feed at
+-- /api/replays/featured. Admin-only CRUD via X-Admin-Secret. The payload
+-- the public sees is rendered through the linked share_token (same isolation
+-- as user-shared replays — opponent hands stay hidden). Removing a feature
+-- row leaves the underlying share_token alive so direct-link viewers aren't
+-- broken; admin can revoke the share separately if required.
+CREATE TABLE IF NOT EXISTS replay_featured (
+  game_id      TEXT    PRIMARY KEY,
+  featured_by  TEXT    NOT NULL,         -- "admin" or operator id
+  featured_at  INTEGER NOT NULL,
+  note         TEXT,                      -- short admin caption (≤ 200 chars)
+  share_token  TEXT    NOT NULL,         -- minted at feature time, long TTL
+  expires_at   INTEGER NOT NULL,         -- match share_token expiry; cron sweeps both
+  FOREIGN KEY (game_id)     REFERENCES replay_meta   (game_id),
+  FOREIGN KEY (share_token) REFERENCES replay_shares (token)
+);
+CREATE INDEX IF NOT EXISTS idx_replay_featured_at ON replay_featured (featured_at DESC);
