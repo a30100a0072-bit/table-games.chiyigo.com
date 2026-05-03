@@ -126,6 +126,95 @@ test("mahjong hand selector forwards mahjongHands into the match request", async
   expect(parsed.mahjongHands).toBe(4);
 });
 
+test("BigTwo full-hand happy path: lobby → state injected → play → settlement", async ({ page }) => {
+  await stubBoot(page);
+  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      matched: true, roomId: "e2e-room-bigtwo", gameType: "bigTwo",
+      players: ["alice", "BOT_2", "BOT_3", "BOT_4"],
+    }),
+  }));
+
+  // Stub the WebSocket handshake. The frontend derives the WS url from
+  // VITE_WORKER_URL (ws://localhost:9999/rooms/<roomId>/join) — we
+  // intercept that, push a one-card state so the play action is the
+  // only legal move, then settle on the first action frame the client
+  // sends.                                                                 // L2_實作
+  await page.routeWebSocket(/ws:\/\/localhost:9999\/rooms\/.*\/join/, ws => {
+    ws.onMessage(raw => {
+      const txt = typeof raw === "string" ? raw : new TextDecoder().decode(raw as ArrayBuffer);
+      let frame: { type?: string; action?: { type?: string } };
+      try { frame = JSON.parse(txt); } catch { return; }
+      // Ignore the periodic sync frame (`{type:"sync"}`) — we only
+      // settle on real action frames so the timing isn't a race.
+      if (frame.type === "sync") return;
+      if (frame.action?.type === "play" || frame.action?.type === "pass") {
+        ws.send(JSON.stringify({
+          type: "settlement",
+          payload: {
+            gameId: "e2e-room-bigtwo", roundId: "r1",
+            finishedAt: Date.now(), reason: "lastCardPlayed",
+            players: [
+              { playerId: "alice", finalRank: 1, remainingCards: [],                                                       scoreDelta:  300 },
+              { playerId: "BOT_2", finalRank: 2, remainingCards: [{ suit: "clubs", rank: "3" }],                           scoreDelta: -100 },
+              { playerId: "BOT_3", finalRank: 3, remainingCards: [{ suit: "clubs", rank: "4" }, { suit: "clubs", rank: "5" }], scoreDelta: -100 },
+              { playerId: "BOT_4", finalRank: 4, remainingCards: [{ suit: "clubs", rank: "6" }, { suit: "clubs", rank: "7" }, { suit: "clubs", rank: "8" }], scoreDelta: -100 },
+            ],
+            winnerId: "alice",
+          },
+        }));
+      }
+    });
+
+    // Initial state — alice holds a single 2-of-spades; her turn; lastPlay
+    // null (any single is a legal lead). The hand has exactly one card so
+    // any selection auto-detects the "single" combo.                        // L2_實作
+    ws.send(JSON.stringify({
+      type: "state",
+      payload: {
+        gameId:  "e2e-room-bigtwo",
+        roundId: "r1",
+        phase:   "playing",
+        self:    { playerId: "alice", hand: [{ suit: "spades", rank: "2" }], cardCount: 1 },
+        opponents: [
+          { playerId: "BOT_2", cardCount: 5 },
+          { playerId: "BOT_3", cardCount: 5 },
+          { playerId: "BOT_4", cardCount: 5 },
+        ],
+        currentTurn:    "alice",
+        lastPlay:       null,
+        passCount:      0,
+        turnDeadlineMs: Date.now() + 30_000,
+      },
+    }));
+  });
+
+  await page.goto("/");
+  await page.locator("input[maxlength='16']").fill("alice");
+  await page.locator("button[type='submit']").click();
+  await expect(page.locator("text=🃏").first()).toBeVisible();
+  await page.locator("button:has-text('🃏')").first().click();
+
+  // After the state frame, the "your turn" pill should appear (locale-
+  // independent regex). Use it as the ready signal before clicking. 8s
+  // accommodates build-server cold start on CI.
+  await expect(page.locator("text=/your turn|輪到你了/i").first()).toBeVisible({ timeout: 8_000 });
+
+  // The hand contains a single card (2♠). PlayingCard renders as a
+  // <button> whose visible glyphs are "2" + "♠". Pick it by suit symbol —
+  // ♠ is unique to the card on this screen. Selecting it auto-detects
+  // the "single" combo and enables the Play button.
+  await page.locator("button", { hasText: "♠" }).first().click();
+
+  const playBtn = page.locator("button").filter({ hasText: /出牌|Play/ }).first();
+  await expect(playBtn).toBeEnabled({ timeout: 3_000 });
+  await playBtn.click();
+
+  // Settlement frame arrives → ResultScreen renders "You won!" / "你贏了！".
+  await expect(page.locator("text=/you won|你贏了/i").first()).toBeVisible({ timeout: 8_000 });
+});
+
 test("successful match transitions lobby → game screen (WS connecting state)", async ({ page }) => {
   await stubBoot(page);
 
