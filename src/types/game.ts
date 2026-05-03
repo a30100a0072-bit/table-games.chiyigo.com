@@ -206,6 +206,10 @@ export interface MahjongSelfView {
   hand: MahjongTile[];                 // 本人完整門前清       // L2_隔離
   exposed: ExposedMeld[];              // 本人已吃碰槓
   flowers: MahjongTile[];              // 花牌（MVP 可空陣列）
+  /** 離胡步數（-1 已胡 / 0 聽牌 / ≥1 距聽張數）。狀態機已替本人算好。 // L2_隔離 */
+  shanten: number;
+  /** 聽牌時可胡的張集合；非聽牌時為空陣列。每張只列一次。 // L2_隔離 */
+  winningTiles: MahjongTile[];
 }
 
 export interface MahjongOpponentView {

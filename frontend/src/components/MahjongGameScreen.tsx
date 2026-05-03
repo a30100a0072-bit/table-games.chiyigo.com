@@ -304,6 +304,20 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
               ? t("mj.canReact", { n: reactLeft.toFixed(1) })
               : t("mj.theirTurn", { p: view.currentTurn })}
         </div>
+
+        {/* 聽牌指示 + 聽張清單 — 自家視角 */}
+        {!watching && view.self.shanten === 0 && view.self.winningTiles.length > 0 && (
+          <div className="mt-2 mx-auto w-fit rounded-lg bg-amber-500/20 ring-1 ring-amber-300 px-3 py-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-amber-200">{t("mj.tenpai")}</span>
+              <div className="flex flex-wrap gap-1">
+                {view.self.winningTiles.map((wt, i) => (
+                  <span key={i} className="scale-75"><TileView tile={wt} selected={false} /></span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 吃牌選項 modal (L2_實作) — 只有可吃時顯示 */}

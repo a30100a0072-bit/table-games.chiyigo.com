@@ -251,6 +251,8 @@ function mahjongView(over: Partial<MahjongStateView> & {
       hand: over.hand,
       exposed: [],
       flowers: [],
+      shanten: 0,
+      winningTiles: [],
     },
     opponents: over.opponents ?? [],
     wall: { remaining: 50 },
@@ -426,6 +428,41 @@ describe("Mahjong bot", () => {
       awaitingReactionsFrom: ["BOT_1"],
     });
     expect(getMahjongBotAction(v).type).toBe("mj_pass");
+  });
+
+  it("avoids discarding into the suit of an opponent with ≥3 exposed melds", () => {
+    // Opponent has 3 exposed pongs all in 'p' (pin) — imminent threat in p suit.
+    // Bot's hand has two equally-isolated candidates: p(2) and z(7) (both lone).
+    // Without defensive discard the bot might pick either; with soft-danger
+    // suit penalty it should prefer z(7).
+    const hand: MahjongTile[] = [
+      p(2),                                  // soft-danger (p suit)
+      z(7),                                  // safe honor
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      m(7), m(8), m(9),
+      s(1), s(2), s(3),
+      s(7), s(8),
+    ];
+    const v = mahjongView({
+      phase: "playing",
+      hand,
+      opponents: [
+        {
+          playerId: "p2", handCount: 7,
+          exposed: [
+            { kind: "pong", tiles: [p(1), p(1), p(1)] },
+            { kind: "pong", tiles: [p(5), p(5), p(5)] },
+            { kind: "pong", tiles: [p(9), p(9), p(9)] },
+          ],
+          flowers: [],
+        } as never,
+      ],
+    });
+    const a = getMahjongBotAction(v);
+    expect(a.type).toBe("discard");
+    if (a.type !== "discard") return;
+    expect(a.tile).toEqual(z(7));
   });
 
   it("returns mj_pass defensively when called outside a valid action context", () => {

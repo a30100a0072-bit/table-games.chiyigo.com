@@ -63,6 +63,8 @@ export interface MahjongSelfView {
   hand: MahjongTile[];
   exposed: ExposedMeld[];
   flowers: MahjongTile[];
+  shanten: number;
+  winningTiles: MahjongTile[];
 }
 export interface MahjongOpponentView {
   playerId: PlayerId;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { MahjongTile, MahjongSuit } from "../src/types/game";
-import { mahjongShanten, tilesToCounts } from "../src/game/MahjongShanten";
+import { mahjongShanten, tilesToCounts, enumerateWinningTiles, countWinningOuts, indexToTile } from "../src/game/MahjongShanten";
 
 const t = (suit: MahjongSuit, rank: number): MahjongTile => ({ suit, rank } as MahjongTile);
 
@@ -65,6 +65,42 @@ describe("mahjongShanten — Taiwan 16 (5 melds + 1 pair)", () => {
   it("two complete chows + pair", () => {
     // 1m2m3m 4m5m6m 9m9m → 2 sets + pair. progress = 4 + 1 = 5. shanten = 11-5-1 = 5.
     expect(shanten("1m 2m 3m 4m 5m 6m 9m 9m", 0)).toBe(5);
+  });
+
+  it("indexToTile is the inverse of tilesToCounts indexing", () => {
+    expect(indexToTile(0)).toEqual({ suit: "m", rank: 1 });
+    expect(indexToTile(8)).toEqual({ suit: "m", rank: 9 });
+    expect(indexToTile(9)).toEqual({ suit: "p", rank: 1 });
+    expect(indexToTile(27)).toEqual({ suit: "z", rank: 1 });
+    expect(indexToTile(33)).toEqual({ suit: "z", rank: 7 });
+    expect(indexToTile(-1)).toBeNull();
+    expect(indexToTile(34)).toBeNull();
+  });
+
+  it("enumerateWinningTiles returns the pair-completion candidate when tenpai on pair", () => {
+    // exposed=1 → meldsLeft=4 → win shape = 4 melds + pair = 14 tiles.
+    // Tenpai (13 tiles): 4 chows + 1 lone tile waiting for its pair.
+    const tiles = "1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 2p 3p 5s".split(/\s+/).map(s => ({
+      suit: s.slice(-1) as "m"|"p"|"s"|"z", rank: parseInt(s.slice(0, -1), 10),
+    }));
+    const c = tilesToCounts(tiles as never);
+    expect(mahjongShanten(c, 1)).toBe(0);
+    const wt = enumerateWinningTiles(c, 1);
+    expect(wt).toEqual([{ suit: "s", rank: 5 }]);
+  });
+
+  it("enumerateWinningTiles is empty when not tenpai", () => {
+    const c = tilesToCounts([]);
+    expect(enumerateWinningTiles(c, 0)).toEqual([]);
+  });
+
+  it("countWinningOuts counts remaining copies (4 minus visible) of each winning tile", () => {
+    // Same tenpai shape as above; 1 s5 in hand → 4 - 1 = 3 outs in the wall.
+    const tiles = "1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 2p 3p 5s".split(/\s+/).map(s => ({
+      suit: s.slice(-1) as "m"|"p"|"s"|"z", rank: parseInt(s.slice(0, -1), 10),
+    }));
+    const c = tilesToCounts(tiles as never);
+    expect(countWinningOuts(c, 1)).toBe(3);
   });
 
   it("4 chows + pair + 2 isolated, exposed=0 → shanten 1 (one set short)", () => {

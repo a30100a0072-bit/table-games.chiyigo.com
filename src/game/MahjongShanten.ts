@@ -130,3 +130,53 @@ export function mahjongShanten(handCounts: Uint8Array, exposedMelds: number): nu
 
   return winProgress - bestProgress - 1;
 }
+
+/** Inverse of `mahjongTileIndex` — recover the tile spec from a 0..33 slot. */
+export function indexToTile(idx: number): MahjongTile | null {
+  if (idx < 0 || idx >= 34) return null;
+  if (idx < 9)  return { suit: "m", rank: (idx + 1) as 1|2|3|4|5|6|7|8|9 };
+  if (idx < 18) return { suit: "p", rank: (idx - 9 + 1) as 1|2|3|4|5|6|7|8|9 };
+  if (idx < 27) return { suit: "s", rank: (idx - 18 + 1) as 1|2|3|4|5|6|7|8|9 };
+  return { suit: "z", rank: (idx - 27 + 1) as 1|2|3|4|5|6|7 };
+}
+
+/** Enumerate every tile that, if drawn next, would complete the hand. Returns
+ *  empty array when not tenpai (shanten > 0). Each tile listed once.        // L2_實作 */
+export function enumerateWinningTiles(
+  handCounts: Uint8Array,
+  exposedMelds: number,
+): MahjongTile[] {
+  const out: MahjongTile[] = [];
+  for (let i = 0; i < MAHJONG_TILE_SLOTS; i++) {
+    if (handCounts[i]! >= 4) continue;          // wall has no more
+    handCounts[i]!++;
+    const sh = mahjongShanten(handCounts, exposedMelds);
+    handCounts[i]!--;
+    if (sh === -1) {
+      const t = indexToTile(i);
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
+/** Total winning-tile outs given the wall + opponent exposed view. Counts
+ *  remaining copies of each winning tile (4 minus what's already visible).
+ *  When `visibleCounts` is omitted, treats only own hand as visible.        // L2_實作 */
+export function countWinningOuts(
+  handCounts: Uint8Array,
+  exposedMelds: number,
+  visibleCounts?: Uint8Array,
+): number {
+  let outs = 0;
+  for (let i = 0; i < MAHJONG_TILE_SLOTS; i++) {
+    const visible = (visibleCounts?.[i] ?? handCounts[i]!) | 0;
+    if (visible >= 4) continue;
+    if (handCounts[i]! >= 4) continue;
+    handCounts[i]!++;
+    const sh = mahjongShanten(handCounts, exposedMelds);
+    handCounts[i]!--;
+    if (sh === -1) outs += 4 - visible;
+  }
+  return outs;
+}

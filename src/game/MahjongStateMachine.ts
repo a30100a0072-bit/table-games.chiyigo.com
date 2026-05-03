@@ -26,6 +26,7 @@ import {
   MahjongPassAction,
   SettlementResult,
 } from "../types/game";
+import { mahjongShanten, enumerateWinningTiles } from "./MahjongShanten";
 
 // ──────────────────────────────────────────────
 //  常數
@@ -341,11 +342,18 @@ export class MahjongStateMachine {
     const meIdx = this.s.players.findIndex(p => p.playerId === playerId);
     if (meIdx < 0) throw new Error("PLAYER_NOT_IN_GAME");
     const me = this.s.players[meIdx]!;
+    const handCounts = tilesToCounts(me.hand);
+    const shanten = mahjongShanten(handCounts, me.exposed.length);
+    const winningTiles = shanten === 0
+      ? enumerateWinningTiles(handCounts, me.exposed.length)
+      : [];
     const self: MahjongSelfView = {
       playerId: me.playerId,
       hand: [...me.hand],
       exposed: deepCopyMelds(me.exposed),
       flowers: [...me.flowers],
+      shanten,
+      winningTiles,
     };
     const opponents: MahjongOpponentView[] = this.s.players
       .filter((_, i) => i !== meIdx)

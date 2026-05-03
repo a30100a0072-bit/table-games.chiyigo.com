@@ -19,7 +19,8 @@ import type {
 import { detectCombo, cardVal } from "./BigTwoStateMachine";
 import { canWin } from "./MahjongStateMachine";
 import { rankFiveCardKey } from "./TexasHoldemStateMachine";
-import { mahjongShanten, mahjongTileIndex, tilesToCounts } from "./MahjongShanten";
+import { mahjongShanten, mahjongTileIndex, tilesToCounts, countWinningOuts } from "./MahjongShanten";
+import type { MahjongSuit } from "../types/game";
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Big Two
@@ -248,15 +249,16 @@ function tileUtility(counts: Uint8Array, idx: number): number {
 
 /** Pick a discard by computing each candidate's resulting shanten.            // L3_邏輯安防
  *
- *  Primary key: shanten of the post-discard hand (lower = closer to win).
- *  Tiebreak 1: isolation utility (tileUtility) — prefer dropping tiles
- *              with thinner neighbour support among shanten-equivalent picks.
- *  Tiebreak 2: stable index. The danger penalty (matching opponent's exposed
- *              pong, which they could upgrade to kong) is added on top, large
- *              enough to override shanten in all but degenerate hands.       // L3_邏輯安防
+ *  Score key (lower wins):
+ *    KONG_DANGER (10M)   — discarding feeds an opponent's pong → kong upgrade
+ *    + shanten × 100K    — primary: how close we still are to win
+ *    − outs    × 100     — tiebreak: more winning tiles remaining = better wait
+ *    SOFT_DANGER (50K)   — opponent has ≥3 exposed melds in this tile's suit
+ *                          (they're imminent and likely waiting in-suit)
+ *    + isolation utility — final tiebreak: prefer dropping low-connectivity tiles
  *
- *  The shanten function dominates the cost (one decomposition search per
- *  unique discard), so we deduplicate by tile index before searching.        // L2_實作 */
+ *  Soft-danger threshold is intentionally conservative (≥3 exposed melds);
+ *  earlier signals are too noisy to act on without folding too much value. */
 function pickDiscardTile(
   hand: MahjongTile[],
   opponentExposed: readonly (readonly { kind: string; tiles: MahjongTile[] }[])[] = [],
@@ -265,38 +267,56 @@ function pickDiscardTile(
   const counts = new Uint8Array(34);
   for (const t of hand) counts[tileIndex(t)]!++;
 
-  const dangerTileIndices = new Set<number>();
+  const dangerTileIndices = new Set<number>();           // kong-feed (hard)
+  const imminentSuits = new Set<MahjongSuit>();          // opponent ≥3 exposed
   for (const melds of opponentExposed) {
     for (const m of melds) {
       if (m.kind === "pong" && m.tiles[0]) {
         dangerTileIndices.add(tileIndex(m.tiles[0]));
       }
     }
+    if (melds.length >= 3) {
+      for (const m of melds) {
+        const t0 = m.tiles[0];
+        if (t0 && t0.suit !== "f") imminentSuits.add(t0.suit);
+      }
+    }
+  }
+  const softDangerTileIndices = new Set<number>();
+  if (imminentSuits.size > 0) {
+    for (let i = 0; i < 34; i++) {
+      const suit: MahjongSuit =
+        i < 9 ? "m" : i < 18 ? "p" : i < 27 ? "s" : "z";
+      if (imminentSuits.has(suit)) softDangerTileIndices.add(i);
+    }
   }
 
-  // Cache shanten by tile index — many hands have duplicates.
-  const shantenCache = new Map<number, number>();
-  const shantenForDiscardingIdx = (idx: number): number => {
-    const cached = shantenCache.get(idx);
-    if (cached !== undefined) return cached;
+  // Per-discard cache: shanten + outs share the same simulation step.        // L2_實作
+  const cache = new Map<number, { sh: number; outs: number }>();
+  const evalDiscard = (idx: number): { sh: number; outs: number } => {
+    const cached = cache.get(idx);
+    if (cached) return cached;
     counts[idx]!--;
-    const s = mahjongShanten(counts, exposedSelf);
+    const sh = mahjongShanten(counts, exposedSelf);
+    // Only compute outs when tenpai post-discard — outs only meaningful then,
+    // and skipping the inner loop keeps the per-tile cost down.              // L3_邏輯安防
+    const outs = sh === 0 ? countWinningOuts(counts, exposedSelf) : 0;
     counts[idx]!++;
-    shantenCache.set(idx, s);
-    return s;
+    const v = { sh, outs };
+    cache.set(idx, v);
+    return v;
   };
 
   let bestI = 0;
   let bestKey = Infinity;
   for (let i = 0; i < hand.length; i++) {
     const idx = tileIndex(hand[i]!);
-    const sh  = shantenForDiscardingIdx(idx);
+    const { sh, outs } = evalDiscard(idx);
     const iso = tileUtility(counts, idx);
-    // Composite key: shanten dominates (×100000), iso is tiebreak (×1).
-    // Danger overrides shanten by adding 10_000_000 — bigger than any
-    // shanten×100000 product in 16-tile hands (max shanten ≤ 10 → 1_000_000).
-    let key = sh * 100_000 + iso;
-    if (dangerTileIndices.has(idx)) key += 10_000_000;
+    // shanten dominates × 100K; outs subtract (×100, capped to ~33 outs ≤ 3300).
+    let key = sh * 100_000 - outs * 100 + iso;
+    if (softDangerTileIndices.has(idx)) key += 50_000;
+    if (dangerTileIndices.has(idx))     key += 10_000_000;
     if (key < bestKey) { bestKey = key; bestI = i; }
   }
   return hand[bestI]!;

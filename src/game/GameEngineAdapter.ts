@@ -166,6 +166,7 @@ class MahjongEngine implements IGameEngine {
       self: {
         playerId: SPECTATOR_PLAYER_ID,
         hand: [], exposed: [], flowers: [],
+        shanten: 10, winningTiles: [],
       },
       opponents: [
         {

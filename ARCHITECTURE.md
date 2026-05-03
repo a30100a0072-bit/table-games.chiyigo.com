@@ -1,7 +1,7 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — Bot AI 第八批：Mahjong shanten-based discard scoring + Texas paired-board kicker awareness。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-03 — Bot AI 第九批：Mahjong tenpai UI（聽牌指示 + 聽張清單）+ defensive discard（對手 ≥3 副露時降級該花色）+ outs-based discard 次鍵 + Texas paired-board kicker awareness。詳細見下方 roster；近期重點：Block 列表、Friend 推薦、Replay 點閱統計、Bot AI 多項補強、PWA 離線快取、WS keep-alive。
 >
 > **核心架構**
 >   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
@@ -13,7 +13,8 @@
 >   - 籌碼錢包 + 流水帳本（cursor 分頁） + ANTE + bailout + daily bonus + forfeit + admin freeze
 >   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）
 >   - Mahjong `ENGINE_VERSION = 3`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）
->   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong + **shanten-based discard** + **shanten-based pong/chow decision**；Texas OESD draw + 位置感知 Chen 門檻 + **paired-board kicker awareness**
+>   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong + shanten-based discard + shanten-based pong/chow + **outs tiebreak** + **soft-danger 對手 ≥3 副露之花色降級**；Texas OESD draw + 位置感知 Chen 門檻 + paired-board kicker awareness
+>   - **麻將自家聽牌指示**：MahjongSelfView 帶 `shanten` + `winningTiles`，前端 shanten==0 時亮燈 + 列出聽張縮圖
 >
 > **社交**
 >   - Friends（含**共玩推薦** `GET /api/friends/recommendations`，replay_participants self-join）
@@ -40,9 +41,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：25 檔 / **288 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：25 檔 / **293 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 304 測試**
+>   - **總計 309 測試**
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
