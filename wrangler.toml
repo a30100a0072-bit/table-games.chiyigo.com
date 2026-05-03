@@ -4,6 +4,15 @@ name               = "big-two-game"
 main               = "src/index.ts"
 compatibility_date = "2024-09-23"
 
+# ── Vars (non-secret config) ──────────────────────────────────────────── # L2_隔離
+# OIDC client config — chiyigo.com is the IdP. client_id is non-secret per
+# RFC 6749 §2.3.1 (PKCE public client → no client_secret). REDIRECT_URI
+# must be allowlisted in the chiyigo console.
+[vars]
+OIDC_ISSUER       = "https://chiyigo.com"
+OIDC_CLIENT_ID    = ""                                                # fill via chiyigo registration, then `wrangler deploy`
+OIDC_REDIRECT_URI = "http://127.0.0.1:5173/auth/callback"             # local dev default; override per-env below
+
 # ── Migrations (free plan requires new_sqlite_classes) ────────────────── # L3_架構含防禦觀測
 [[migrations]]
 tag                 = "v1"
@@ -52,6 +61,11 @@ database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
 # inherit top-level bindings into named environments.
 [env.production]
 name = "big-two-game-production"
+
+[env.production.vars]
+OIDC_ISSUER       = "https://chiyigo.com"
+OIDC_CLIENT_ID    = ""                                                          # fill via chiyigo registration
+OIDC_REDIRECT_URI = "https://big-two-frontend.pages.dev/auth/callback"          # adjust if you point a custom domain at Pages
 
 [[env.production.durable_objects.bindings]]
 name       = "GAME_ROOM"

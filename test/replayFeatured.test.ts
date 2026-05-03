@@ -61,10 +61,11 @@ class MockStmt {
   async all<T = unknown>(): Promise<{ results: T[] }> {
     if (this.sql.includes("FROM replay_featured f")) {
       const [now, ...rest] = this.args as number[];
+      const nowVal = now!;
       const limit = rest[rest.length - 1]!;
       const cursor = rest.length === 2 ? rest[0]! : null;
       const joined = this.db.featured
-        .filter(f => f.expires_at > now && (cursor === null || f.featured_at < cursor))
+        .filter(f => f.expires_at > nowVal && (cursor === null || f.featured_at < cursor))
         .sort((a, b) => b.featured_at - a.featured_at)
         .slice(0, limit)
         .map(f => {

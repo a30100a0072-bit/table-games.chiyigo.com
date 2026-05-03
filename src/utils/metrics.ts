@@ -12,7 +12,10 @@ export type Counter =
   | "bailouts_granted"
   | "daily_bonus_granted"
   | "rate_limited"
-  | "admin_adjustments";
+  | "admin_adjustments"
+  | "oidc_start"
+  | "oidc_exchange_ok"
+  | "oidc_refresh_ok";
 
 const counters: Record<Counter, number> = {
   tokens_issued:        0,
@@ -23,6 +26,9 @@ const counters: Record<Counter, number> = {
   daily_bonus_granted:  0,
   rate_limited:         0,
   admin_adjustments:    0,
+  oidc_start:           0,
+  oidc_exchange_ok:     0,
+  oidc_refresh_ok:      0,
 };
 
 const startedAt = Date.now();

@@ -337,6 +337,13 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - `.gitattributes`：commit 不再噴 CRLF 警告
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
 
+### 🔧 進行中（2026-05-04 第九批：chiyigo OIDC SSO）
+
+- **OIDC client scaffold**（`src/utils/oidc.ts` + `src/api/oidc.ts` + 4 routes 在 gateway.ts / wrangler.toml `[vars]` / `frontend/src/api/oidc.ts` + `OAuthCallbackScreen.tsx` + LoginScreen 加 chiyigo SSO 按鈕 + `frontend/public/_redirects` SPA fallback for `/auth/callback`）：依 chiyigo OIDC 規格（discovery `https://chiyigo.com/.well-known/openid-configuration`、ES256、aud=client_id、PKCE S256 public client、fragment 回傳）。state/nonce/PKCE verifier 三合一存 MATCH_KV `oidc:state:<state>` TTL 5min single-use；refresh_token 存 `oidc:refresh:<playerId>` TTL 30 天 + `rotatedFrom` 偵測偷取。`users.oidc_sub` 加 UNIQUE partial index（非 NULL only），guest playerId 維持原樣，OIDC 用 `oidc:<sub>` 前綴並存。詳見 memory `project_oidc_chiyigo.md`。
+- **未完項（等 chiyigo console 設定）**：`OIDC_CLIENT_ID` 在 wrangler.toml 是空字串 placeholder，要等使用者在 chiyigo IdP 後台註冊 client 拿到 ID + 設好 redirect_uris 白名單後填回；上線後做端到端真機 sanity 測試。
+- **測試**：`test/oidc.test.ts` 14 案（id_token verify happy path / iss/aud/nonce/exp/kid/alg 拒絕 / PKCE 確定性 / authorize URL builder）。Node 332 案 + Workers 16 案 + Frontend tsc / build 全綠。
+- **bonus 修**：`test/BotAI.test.ts` + `test/replayFeatured.test.ts` 兩個 pre-existing typecheck:test 失敗（`MahjongStateView.match` 必填欄位 + strictNullChecks 漏抓）順手補。
+
 ### ✅ 全部清空（2026-05-03 第八批：e2e 擴到「完整一手」收尾）
 
 **需要外部資源**

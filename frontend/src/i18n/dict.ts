@@ -30,6 +30,11 @@ const ZH = {
   "login.frozen":          "🔒 帳號已封鎖",
   "login.frozenReason":    "原因：{r}",
   "login.frozenContact":   "如有疑問請聯繫管理員",
+  "login.or":              "或",
+  "login.chiyigoSso":      "用 chiyigo 帳號登入",
+  "oidc.signingIn":        "登入中…",
+  "oidc.failed":           "登入失敗",
+  "oidc.backToLogin":      "回登入頁",
   "common.logout":         "登出",
 
   // select
@@ -385,6 +390,11 @@ const EN: Partial<Record<DictKey, string>> = {
   "login.frozen":           "🔒 Account suspended",
   "login.frozenReason":     "Reason: {r}",
   "login.frozenContact":    "Contact an administrator for details",
+  "login.or":               "or",
+  "login.chiyigoSso":       "Sign in with chiyigo",
+  "oidc.signingIn":         "Signing in…",
+  "oidc.failed":            "Sign-in failed",
+  "oidc.backToLogin":       "Back to login",
   "common.logout":          "Log out",
 
   "select.title":           "Pick a game",

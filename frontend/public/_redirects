@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback. Required for client-side routes that
+# aren't backed by a real file in dist/ — without this, /auth/callback
+# (the OIDC redirect target) returns a 404 page.                       # L2_隔離
+/auth/callback   /index.html   200

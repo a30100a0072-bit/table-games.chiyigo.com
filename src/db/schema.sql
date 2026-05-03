@@ -48,9 +48,16 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at   INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = never logged in (gets daily bonus on next /auth/token)
   frozen_at       INTEGER NOT NULL DEFAULT 0,    -- ms; 0 = active. >0 = blocked from auth + matchmaking.
   frozen_reason   TEXT,                          -- audit trail; NULL when active
+  oidc_sub        TEXT,                          -- chiyigo OIDC `sub` claim; NULL for guest accounts; UNIQUE-indexed below
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
 );
+
+-- Fast lookup by chiyigo sub (login path) + UNIQUE so two players can't
+-- share the same external identity. Partial index on non-NULL keeps
+-- guest rows from inflating the index.                                   // L2_鎖定
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_sub
+  ON users (oidc_sub) WHERE oidc_sub IS NOT NULL;
 
 -- ── chip_ledger ──────────────────────────────────────────────────────────
 -- Append-only chip-flow record. One row per balance change. Never UPDATE or

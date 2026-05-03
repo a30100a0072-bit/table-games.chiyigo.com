@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { formatApiError } from "../api/http";
 import { getToken, FrozenAccountError } from "../api/http";
+import { startOidcLogin } from "../api/oidc";
 import { useT } from "../i18n/useT";
 import { unlockAudio } from "../shared/sound";
 import LocaleToggle from "./LocaleToggle";
@@ -73,6 +74,20 @@ export default function LoginScreen({ onLoggedIn }: Props) {
             {loading ? t("login.connecting") : t("login.submit")}
           </button>
         </form>
+
+        {/* Divider + chiyigo SSO. Top-level navigation — no fetch wrap. */}
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-green-700" />
+          <span className="text-[10px] uppercase tracking-widest text-green-500">{t("login.or")}</span>
+          <div className="h-px flex-1 bg-green-700" />
+        </div>
+        <button
+          onClick={() => { unlockAudio(); startOidcLogin(); }}
+          disabled={loading}
+          className="w-full rounded-lg bg-green-700 py-3 font-bold text-yellow-100 ring-1 ring-yellow-500/40 transition hover:bg-green-600 disabled:opacity-50"
+        >
+          {t("login.chiyigoSso")}
+        </button>
       </div>
     </div>
   );

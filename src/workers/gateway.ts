@@ -18,6 +18,7 @@ import { listMyReplays, getReplay, shareReplay, resolveSharedReplay, listMyShare
 import { sendDm, listInbox, unreadDmCount } from "../api/dms";
 import { blockPlayer, unblockPlayer, listMyBlocks } from "../api/blocks";
 import { deleteAccount, exportAccount } from "../api/account";
+import { oauthStart, oauthExchange, oauthRefresh, oauthLogout } from "../api/oidc";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
 
@@ -26,6 +27,12 @@ export interface GatewayEnv extends LobbyEnv {
   TOURNAMENT_DO:    DurableObjectNamespace;
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   ADMIN_SECRET?:    string;          // optional; admin endpoints fail closed if unset
+  // OIDC client config (chiyigo.com SSO). Optional — endpoints return
+  // 503 if unset so a misconfigured deploy fails closed instead of
+  // silently routing users into a broken flow.                          // L2_隔離
+  OIDC_ISSUER?:        string;
+  OIDC_CLIENT_ID?:     string;
+  OIDC_REDIRECT_URI?:  string;
 }
 
 // ── Router ────────────────────────────────���─────────────────────────���─────
@@ -47,6 +54,44 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
       return cors(rateLimited());
     }
     return cors(await issueToken(request, env));
+  }
+
+  // ── OIDC (chiyigo.com SSO) ──────────────────────────────────────────
+  // start: 302 to authorize endpoint — NOT wrapped in cors() because
+  //        it's a top-level browser navigation, not a fetch.
+  // exchange / refresh / logout: SPA-driven JSON, normal cors().
+  if (request.method === "GET" && url.pathname === "/auth/oauth/start") {
+    const ip = clientIp(request);
+    if (!takeToken(`token:${ip}`, "token")) {
+      bump("rate_limited");
+      log("warn", "rate_limited", { ip, route: "/auth/oauth/start" });
+      return cors(rateLimited());
+    }
+    return oauthStart(request, env);
+  }
+  if (request.method === "POST" && url.pathname === "/auth/oauth/exchange") {
+    const ip = clientIp(request);
+    if (!takeToken(`token:${ip}`, "token")) {
+      bump("rate_limited");
+      return cors(rateLimited());
+    }
+    return cors(await oauthExchange(request, env));
+  }
+  if (request.method === "POST" && url.pathname === "/auth/oauth/refresh") {
+    const auth  = request.headers.get("Authorization") ?? "";
+    const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    let pid: string;
+    try { pid = await verifyJWT(tok, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK)); }
+    catch { return cors(new Response(JSON.stringify({ error: "unauthorized", code: "UNAUTHORIZED" }), { status: 401, headers: { "Content-Type": "application/json" } })); }
+    return cors(await oauthRefresh(pid, env));
+  }
+  if (request.method === "POST" && url.pathname === "/auth/oauth/logout") {
+    const auth  = request.headers.get("Authorization") ?? "";
+    const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    let pid = "";
+    try { pid = await verifyJWT(tok, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK)); }
+    catch { /* logout without a valid token still clears state best-effort */ }
+    return cors(await oauthLogout(pid, env));
   }
 
   if (request.method === "POST" && url.pathname === "/rooms")

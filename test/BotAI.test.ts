@@ -261,6 +261,7 @@ function mahjongView(over: Partial<MahjongStateView> & {
     awaitingReactionsFrom: over.awaitingReactionsFrom ?? [],
     reactionDeadlineMs: over.reactionDeadlineMs ?? 0,
     turnDeadlineMs: over.turnDeadlineMs ?? Date.now() + 15_000,
+    match: over.match ?? { handNumber: 1, targetHands: 1, dealerIdx: 0, bankerStreak: 0 },
   };
 }
 

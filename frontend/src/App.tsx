@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { GameType, SettlementResult } from "./shared/types";
 import LoginScreen      from "./components/LoginScreen";
+import OAuthCallbackScreen from "./components/OAuthCallbackScreen";
 import GameSelectScreen from "./components/GameSelectScreen";
 import LobbyScreen      from "./components/LobbyScreen";
 import GameScreen       from "./components/GameScreen";
@@ -20,6 +21,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 type Screen =
   | { name: "login" }
+  | { name: "oauth-callback" }
   | { name: "select"; playerId: string; token: string; dailyBonus: number | null }
   | { name: "lobby";  playerId: string; token: string; gameType: GameType; mahjongHands?: number }
   | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType; spectator?: boolean }
@@ -27,7 +29,17 @@ type Screen =
 
 export default function App() {
   const { t } = useT();
-  const [screen, setScreen] = useState<Screen>({ name: "login" });
+  const [screen, setScreen] = useState<Screen>(() => {
+    // OIDC redirect lands at /auth/callback#code=…&state=…. Detect on
+    // initial render so the callback screen mounts before LoginScreen
+    // would briefly flash. Path-only check (fragments are not in
+    // window.location.pathname) — fragment parsing happens inside the
+    // OAuthCallbackScreen once it mounts.                             // L2_隔離
+    if (typeof window !== "undefined" && window.location.pathname === "/auth/callback") {
+      return { name: "oauth-callback" };
+    }
+    return { name: "login" };
+  });
   const [offline, setOffline] = useState(typeof navigator !== "undefined" && !navigator.onLine);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [copied, setCopied] = useState(false);
@@ -220,6 +232,13 @@ export default function App() {
     body = (
       <LoginScreen
         onLoggedIn={(playerId, token, dailyBonus) => setScreen({ name: "select", playerId, token, dailyBonus })}
+      />
+    );
+  } else if (screen.name === "oauth-callback") {
+    body = (
+      <OAuthCallbackScreen
+        onCompleted={(resp) => setScreen({ name: "select", playerId: resp.playerId, token: resp.token, dailyBonus: null })}
+        onCancelled={() => setScreen({ name: "login" })}
       />
     );
   } else if (screen.name === "select") {
