@@ -175,7 +175,14 @@ export function getBigTwoBotAction(view: GameStateView, botHand: Card[]): Player
     // Aggressive lead: when controlling the trick with ≥6 cards left,
     // dump a 5-card combo if we have one — burns through the hand fast
     // and forces opponents into reactive play. Falls back to pickLead.
-    if (sorted.length >= 6) {
+    //
+    // BUT skip when we still hold 3♣: that's an unambiguous "first turn
+    // of the match" signal (only the 3♣ holder is scheduled for the
+    // opening play, and they MUST include 3♣). leadFiveCard might
+    // pick a combo that excludes 3♣ and the SM rejects it. Defer to
+    // pickLead which always leads with 3♣ when present.                  // L3_邏輯安防
+    const stillHolds3Clubs = sorted.some(c => c.rank === "3" && c.suit === "clubs");
+    if (sorted.length >= 6 && !stillHolds3Clubs) {
       const five = leadFiveCard(sorted);
       if (five) return { type: "play", cards: five.cards, combo: five.combo };
     }
