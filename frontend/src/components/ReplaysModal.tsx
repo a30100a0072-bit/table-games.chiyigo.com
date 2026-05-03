@@ -98,6 +98,15 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
       </div>
     );
   }
+  if (ev.kind === "hand_boundary") {
+    return (
+      <div className="rounded-lg bg-yellow-700/40 p-3 text-center text-xs font-bold text-yellow-100 ring-1 ring-yellow-500/40">
+        <span className="text-green-500">{String(idx + 1).padStart(3, "0")}</span>{" "}
+        🀄 第 {ev.handNumber} 局開始
+        {(ev.bankerStreak ?? 0) > 0 && <span className="ml-2 text-amber-300">連莊 ×{ev.bankerStreak}</span>}
+      </div>
+    );
+  }
 
   const a   = (ev.action as ActionShape) ?? {};
   const who = ev.playerId ?? "?";
@@ -614,6 +623,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
 /** One-line text fallback for the collapsed log. */
 function fmtEventOneLine(e: ReplayEvent): string {
   if (e.kind === "tick") return "tick";
+  if (e.kind === "hand_boundary") return `▶ hand ${e.handNumber}`;
   const a = (e.action as ActionShape) ?? {};
   const who = e.playerId ?? "?";
   switch (a.type) {

@@ -43,7 +43,11 @@ const SK = {
 // action but affects the deterministic replay path.
 type ReplayEvent =
   | { kind: "action"; seq: number; playerId: PlayerId; action: PlayerAction; ts: number }
-  | { kind: "tick";   ts: number };
+  | { kind: "tick";   ts: number }
+  // Multi-hand mahjong only — separates events from successive hands. The
+  // viewer restores the engine from `snapshot` then continues stepping
+  // through subsequent action events. Carries match progress for UI hints.   // L2_實作
+  | { kind: "hand_boundary"; handNumber: number; dealerIdx: number; bankerStreak: number; snapshot: unknown; ts: number };
 
 interface ReplayState {
   startedAt:       number;
@@ -630,8 +634,9 @@ export class GameRoomDO implements DurableObject {
     await this.env.SETTLEMENT_QUEUE.send({ type: "settlement", payload: result });
 
     // Multi-hand mid-match: chip economy + UI already updated above; skip
-    // replay/tournament/cleanup, mint the next hand's ids, advance the SM,
-    // and re-arm timers for the new dealer's first turn.                    // L2_實作
+    // replay flush/tournament/cleanup, mint the next hand's ids, advance
+    // the SM, append a hand_boundary marker so the replay viewer can
+    // step across hands, and re-arm timers for the new dealer.            // L2_實作
     if (result.matchOver === false && this.engine && this.room) {
       try {
         const nextHand = (result.matchProgress?.handNumber ?? 1) + 1;
@@ -642,17 +647,22 @@ export class GameRoomDO implements DurableObject {
         this.engine.startNextHand(winnerId, isDraw, nextGameId, nextRoundId);
         this.room.gameId = nextGameId;
         this.room.roundId = nextRoundId;
-        // Reset replay buffer per hand (we only persist the final hand's
-        // events; multi-hand replay viewer is a follow-up).                 // L2_實作
-        this.replay = {
-          startedAt: Date.now(),
-          initialSnapshot: this.engine.snapshot(),
-          events: [],
-        };
+        // Append boundary + carry events forward — viewer restores engine
+        // from `snapshot` and continues stepping. Match-level replay row
+        // gets ALL hands' events when the final hand settles.              // L2_實作
+        if (this.replay) {
+          await this.recordEvent({
+            kind: "hand_boundary",
+            handNumber: nextHand,
+            dealerIdx: result.matchProgress?.dealerIdx ?? 0,
+            bankerStreak: result.matchProgress?.bankerStreak ?? 0,
+            snapshot: this.engine.snapshot(),
+            ts: Date.now(),
+          });
+        }
         await Promise.all([
           this.persistMachine(),
           this.state.storage.put(SK.ROOM, this.room),
-          this.state.storage.put(SK.REPLAY, this.replay),
         ]);
         this.broadcastViews();
         await this.scheduleNextDeadline();

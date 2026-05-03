@@ -362,11 +362,16 @@ export interface ReplaySummary {
 }
 
 export interface ReplayEvent {
-  kind:     "action" | "tick";
+  kind:     "action" | "tick" | "hand_boundary";
   seq?:     number;
   playerId?: string;
   action?:  unknown;
   ts:       number;
+  // hand_boundary only:
+  handNumber?:  number;
+  dealerIdx?:   number;
+  bankerStreak?: number;
+  snapshot?:    unknown;
 }
 
 export interface ReplayDetail extends ReplaySummary {
