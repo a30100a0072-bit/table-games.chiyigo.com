@@ -14,8 +14,10 @@ export interface Card {
 
 export type PlayerId = string; // Durable Object id or CF session id
 
-// 三款遊戲統一識別碼，用於 Lobby 路由 / DO 初始化 / 客戶端旗標。            // L2_模組
-export type GameType = "bigTwo" | "mahjong" | "texas";
+// 統一遊戲識別碼，用於 Lobby 路由 / DO 初始化 / 客戶端旗標。               // L2_模組
+// uno / yahtzee 已在 union 中佔位以利後續 PR 接線；GAME_TYPES 仍只暴露
+// 已實作的三款，避免 UI 列出尚未實作的遊戲。                                // L2_隔離
+export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
 export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas"] as const;
 export function isGameType(x: unknown): x is GameType {

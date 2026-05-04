@@ -21,9 +21,10 @@ interface Props {
   onClose: () => void;
 }
 
-const ICON: Record<GameType, string> = { bigTwo: "🃏", mahjong: "🀄", texas: "♠️" };
-const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas"> = {
+const ICON: Record<GameType, string> = { bigTwo: "🃏", mahjong: "🀄", texas: "♠️", uno: "🎴", yahtzee: "🎲" };
+const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas" | "select.uno" | "select.yahtzee"> = {
   bigTwo: "select.bigTwo", mahjong: "select.mahjong", texas: "select.texas",
+  uno: "select.uno", yahtzee: "select.yahtzee",
 };
 
 const STEP_INTERVAL_BY_SPEED = { 1: 1500, 2: 800, 4: 400 } as const;

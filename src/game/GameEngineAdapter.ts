@@ -331,6 +331,11 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
         sb, bb,
       ));
     }
+    // uno / yahtzee 已在 GameType union 中佔位（PR 1 infra），尚未實作引擎；
+    // GAME_TYPES 不會暴露這兩款給 UI，因此正常路徑不會走到這裡。           // L2_隔離
+    case "uno":
+    case "yahtzee":
+      throw new Error(`Engine not implemented yet for gameType: ${opts.gameType}`);
   }
 }
 
@@ -342,5 +347,8 @@ export function restoreEngine(gameType: GameType, snap: unknown): IGameEngine {
       return new MahjongEngine(MahjongStateMachine.restore(snap as MahjongSnapshot));
     case "texas":
       return new TexasEngine(TexasHoldemStateMachine.restore(snap as TexasSnapshot));
+    case "uno":
+    case "yahtzee":
+      throw new Error(`restoreEngine not implemented yet for gameType: ${gameType}`);
   }
 }

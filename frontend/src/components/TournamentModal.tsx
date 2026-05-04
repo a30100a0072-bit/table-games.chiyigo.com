@@ -16,10 +16,12 @@ interface Props {
   onJoinedRoom: (roomId: string, gameType: GameType) => void;
 }
 
-const GAME_LABEL_KEY: Record<GameType, "tour.gameBigTwo" | "tour.gameMahjong" | "tour.gameTexas"> = {
+const GAME_LABEL_KEY: Record<GameType, "tour.gameBigTwo" | "tour.gameMahjong" | "tour.gameTexas" | "tour.gameUno" | "tour.gameYahtzee"> = {
   bigTwo:  "tour.gameBigTwo",
   mahjong: "tour.gameMahjong",
   texas:   "tour.gameTexas",
+  uno:     "tour.gameUno",
+  yahtzee: "tour.gameYahtzee",
 };
 const PRESET_BUYINS = [200, 500, 1000];
 

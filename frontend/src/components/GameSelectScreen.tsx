@@ -19,23 +19,37 @@ const ICON: Record<GameType, string> = {
   bigTwo:  "🃏",
   mahjong: "🀄",
   texas:   "♠️",
+  uno:     "🎴",
+  yahtzee: "🎲",
 };
 
-const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas"> = {
+type LabelKey =
+  | "select.bigTwo" | "select.mahjong" | "select.texas"
+  | "select.uno"    | "select.yahtzee";
+const LABEL_KEY: Record<GameType, LabelKey> = {
   bigTwo:  "select.bigTwo",
   mahjong: "select.mahjong",
   texas:   "select.texas",
+  uno:     "select.uno",
+  yahtzee: "select.yahtzee",
 };
-const TAG_KEY: Record<GameType, "select.tag.bigTwo" | "select.tag.mahjong" | "select.tag.texas"> = {
+type TagKey =
+  | "select.tag.bigTwo" | "select.tag.mahjong" | "select.tag.texas"
+  | "select.tag.uno"    | "select.tag.yahtzee";
+const TAG_KEY: Record<GameType, TagKey> = {
   bigTwo:  "select.tag.bigTwo",
   mahjong: "select.tag.mahjong",
   texas:   "select.tag.texas",
+  uno:     "select.tag.uno",
+  yahtzee: "select.tag.yahtzee",
 };
 
 const ANTE: Record<GameType, number> = {
   bigTwo:  100,
   mahjong: 100,
   texas:   200,
+  uno:     100,
+  yahtzee: 100,
 };
 
 interface Props {

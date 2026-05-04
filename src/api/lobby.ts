@@ -33,6 +33,8 @@ export const ANTE_BY_GAME: Record<GameType, number> = {
   bigTwo:  100,
   mahjong: 100,
   texas:   200,
+  uno:     100,
+  yahtzee: 100,
 };
 
 // ── Bot ID prefix ─────────────────────────────────────────────────────── L2_隔離

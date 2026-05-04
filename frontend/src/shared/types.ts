@@ -5,13 +5,15 @@
  *  read-only UI when a payload arrives with self.playerId === this. */
 export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
-export type GameType = "bigTwo" | "mahjong" | "texas";
+export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
 export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas"] as const;
 export const GAME_LABEL: Record<GameType, string> = {
   bigTwo:  "大老二",
   mahjong: "台灣 16 張麻將",
   texas:   "德州撲克",
+  uno:     "Uno",
+  yahtzee: "快艇骰子",
 };
 
 // ─── Big Two ─────────────────────────────────────────────────────────────────

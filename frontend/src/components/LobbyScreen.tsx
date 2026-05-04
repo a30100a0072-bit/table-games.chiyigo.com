@@ -5,8 +5,9 @@ import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
 import { useT } from "../i18n/useT";
 
-const GAME_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas"> = {
+const GAME_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas" | "select.uno" | "select.yahtzee"> = {
   bigTwo: "select.bigTwo", mahjong: "select.mahjong", texas: "select.texas",
+  uno: "select.uno", yahtzee: "select.yahtzee",
 };
 
 interface Props {

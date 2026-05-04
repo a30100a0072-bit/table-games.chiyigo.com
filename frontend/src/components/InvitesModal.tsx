@@ -14,9 +14,10 @@ interface Props {
   onEnter: (roomId: string, gameType: GameType) => void;
 }
 
-const ICON: Record<GameType, string> = { bigTwo: "🃏", mahjong: "🀄", texas: "♠️" };
-const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas"> = {
+const ICON: Record<GameType, string> = { bigTwo: "🃏", mahjong: "🀄", texas: "♠️", uno: "🎴", yahtzee: "🎲" };
+const LABEL_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas" | "select.uno" | "select.yahtzee"> = {
   bigTwo: "select.bigTwo", mahjong: "select.mahjong", texas: "select.texas",
+  uno: "select.uno", yahtzee: "select.yahtzee",
 };
 
 export default function InvitesModal({ token, onClose, onEnter }: Props) {

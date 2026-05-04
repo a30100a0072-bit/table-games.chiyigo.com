@@ -27,6 +27,14 @@ export default function GameScreen({ gameType, ...rest }: Props) {
     case "mahjong": inner = <MahjongGameScreen     {...rest} />; break;
     case "texas":   inner = <TexasHoldemGameScreen {...rest} />; break;
     case "bigTwo":  inner = <BigTwoGameScreen      {...rest} />; break;
+    // PR 1 infra — uno / yahtzee 在 GameType union 中佔位但 GAME_TYPES 不暴露。
+    // 真實路徑不會抵達這裡；保留兜底避免 TS exhaustiveness 失敗。
+    case "uno":
+    case "yahtzee":
+      inner = <div className="flex h-screen items-center justify-center bg-green-900 text-yellow-200">
+        Coming soon: {gameType}
+      </div>;
+      break;
   }
   return (
     <Suspense fallback={
