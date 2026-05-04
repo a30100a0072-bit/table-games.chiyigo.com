@@ -113,14 +113,21 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
 
           {error && <p className="mb-2 text-red-300">{error}</p>}
 
-          {eligible && (
-            <button
-              onClick={handleBailout}
-              disabled={claiming}
-              className="mb-2 w-full rounded-md bg-red-600 py-1.5 text-xs font-bold text-white shadow transition hover:bg-red-500 disabled:opacity-50"
-            >
-              {claiming ? t("wallet.bailoutLoading") : t("wallet.bailout", { n: BAILOUT_THRESHOLD })}
-            </button>
+          {wallet && (
+            <div className="mb-2 rounded-md border-l-4 border-red-600 bg-red-900/30 p-2">
+              <button
+                onClick={handleBailout}
+                disabled={claiming || !eligible}
+                className="w-full rounded-md bg-red-600 py-1.5 text-xs font-bold text-white shadow transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900/60 disabled:text-red-300/60"
+              >
+                {claiming ? t("wallet.bailoutLoading") : t("wallet.bailout", { n: BAILOUT_THRESHOLD })}
+              </button>
+              {!eligible && (
+                <p className="mt-1 text-[10px] text-red-200/70">
+                  {t("wallet.bailoutHint", { n: BAILOUT_THRESHOLD })}
+                </p>
+              )}
+            </div>
           )}
 
           {wallet && wallet.ledger.length === 0 && (

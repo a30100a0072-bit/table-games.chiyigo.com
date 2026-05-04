@@ -182,22 +182,22 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
           <button
             disabled={!isMyTurn}
             onClick={() => send({ type: "fold" })}
-            className="rounded-lg bg-gray-600 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-gray-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("tx.fold")}</button>
           <button
             disabled={!canCheck}
             onClick={() => send({ type: "check" })}
-            className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:opacity-40"
+            className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:cursor-not-allowed disabled:opacity-50"
           >{t("tx.check")}</button>
           <button
             disabled={!canCall}
             onClick={() => send({ type: "call" })}
-            className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("tx.call", { n: owe })}</button>
           <button
             disabled={!canRaise || raise <= view.currentBet}
             onClick={() => send({ type: "raise", raiseAmount: raise })}
-            className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:opacity-40"
+            className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:cursor-not-allowed disabled:opacity-50"
           >{t("tx.raiseTo", { n: raise })}</button>
         </div>
 
@@ -214,7 +214,7 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
           <button
             disabled={!canRaise}
             onClick={() => send({ type: "raise", raiseAmount: me.stack + me.betThisStreet })}
-            className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("tx.allIn")}</button>
         </div>
 

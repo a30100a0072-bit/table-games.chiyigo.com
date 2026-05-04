@@ -48,6 +48,13 @@ export default function LoginScreen({ onLoggedIn }: Props) {
       <div className="w-80 rounded-2xl bg-green-900 p-8 shadow-xl">
         <h1 className="mb-2 text-center text-3xl font-bold text-yellow-300">{t("login.title")}</h1>
         <p className="mb-6 text-center text-sm text-green-300">{t("login.subtitle")}</p>
+        {frozen && (
+          <div className="mb-4 rounded-lg border-l-4 border-red-500 bg-red-900/60 p-3 ring-1 ring-red-500/40" role="alert">
+            <p className="text-sm font-bold text-red-300">{t("login.frozen")}</p>
+            <p className="mt-1 text-xs text-red-200">{t("login.frozenReason", { r: frozen })}</p>
+            <p className="mt-1 text-[11px] text-red-300/80">{t("login.frozenContact")}</p>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             className="rounded-lg bg-green-800 px-4 py-3 text-white placeholder-green-400 outline-none focus:ring-2 focus:ring-yellow-400"
@@ -59,17 +66,10 @@ export default function LoginScreen({ onLoggedIn }: Props) {
             autoFocus
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
-          {frozen && (
-            <div className="rounded-lg bg-red-900/60 p-3 ring-1 ring-red-500/40">
-              <p className="text-sm font-bold text-red-300">{t("login.frozen")}</p>
-              <p className="mt-1 text-xs text-red-200">{t("login.frozenReason", { r: frozen })}</p>
-              <p className="mt-1 text-[11px] text-red-300/80">{t("login.frozenContact")}</p>
-            </div>
-          )}
           <button
             type="submit"
             disabled={loading || !name.trim()}
-            className="rounded-lg bg-yellow-400 py-3 font-bold text-green-950 transition hover:bg-yellow-300 disabled:opacity-50"
+            className="rounded-lg bg-yellow-400 py-3 font-bold text-green-950 transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? t("login.connecting") : t("login.submit")}
           </button>
@@ -84,7 +84,7 @@ export default function LoginScreen({ onLoggedIn }: Props) {
         <button
           onClick={() => { unlockAudio(); startOidcLogin(); }}
           disabled={loading}
-          className="w-full rounded-lg bg-green-700 py-3 font-bold text-yellow-100 ring-1 ring-yellow-500/40 transition hover:bg-green-600 disabled:opacity-50"
+          className="w-full rounded-lg bg-green-700 py-3 font-bold text-yellow-100 ring-1 ring-yellow-500/40 transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("login.chiyigoSso")}
         </button>

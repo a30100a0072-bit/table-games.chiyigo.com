@@ -435,7 +435,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
               type="button"
               disabled={!isMyTurn || !combo}
               onClick={handlePlay}
-              className="min-w-[120px] rounded-xl bg-red-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-60"
+              className="min-w-[120px] rounded-xl bg-red-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-50"
             >
               {t("bt.play")}{combo ? ` · ${combo}` : ` (${selected.size})`}
             </button>
@@ -443,7 +443,7 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
               type="button"
               disabled={!isMyTurn}
               onClick={handlePass}
-              className="min-w-[110px] rounded-xl bg-gray-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-60"
+              className="min-w-[110px] rounded-xl bg-gray-600 px-5 py-2.5 text-base font-bold text-white shadow transition hover:brightness-110 active:translate-y-[1px] disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500 disabled:opacity-50"
             >
               {t("bt.pass")}
             </button>

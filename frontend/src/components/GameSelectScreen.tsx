@@ -272,7 +272,7 @@ export default function GameSelectScreen({
                   setSpecOpen(false); setSpecRoom("");
                   onSpectate(id, specType);
                 }}
-                className="flex-1 rounded-lg bg-purple-600 py-2 text-sm font-bold text-white disabled:bg-gray-700 disabled:text-gray-500"
+                className="flex-1 rounded-lg bg-purple-600 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500"
               >{t("spec.start")}</button>
             </div>
           </div>
@@ -321,7 +321,9 @@ export default function GameSelectScreen({
                 <span className="flex flex-col">
                   <span className="text-lg font-bold text-yellow-300">{t(LABEL_KEY[g])}</span>
                   <span className="text-xs text-green-400">{t(TAG_KEY[g])}</span>
-                  <span className="mt-0.5 text-[10px] text-yellow-500/80">{t("select.minAnte", { n: ante })}</span>
+                  <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-yellow-900/40 px-2 py-0.5 text-[10px] font-bold text-yellow-300 ring-1 ring-yellow-600/40">
+                    💰 {t("select.minAnte", { n: ante })}
+                  </span>
                 </span>
               </button>
               {g === "mahjong" && (

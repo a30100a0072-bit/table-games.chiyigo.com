@@ -407,42 +407,42 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
           <button
             disabled={!canDiscard}
             onClick={() => pickedTile && send({ type: "discard", tile: pickedTile })}
-            className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:opacity-40"
+            className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.discard")}</button>
           <button
             disabled={!canChow}
             onClick={() => setChowPicker(true)}
-            className="rounded-lg bg-cyan-600 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-cyan-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{canChow && chowOptions.length > 1 ? t("mj.chowN", { n: chowOptions.length }) : t("mj.chow")}</button>
           <button
             disabled={!canPong}
             onClick={() => ld && send({ type: "pong", tile: ld.tile })}
-            className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.pong")}</button>
           <button
             disabled={!canKong}
             onClick={() => ld && send({ type: "kong", tile: ld.tile, source: "exposed" })}
-            className="rounded-lg bg-purple-600 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-purple-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.kong")}</button>
           <button
             disabled={!canAnkan}
             onClick={() => ankanCandidates[0] && send({ type: "kong", tile: ankanCandidates[0], source: "concealed" })}
-            className="rounded-lg bg-purple-800 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-purple-800 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.ankan")}</button>
           <button
             disabled={!canKakan}
             onClick={() => kakanCandidates[0] && send({ type: "kong", tile: kakanCandidates[0], source: "added" })}
-            className="rounded-lg bg-fuchsia-700 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-fuchsia-700 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.kakan")}</button>
           <button
             disabled={!canHu && !(isMyTurn && view.phase === "playing")}
             onClick={() => send({ type: "hu", selfDrawn: isMyTurn && view.phase === "playing" })}
-            className="rounded-lg bg-red-600 py-2 font-bold text-white disabled:opacity-40"
+            className="rounded-lg bg-red-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >{isMyTurn && view.phase === "playing" ? t("mj.tsumo") : t("mj.hu")}</button>
           <button
             disabled={!canPass}
             onClick={() => send({ type: "mj_pass" })}
-            className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:opacity-40"
+            className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:cursor-not-allowed disabled:opacity-50"
           >{t("mj.pass")}</button>
         </div>
       </div>

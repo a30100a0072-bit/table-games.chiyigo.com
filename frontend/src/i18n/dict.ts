@@ -65,6 +65,7 @@ const ZH = {
   "wallet.loadMore":       "載入更多",
   "wallet.bailout":        "🆘 領取救濟金（餘額 < {n}，每 24h 一次）",
   "wallet.bailoutLoading": "領取中…",
+  "wallet.bailoutHint":    "餘額低於 {n} 籌碼時可領取一次救濟金",
 
   // result
   "result.win":            "你贏了！🎉",
@@ -422,6 +423,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "wallet.loadMore":        "Load more",
   "wallet.bailout":         "🆘 Claim relief (balance < {n}, once per 24h)",
   "wallet.bailoutLoading":  "Claiming…",
+  "wallet.bailoutHint":     "Available when balance drops below {n} chips",
 
   "result.win":             "You won! 🎉",
   "result.end":             "Game over",
