@@ -7,7 +7,7 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
-export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno"] as const;
+export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const;
 export const GAME_LABEL: Record<GameType, string> = {
   bigTwo:  "大老二",
   mahjong: "台灣 16 張麻將",
@@ -198,13 +198,69 @@ export interface UnoSettlementDetail {
   pointsByPlayer: Record<PlayerId, number>;
 }
 
+// ─── Yahtzee ─────────────────────────────────────────────────────────────────
+export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
+export type DiceTuple = [DieFace, DieFace, DieFace, DieFace, DieFace];
+export type HeldTuple = [boolean, boolean, boolean, boolean, boolean];
+
+export type YahtzeeSlot =
+  | "ones" | "twos" | "threes" | "fours" | "fives" | "sixes"
+  | "threeKind" | "fourKind" | "fullHouse"
+  | "smallStraight" | "largeStraight"
+  | "yahtzee" | "chance";
+
+export const YAHTZEE_SLOTS: readonly YahtzeeSlot[] = [
+  "ones", "twos", "threes", "fours", "fives", "sixes",
+  "threeKind", "fourKind", "fullHouse",
+  "smallStraight", "largeStraight",
+  "yahtzee", "chance",
+] as const;
+
+export type Scorecard = Record<YahtzeeSlot, number | null>;
+
+export interface YahtzeeRollAction { type: "yz_roll"; held: HeldTuple; }
+export interface YahtzeeScoreAction { type: "yz_score"; slot: YahtzeeSlot; }
+
+export type YahtzeePhase = "rolling" | "settled";
+
+export interface YahtzeeSelfView {
+  playerId: PlayerId;
+  scorecard: Scorecard;
+}
+export interface YahtzeeOpponentView {
+  playerId: PlayerId;
+  scorecard: Scorecard;
+}
+
+export interface YahtzeeStateView {
+  gameId: string;
+  roundId: string;
+  phase: YahtzeePhase;
+  self: YahtzeeSelfView;
+  opponents: YahtzeeOpponentView[];
+  dice: DiceTuple;
+  held: HeldTuple;
+  rollsLeft: 0 | 1 | 2 | 3;
+  turnNumber: number;
+  totalTurns: number;
+  currentTurn: PlayerId;
+  turnDeadlineMs: number;
+}
+
+export interface YahtzeeSettlementDetail {
+  totalsByPlayer: Record<PlayerId, number>;
+  upperBonusByPlayer: Record<PlayerId, number>;
+  yahtzeeBonusByPlayer: Record<PlayerId, number>;
+}
+
 // ─── Unified PlayerAction (matches backend) ──────────────────────────────────
 export type PlayerAction =
   | PlayAction | PassAction
   | MahjongDiscardAction | MahjongChowAction | MahjongPongAction
   | MahjongKongAction | MahjongHuAction | MahjongPassAction
   | PokerFoldAction | PokerCheckAction | PokerCallAction | PokerRaiseAction
-  | UnoPlayAction | UnoDrawAction | UnoPassAction;
+  | UnoPlayAction | UnoDrawAction | UnoPassAction
+  | YahtzeeRollAction | YahtzeeScoreAction;
 
 // ─── Settlement (shared) ─────────────────────────────────────────────────────
 export type SettlementReason = "lastCardPlayed" | "timeout" | "disconnect";
@@ -223,6 +279,7 @@ export interface SettlementResult {
   winnerId:    PlayerId;
   fanDetail?:  { fan: number; base: number; detail: string[] };
   unoDetail?:  UnoSettlementDetail;
+  yahtzeeDetail?: YahtzeeSettlementDetail;
   matchOver?:  boolean;
   matchProgress?: {
     handNumber:        number;
@@ -234,4 +291,4 @@ export interface SettlementResult {
 }
 
 // ─── Discriminated union for any state-view payload ──────────────────────────
-export type AnyStateView = GameStateView | MahjongStateView | PokerStateView | UnoStateView;
+export type AnyStateView = GameStateView | MahjongStateView | PokerStateView | UnoStateView | YahtzeeStateView;

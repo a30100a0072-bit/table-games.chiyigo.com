@@ -19,7 +19,7 @@ export type PlayerId = string; // Durable Object id or CF session id
 // 已實作的三款，避免 UI 列出尚未實作的遊戲。                                // L2_隔離
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
-export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno"] as const;
+export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const;
 export function isGameType(x: unknown): x is GameType {
   return typeof x === "string" && (GAME_TYPES as readonly string[]).includes(x);
 }
@@ -65,7 +65,9 @@ export type PlayerAction =
   | PokerRaiseAction
   | UnoPlayAction
   | UnoDrawAction
-  | UnoPassAction;
+  | UnoPassAction
+  | YahtzeeRollAction
+  | YahtzeeScoreAction;
 
 // ──────────────────────────────────────────────
 //  1c. Texas Hold'em Action (L2_實作)
@@ -390,6 +392,77 @@ export interface UnoSettlementDetail {
 }
 
 // ──────────────────────────────────────────────
+//  2e. Yahtzee (L2_實作)
+// ──────────────────────────────────────────────
+
+export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
+export type DiceTuple = [DieFace, DieFace, DieFace, DieFace, DieFace];
+export type HeldTuple = [boolean, boolean, boolean, boolean, boolean];
+
+/** 13 個記分格 — 上半部 (ones..sixes) + 下半部 (組合 + chance) */
+export type YahtzeeSlot =
+  | "ones" | "twos" | "threes" | "fours" | "fives" | "sixes"
+  | "threeKind" | "fourKind" | "fullHouse"
+  | "smallStraight" | "largeStraight"
+  | "yahtzee" | "chance";
+
+export const YAHTZEE_SLOTS: readonly YahtzeeSlot[] = [
+  "ones", "twos", "threes", "fours", "fives", "sixes",
+  "threeKind", "fourKind", "fullHouse",
+  "smallStraight", "largeStraight",
+  "yahtzee", "chance",
+] as const;
+
+/** 每格分數；null = 尚未填寫，0 = 已填但得 0 分（可主動填 0）*/
+export type Scorecard = Record<YahtzeeSlot, number | null>;
+
+export interface YahtzeeRollAction {
+  type: "yz_roll";
+  held: HeldTuple;        // 哪幾顆保留不重擲；true = 不擲
+}
+export interface YahtzeeScoreAction {
+  type: "yz_score";
+  slot: YahtzeeSlot;      // 必須是 scorecards[me] 中為 null 的格
+}
+
+export type YahtzeePhase = "rolling" | "settled";
+
+export interface YahtzeeSelfView {
+  playerId: PlayerId;
+  scorecard: Scorecard;
+}
+export interface YahtzeeOpponentView {
+  playerId: PlayerId;
+  scorecard: Scorecard;          // 對手記分卡公開（資訊對稱）
+}
+
+export interface YahtzeeStateView {
+  gameId: string;
+  roundId: string;
+  phase: YahtzeePhase;
+  self: YahtzeeSelfView;
+  opponents: YahtzeeOpponentView[];
+  /** 當前可見的骰子值。輪到自己且 rollsLeft===3（剛輪到）時為占位 [1,1,1,1,1]；
+   *  rollsLeft<3 表示已擲過。 */
+  dice: DiceTuple;
+  /** 被保留的位置（rollsLeft<3 才有意義） */
+  held: HeldTuple;
+  rollsLeft: 0 | 1 | 2 | 3;
+  /** 累積回合數 0..players*13 - 1；當前 currentTurn = playerIds[turnNumber % n] */
+  turnNumber: number;
+  totalTurns: number;            // = players × 13
+  currentTurn: PlayerId;
+  turnDeadlineMs: number;
+}
+
+/** Yahtzee 結算附加資訊 — 各家最終總分與上半部 bonus / yahtzee bonus 明細 */
+export interface YahtzeeSettlementDetail {
+  totalsByPlayer: Record<PlayerId, number>;
+  upperBonusByPlayer: Record<PlayerId, number>;     // 0 or 35
+  yahtzeeBonusByPlayer: Record<PlayerId, number>;   // 100 × extra yahtzees
+}
+
+// ──────────────────────────────────────────────
 //  3. SettlementResult  (L2_鎖定)
 // ──────────────────────────────────────────────
 
@@ -417,6 +490,8 @@ export interface SettlementResult {
   fanDetail?: { fan: number; base: number; detail: string[] };
   // Uno 獨有：每家剩餘手牌的點數分（贏家 0）。其他遊戲為 undefined。       // L2_實作
   unoDetail?: UnoSettlementDetail;
+  // Yahtzee 獨有：每家總分 + bonus 明細。其他遊戲為 undefined。              // L2_實作
+  yahtzeeDetail?: YahtzeeSettlementDetail;
   /** 多局賽事中間局結算為 false；單局或末局為 true（預設）。DO 收到
    *  matchOver=false 時 ledger 仍照記但不 cleanup，等待下一局。           // L2_鎖定 */
   matchOver?: boolean;

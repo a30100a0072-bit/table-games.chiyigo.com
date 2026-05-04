@@ -10,11 +10,13 @@ import { TexasHoldemStateMachine } from "./TexasHoldemStateMachine";
 import type { TexasSnapshot } from "./TexasHoldemStateMachine";
 import { UnoStateMachine } from "./UnoStateMachine";
 import type { UnoSnapshot } from "./UnoStateMachine";
-import { getBigTwoBotAction, getMahjongBotAction, getUnoBotAction } from "./BotAI";
+import { YahtzeeStateMachine } from "./YahtzeeStateMachine";
+import type { YahtzeeSnapshot } from "./YahtzeeStateMachine";
+import { getBigTwoBotAction, getMahjongBotAction, getUnoBotAction, getYahtzeeBotAction } from "./BotAI";
 
 import type {
   GameType, PlayerId, PlayerAction, SettlementResult, SettlementReason,
-  GameStateView, MahjongStateView, PokerStateView, UnoStateView,
+  GameStateView, MahjongStateView, PokerStateView, UnoStateView, YahtzeeStateView,
 } from "../types/game";
 
 /** Sentinel playerId used in spectator views — guaranteed not collidable
@@ -359,6 +361,69 @@ class UnoEngine implements IGameEngine {
 }
 
 // ──────────────────────────────────────────────
+//  Yahtzee Adapter
+// ──────────────────────────────────────────────
+
+class YahtzeeEngine implements IGameEngine {
+  readonly gameType: GameType = "yahtzee";
+  private m: YahtzeeStateMachine;
+  constructor(m: YahtzeeStateMachine) { this.m = m; }
+
+  processAction(playerId: PlayerId, action: PlayerAction): ProcessOutcome {
+    const t = action.type;
+    if (t !== "yz_roll" && t !== "yz_score")
+      throw new Error("illegal action type for yahtzee");
+    const r = this.m.process(playerId, action);
+    if (!r.ok) throw new Error(r.error);
+    return { settlement: r.settlement ?? null };
+  }
+  getView(playerId: PlayerId)  { return this.m.viewFor(playerId); }
+  getSpectatorView(): YahtzeeStateView {
+    const snap = this.m.snapshot() as YahtzeeSnapshot;
+    const seat = this.m.viewFor(snap.playerIds[0]!);
+    return {
+      ...seat,
+      // Yahtzee scorecards are public anyway — phantom self with empty card.
+      self: { playerId: SPECTATOR_PLAYER_ID, scorecard: seat.self.scorecard },
+      opponents: [
+        { playerId: seat.self.playerId, scorecard: seat.self.scorecard },
+        ...seat.opponents,
+      ],
+    };
+  }
+  snapshot()                              { return this.m.snapshot(); }
+  currentTurn(): PlayerId                 { return this.m.currentTurn(); }
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
+    if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
+    return this.m.forceSettle(reason, forfeitPlayerId);
+  }
+  tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }
+
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const view = this.m.viewFor(playerId);
+    if (view.currentTurn !== playerId) return { settlement: null };
+    const action = getYahtzeeBotAction(view);
+    const r = this.m.process(playerId, action as never);
+    if (!r.ok) {
+      // Bot couldn't act — score zero into first open slot.
+      const open = (Object.keys(view.self.scorecard) as Array<keyof typeof view.self.scorecard>)
+        .find(k => view.self.scorecard[k] === null);
+      if (open) {
+        // Need at least one roll to score; ensure rollsLeft<3 first.
+        if (view.rollsLeft === 3) {
+          this.m.process(playerId, { type: "yz_roll", held: [false, false, false, false, false] } as never);
+        }
+        const r2 = this.m.process(playerId, { type: "yz_score", slot: open } as never);
+        return { settlement: r2.ok ? r2.settlement ?? null : null, appliedAction: { type: "yz_score", slot: open } };
+      }
+      return { settlement: null };
+    }
+    return { settlement: r.settlement ?? null, appliedAction: action };
+  }
+  startNextHand(): void { throw new Error("MULTIHAND_NOT_SUPPORTED"); }
+}
+
+// ──────────────────────────────────────────────
 //  Factory + Restore
 // ──────────────────────────────────────────────
 
@@ -396,9 +461,8 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
     }
     case "uno":
       return new UnoEngine(new UnoStateMachine(opts.gameId, opts.roundId, opts.playerIds));
-    // yahtzee 仍在 GameType union 中佔位，PR 3 才實作。                     // L2_隔離
     case "yahtzee":
-      throw new Error(`Engine not implemented yet for gameType: ${opts.gameType}`);
+      return new YahtzeeEngine(new YahtzeeStateMachine(opts.gameId, opts.roundId, opts.playerIds));
   }
 }
 
@@ -413,6 +477,6 @@ export function restoreEngine(gameType: GameType, snap: unknown): IGameEngine {
     case "uno":
       return new UnoEngine(UnoStateMachine.restore(snap as UnoSnapshot));
     case "yahtzee":
-      throw new Error(`restoreEngine not implemented yet for gameType: ${gameType}`);
+      return new YahtzeeEngine(YahtzeeStateMachine.restore(snap as YahtzeeSnapshot));
   }
 }

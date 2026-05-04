@@ -9,6 +9,7 @@ const BigTwoGameScreen      = lazy(() => import("./BigTwoGameScreen"));
 const MahjongGameScreen     = lazy(() => import("./MahjongGameScreen"));
 const TexasHoldemGameScreen = lazy(() => import("./TexasHoldemGameScreen"));
 const UnoGameScreen         = lazy(() => import("./UnoGameScreen"));
+const YahtzeeGameScreen     = lazy(() => import("./YahtzeeGameScreen"));
 
 interface Props {
   playerId:   string;
@@ -29,11 +30,7 @@ export default function GameScreen({ gameType, ...rest }: Props) {
     case "texas":   inner = <TexasHoldemGameScreen {...rest} />; break;
     case "bigTwo":  inner = <BigTwoGameScreen      {...rest} />; break;
     case "uno":     inner = <UnoGameScreen         {...rest} />; break;
-    case "yahtzee":
-      inner = <div className="flex h-screen items-center justify-center bg-green-900 text-yellow-200">
-        Coming soon: {gameType}
-      </div>;
-      break;
+    case "yahtzee": inner = <YahtzeeGameScreen     {...rest} />; break;
   }
   return (
     <Suspense fallback={

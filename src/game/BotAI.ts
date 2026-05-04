@@ -15,8 +15,11 @@ import type {
   MahjongTile, MahjongStateView,
   PokerStateView,
   UnoCard, UnoColor, UnoStateView,
+  YahtzeeStateView, YahtzeeSlot, DiceTuple, HeldTuple,
 } from "../types/game";
+import { YAHTZEE_SLOTS } from "../types/game";
 import { canPlay as canPlayUno, unoCardPoints } from "./UnoStateMachine";
+import { scoreSlot } from "./YahtzeeStateMachine";
 
 import { detectCombo, cardVal } from "./BigTwoStateMachine";
 import { canWin } from "./MahjongStateMachine";
@@ -741,4 +744,109 @@ function this_dumpHighest(legal: UnoCard[]): UnoCard {
   const pool = nonWild.length > 0 ? nonWild : legal;
   const sorted = [...pool].sort((a, b) => unoCardPoints(b) - unoCardPoints(a));
   return sorted[0]!;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Yahtzee
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Strategy:
+//   - First two rolls: keep dice that match an open high-value target.
+//     Priorities (descending):
+//       1. Yahtzee (5 of a kind) if 4-of-kind already present
+//       2. Large/Small straight if dice contain 4-run
+//       3. Full house if pair + triple present
+//       4. n-of-a-kind: keep the most-frequent face
+//   - On final roll: pick highest-EV open slot.
+//   - Slot selection prefers: yahtzee > 4kind > 3kind > full house >
+//     L straight > S straight > upper-section (face >=3) > chance >
+//     fill 0 in lowest-cost upper slot.
+
+function pickHeldForReroll(dice: DiceTuple, openSlots: YahtzeeSlot[]): HeldTuple {
+  // Count faces.
+  const counts: Record<number, number> = {};
+  for (const d of dice) counts[d] = (counts[d] ?? 0) + 1;
+  const sortedFaces = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const topFace = Number(sortedFaces[0]![0]);
+  const topCount = sortedFaces[0]![1];
+
+  // If we have 4+ same and yahtzee slot is open, hold them all.
+  if (topCount >= 4 && openSlots.includes("yahtzee")) {
+    return dice.map(d => d === topFace) as HeldTuple;
+  }
+
+  // Look for straight progress.
+  const set = new Set(dice);
+  const wantsLargeStraight = openSlots.includes("largeStraight");
+  const wantsSmallStraight = openSlots.includes("smallStraight");
+  if (wantsLargeStraight || wantsSmallStraight) {
+    // count how many of [1,2,3,4,5] or [2,3,4,5,6] we have
+    const seq1 = [1, 2, 3, 4, 5].filter(n => set.has(n as 1)).length;
+    const seq2 = [2, 3, 4, 5, 6].filter(n => set.has(n as 1)).length;
+    if (seq1 >= 4 || seq2 >= 4) {
+      // hold the consecutive subset
+      const target = seq1 >= seq2 ? new Set([1, 2, 3, 4, 5]) : new Set([2, 3, 4, 5, 6]);
+      const used = new Set<number>();
+      return dice.map(d => {
+        if (target.has(d) && !used.has(d)) { used.add(d); return true; }
+        return false;
+      }) as HeldTuple;
+    }
+  }
+
+  // Default: hold the most-frequent face.
+  return dice.map(d => d === topFace) as HeldTuple;
+}
+
+function pickBestSlot(dice: DiceTuple, openSlots: YahtzeeSlot[]): YahtzeeSlot {
+  // Priority order — pick first open slot that gives best score.
+  const PRIORITY: readonly YahtzeeSlot[] = [
+    "yahtzee", "largeStraight", "smallStraight", "fullHouse",
+    "fourKind", "threeKind",
+    "sixes", "fives", "fours", "threes", "twos", "ones",
+    "chance",
+  ];
+  // First pass: any priority slot that gives a non-zero score.
+  for (const slot of PRIORITY) {
+    if (!openSlots.includes(slot)) continue;
+    if (scoreSlot(dice, slot) > 0) return slot;
+  }
+  // Second pass: dump-zero into the cheapest still-open slot.
+  // Prefer dumping into low-value upper section over yahtzee/straight slots.
+  const DUMP_ORDER: readonly YahtzeeSlot[] = [
+    "ones", "twos", "threes", "fours", "fives", "sixes",
+    "yahtzee", "largeStraight", "smallStraight",
+    "fourKind", "threeKind", "fullHouse", "chance",
+  ];
+  for (const slot of DUMP_ORDER) {
+    if (openSlots.includes(slot)) return slot;
+  }
+  // Should be unreachable if SM is consistent (settle triggers when card full).
+  return openSlots[0]!;
+}
+
+export function getYahtzeeBotAction(view: YahtzeeStateView): PlayerAction {
+  const card = view.self.scorecard;
+  const open = YAHTZEE_SLOTS.filter(s => card[s] === null);
+
+  if (view.rollsLeft === 3) {
+    // First roll of turn — always roll all five.
+    return { type: "yz_roll", held: [false, false, false, false, false] };
+  }
+  if (view.rollsLeft >= 1) {
+    // Decide whether to roll again or score now.
+    // If current dice already give a Yahtzee and yahtzee slot open → score.
+    if (scoreSlot(view.dice, "yahtzee") === 50 && open.includes("yahtzee")) {
+      return { type: "yz_score", slot: "yahtzee" };
+    }
+    // If current dice give a large straight and slot open → score.
+    if (scoreSlot(view.dice, "largeStraight") === 40 && open.includes("largeStraight")) {
+      return { type: "yz_score", slot: "largeStraight" };
+    }
+    // Otherwise reroll, holding promising dice.
+    const held = pickHeldForReroll(view.dice, open);
+    return { type: "yz_roll", held };
+  }
+  // No rolls left — must score.
+  return { type: "yz_score", slot: pickBestSlot(view.dice, open) };
 }
