@@ -253,3 +253,98 @@ test("successful match transitions lobby → game screen (WS connecting state)",
   await expect(page.locator("button").filter({ hasText: /^(cancel|取消)$/i }))
     .toHaveCount(0);
 });
+
+test("Uno: lobby tap → GameScreen with discard pile + draw button", async ({ page }) => {
+  await stubBoot(page);
+  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      matched: true, roomId: "e2e-room-uno", gameType: "uno",
+      players: ["alice", "BOT_2", "BOT_3", "BOT_4"],
+    }),
+  }));
+
+  await page.routeWebSocket(/ws:\/\/localhost:9999\/rooms\/.*\/join/, ws => {
+    // Drop alice into a clean Uno state — single red-5 in hand, top is red-0.
+    ws.send(JSON.stringify({
+      type: "state",
+      payload: {
+        gameId: "e2e-room-uno", roundId: "r1", phase: "playing",
+        self: { playerId: "alice", hand: [{ color: "red", value: 5 }], cardCount: 1 },
+        opponents: [
+          { playerId: "BOT_2", cardCount: 7 },
+          { playerId: "BOT_3", cardCount: 7 },
+          { playerId: "BOT_4", cardCount: 7 },
+        ],
+        topDiscard: { playerId: "BOT_4", card: { color: "red", value: 0 } },
+        currentColor: "red",
+        direction: 1,
+        drawPileCount: 88,
+        currentTurn: "alice",
+        hasDrawn: false,
+        pendingDraw: 0,
+        turnDeadlineMs: Date.now() + 30_000,
+      },
+    }));
+  });
+
+  await page.goto("/");
+  await page.locator("input[maxlength='16']").fill("alice");
+  await page.locator("button[type='submit']").click();
+  await expect(page.locator("text=🎴").first()).toBeVisible();
+  await page.locator("button:has-text('🎴')").first().click();
+
+  // Uno screen mounted: draw pile count visible (88) + Draw / Pass buttons.
+  await expect(page.locator("text=/^88$/").first()).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator("button").filter({ hasText: /draw|抽牌/i }).first()).toBeVisible();
+  await expect(page.locator("button").filter({ hasText: /pass|^過$/i }).first()).toBeVisible();
+});
+
+test("Yahtzee: lobby tap → GameScreen with 5 dice + roll button", async ({ page }) => {
+  await stubBoot(page);
+  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      matched: true, roomId: "e2e-room-yz", gameType: "yahtzee",
+      players: ["alice", "BOT_2", "BOT_3", "BOT_4"],
+    }),
+  }));
+
+  await page.routeWebSocket(/ws:\/\/localhost:9999\/rooms\/.*\/join/, ws => {
+    const emptyCard = {
+      ones: null, twos: null, threes: null, fours: null, fives: null, sixes: null,
+      threeKind: null, fourKind: null, fullHouse: null,
+      smallStraight: null, largeStraight: null, yahtzee: null, chance: null,
+    };
+    ws.send(JSON.stringify({
+      type: "state",
+      payload: {
+        gameId: "e2e-room-yz", roundId: "r1", phase: "rolling",
+        self: { playerId: "alice", scorecard: emptyCard },
+        opponents: [
+          { playerId: "BOT_2", scorecard: emptyCard },
+          { playerId: "BOT_3", scorecard: emptyCard },
+          { playerId: "BOT_4", scorecard: emptyCard },
+        ],
+        dice: [1, 1, 1, 1, 1],
+        held: [false, false, false, false, false],
+        rollsLeft: 3,
+        turnNumber: 0,
+        totalTurns: 52,
+        currentTurn: "alice",
+        turnDeadlineMs: Date.now() + 30_000,
+      },
+    }));
+  });
+
+  await page.goto("/");
+  await page.locator("input[maxlength='16']").fill("alice");
+  await page.locator("button[type='submit']").click();
+  await expect(page.locator("text=🎲").first()).toBeVisible();
+  await page.locator("button:has-text('🎲')").first().click();
+
+  // Roll button visible (rollsLeft=3 → enabled). Scorecard rows show 13 slot labels.
+  await expect(page.locator("button").filter({ hasText: /roll|擲骰/i }).first()).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator("text=YAHTZEE").first()).toBeVisible();
+  await expect(page.locator("text=/Chance/").first()).toBeVisible();
+});

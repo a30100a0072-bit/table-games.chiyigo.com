@@ -253,13 +253,13 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
             {creating && (
               <div className="mb-3 rounded-lg bg-green-800/60 p-3">
                 <div className="mb-2 text-xs font-bold text-yellow-200">{t("tour.create")}</div>
-                <div className="mb-2 flex gap-1">
-                  {(["bigTwo", "mahjong", "texas"] as GameType[]).map(g => (
+                <div className="mb-2 grid grid-cols-3 gap-1">
+                  {(["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as GameType[]).map(g => (
                     <button
                       key={g}
                       onClick={() => setCreateGT(g)}
                       className={[
-                        "flex-1 rounded-md py-1.5 text-xs font-bold",
+                        "rounded-md py-1.5 text-[11px] font-bold",
                         createGT === g ? "bg-yellow-400 text-green-950" : "bg-green-700 text-green-200",
                       ].join(" ")}
                     >{t(GAME_LABEL_KEY[g])}</button>

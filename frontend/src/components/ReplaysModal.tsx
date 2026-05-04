@@ -88,6 +88,12 @@ interface ActionShape {
   tiles?: { suit: string; rank: number }[];
   raiseAmount?: number;
   selfDrawn?: boolean;
+  // Uno
+  card?: { color?: string; value: string | number };
+  declaredColor?: string;
+  // Yahtzee
+  held?: boolean[];
+  slot?: string;
 }
 
 function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
@@ -170,6 +176,40 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
     case "raise":
       badge = `RAISE → ${a.raiseAmount ?? "?"}`;
       body  = <span className="text-2xl">📈</span>;
+      break;
+    case "uno_play": {
+      const c = a.card;
+      const color = a.declaredColor ?? c?.color ?? "wild";
+      badge = `🎴 ${color}`;
+      body = (
+        <span className="text-2xl">
+          {c?.value === "skip" ? "🚫" :
+           c?.value === "reverse" ? "🔄" :
+           c?.value === "draw2" ? "+2" :
+           c?.value === "wild" ? "★" :
+           c?.value === "wild_draw4" ? "+4" :
+           String(c?.value ?? "?")}
+        </span>
+      );
+      break;
+    }
+    case "uno_draw":
+      badge = "DRAW";
+      body  = <span className="text-2xl">🃏</span>;
+      break;
+    case "uno_pass":
+      badge = "PASS";
+      body  = <span className="text-2xl">⏭</span>;
+      break;
+    case "yz_roll": {
+      const heldCount = (a.held ?? []).filter(Boolean).length;
+      badge = heldCount > 0 ? `🎲 hold×${heldCount}` : "🎲 ROLL";
+      body  = <span className="text-2xl">🎲🎲🎲</span>;
+      break;
+    }
+    case "yz_score":
+      badge = `📋 ${a.slot ?? "?"}`;
+      body  = <span className="text-xl text-yellow-300">{a.slot ?? "?"}</span>;
       break;
     default:
       badge = a.type ?? "?";
@@ -405,7 +445,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
                 <>
                   {/* Filter row — gameType pills + wins-only toggle */}
                   <div className="mb-2 flex flex-wrap items-center gap-1 text-[10px]">
-                    {(["all", "bigTwo", "mahjong", "texas"] as const).map(g => (
+                    {(["all", "bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const).map(g => (
                       <button
                         key={g}
                         onClick={() => setFilterGameType(g)}
@@ -633,6 +673,11 @@ function fmtEventOneLine(e: ReplayEvent): string {
     case "discard":return `${who} discard ${a.tile?.rank}${a.tile?.suit}`;
     case "raise":  return `${who} raise ${a.raiseAmount ?? "?"}`;
     case "hu":     return `${who} ${a.selfDrawn ? "tsumo" : "hu"}`;
+    case "uno_play": return `${who} uno ${a.card?.color ?? "wild"}/${a.card?.value ?? "?"}${a.declaredColor ? `→${a.declaredColor}` : ""}`;
+    case "uno_draw": return `${who} draw`;
+    case "uno_pass": return `${who} pass`;
+    case "yz_roll":  return `${who} roll (hold×${(a.held ?? []).filter(Boolean).length})`;
+    case "yz_score": return `${who} score ${a.slot ?? "?"}`;
     default:       return `${who} ${a.type ?? "?"}`;
   }
 }
