@@ -19,7 +19,7 @@ export type PlayerId = string; // Durable Object id or CF session id
 // 已實作的三款，避免 UI 列出尚未實作的遊戲。                                // L2_隔離
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
-export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas"] as const;
+export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno"] as const;
 export function isGameType(x: unknown): x is GameType {
   return typeof x === "string" && (GAME_TYPES as readonly string[]).includes(x);
 }
@@ -49,7 +49,7 @@ export interface PassAction {
   type: "pass";           // 無牌可出或選擇 Pass           // L2_實作
 }
 
-/** 玩家送往 Worker 的動作意圖聯合型別（Big Two + Mahjong + Texas Hold'em）*/
+/** 玩家送往 Worker 的動作意圖聯合型別（Big Two + Mahjong + Texas Hold'em + Uno）*/
 export type PlayerAction =
   | PlayAction
   | PassAction
@@ -62,7 +62,10 @@ export type PlayerAction =
   | PokerFoldAction
   | PokerCheckAction
   | PokerCallAction
-  | PokerRaiseAction;
+  | PokerRaiseAction
+  | UnoPlayAction
+  | UnoDrawAction
+  | UnoPassAction;
 
 // ──────────────────────────────────────────────
 //  1c. Texas Hold'em Action (L2_實作)
@@ -314,6 +317,79 @@ export interface PokerStateView {
 }
 
 // ──────────────────────────────────────────────
+//  2d. Uno (L2_實作)
+// ──────────────────────────────────────────────
+
+export type UnoColor = "red" | "yellow" | "green" | "blue";
+export type UnoValue =
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+  | "skip" | "reverse" | "draw2"
+  | "wild" | "wild_draw4";
+
+/** Wild / WildDraw4 在 deck/hand 中 color = undefined；
+ *  打到棄牌堆時前端用 currentColor 顯示出牌者宣告的顏色。 // L2_隔離 */
+export interface UnoCard {
+  color?: UnoColor;
+  value: UnoValue;
+}
+
+export interface UnoPlayAction {
+  type: "uno_play";
+  card: UnoCard;                // 必須是手中真實存在的牌；wild 系列則 color 必為 undefined
+  declaredColor?: UnoColor;     // 出 wild/wild_draw4 時必填，其他牌忽略 // L3_邏輯安防
+}
+export interface UnoDrawAction { type: "uno_draw"; }   // 從牌堆抽 1 張
+export interface UnoPassAction { type: "uno_pass"; }   // 抽完後選擇不打（必須先抽過）
+
+export type UnoPhase = "playing" | "settled";
+
+export interface UnoSelfView {
+  playerId: PlayerId;
+  hand: UnoCard[];              // 本人完整手牌                         // L2_隔離
+  cardCount: number;
+}
+export interface UnoOpponentView {
+  playerId: PlayerId;
+  cardCount: number;            // 隱藏牌面，僅張數                     // L2_隔離
+}
+
+export interface UnoLastPlay {
+  playerId: PlayerId;
+  card: UnoCard;                // 含宣告色（color 永遠有值，含 wild 已宣告）
+}
+
+export interface UnoStateView {
+  gameId: string;
+  roundId: string;
+  phase: UnoPhase;
+  self: UnoSelfView;
+  opponents: UnoOpponentView[];
+  /** 棄牌堆最頂上一張（含宣告色），新房間第一張由 SM 初始化。 // L2_隔離 */
+  topDiscard: UnoLastPlay;
+  /** 當前有效顏色 — wild 出牌後等於 declaredColor；普通牌等於該牌 color。 */
+  currentColor: UnoColor;
+  /** 當前方向：1 順時針 / -1 逆時針。 */
+  direction: 1 | -1;
+  drawPileCount: number;        // 暴露剩餘張數，不洩順序                // L2_隔離
+  currentTurn: PlayerId;
+  /** 該玩家本回合是否已抽過牌（僅當輪到自己且已抽未打時為 true） */
+  hasDrawn: boolean;
+  /** 上一張 Draw2 / WildDraw4 累積待罰張數（簡化版：本實作不做 stacking，
+   *  下一玩家進入時直接吃完這些罰張並被 skip）— 此欄位為 0 或 2 或 4，
+   *  正在等待 currentTurn 被執行罰則。                              // L3_邏輯安防 */
+  pendingDraw: number;
+  turnDeadlineMs: number;
+}
+
+/** Uno 結算附帶資訊 — 各家最後手牌總分（face/action/wild → 分數）。
+ *  remainingCards 在 SettlementResult 中固定 []（型別限制 Card[]）；
+ *  分數明細透過此欄位前端顯示。                                       // L2_隔離 */
+export interface UnoSettlementDetail {
+  /** playerId → 手牌剩餘分（贏家為 0） */
+  pointsByPlayer: Record<PlayerId, number>;
+}
+
+// ──────────────────────────────────────────────
 //  3. SettlementResult  (L2_鎖定)
 // ──────────────────────────────────────────────
 
@@ -339,6 +415,8 @@ export interface SettlementResult {
   winnerId: PlayerId;
   // 麻將獨有：贏家台數明細，純資訊性，前端可顯示。其他遊戲為 undefined。 // L2_實作
   fanDetail?: { fan: number; base: number; detail: string[] };
+  // Uno 獨有：每家剩餘手牌的點數分（贏家 0）。其他遊戲為 undefined。       // L2_實作
+  unoDetail?: UnoSettlementDetail;
   /** 多局賽事中間局結算為 false；單局或末局為 true（預設）。DO 收到
    *  matchOver=false 時 ledger 仍照記但不 cleanup，等待下一局。           // L2_鎖定 */
   matchOver?: boolean;

@@ -8,11 +8,13 @@ import { MahjongStateMachine } from "./MahjongStateMachine";
 import type { MahjongSnapshot } from "./MahjongStateMachine";
 import { TexasHoldemStateMachine } from "./TexasHoldemStateMachine";
 import type { TexasSnapshot } from "./TexasHoldemStateMachine";
-import { getBigTwoBotAction, getMahjongBotAction } from "./BotAI";
+import { UnoStateMachine } from "./UnoStateMachine";
+import type { UnoSnapshot } from "./UnoStateMachine";
+import { getBigTwoBotAction, getMahjongBotAction, getUnoBotAction } from "./BotAI";
 
 import type {
   GameType, PlayerId, PlayerAction, SettlementResult, SettlementReason,
-  GameStateView, MahjongStateView, PokerStateView,
+  GameStateView, MahjongStateView, PokerStateView, UnoStateView,
 } from "../types/game";
 
 /** Sentinel playerId used in spectator views — guaranteed not collidable
@@ -24,7 +26,7 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
  *  (mahjong fan calc, texas side-pot rules, big two combo ordering).
  *  Replays stamped with an older version still surface the final
  *  settlement, but the client refuses to step through the action list.   */
-export const ENGINE_VERSION = 3;
+export const ENGINE_VERSION = 4;
 
 // ──────────────────────────────────────────────
 //  統一介面  (L3_架構)
@@ -296,6 +298,67 @@ class TexasEngine implements IGameEngine {
 }
 
 // ──────────────────────────────────────────────
+//  Uno Adapter
+// ──────────────────────────────────────────────
+
+class UnoEngine implements IGameEngine {
+  readonly gameType: GameType = "uno";
+  private m: UnoStateMachine;
+  constructor(m: UnoStateMachine) { this.m = m; }
+
+  processAction(playerId: PlayerId, action: PlayerAction): ProcessOutcome {
+    const t = action.type;
+    if (t !== "uno_play" && t !== "uno_draw" && t !== "uno_pass")
+      throw new Error("illegal action type for uno");
+    const r = this.m.process(playerId, action);
+    if (!r.ok) throw new Error(r.error);
+    return { settlement: r.settlement ?? null };
+  }
+  getView(playerId: PlayerId)  { return this.m.viewFor(playerId); }
+  getSpectatorView(): UnoStateView {
+    const snap = this.m.snapshot() as UnoSnapshot;
+    const seat = this.m.viewFor(snap.playerIds[0]!);
+    return {
+      ...seat,
+      self: { playerId: SPECTATOR_PLAYER_ID, hand: [], cardCount: 0 },
+      opponents: [
+        { playerId: seat.self.playerId, cardCount: seat.self.cardCount },
+        ...seat.opponents,
+      ],
+    };
+  }
+  snapshot()                              { return this.m.snapshot(); }
+  currentTurn(): PlayerId                 { return this.m.currentTurn(); }
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
+    if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
+    return this.m.forceSettle(reason, forfeitPlayerId);
+  }
+  tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }   // uno no-op
+
+  // Uno timeout: try BotAI; if it picks draw and bot is in already-drawn state
+  // bot returns pass — both cycles bounded.                                // L2_實作
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const view = this.m.viewFor(playerId);
+    if (view.currentTurn !== playerId) return { settlement: null };
+    const action = getUnoBotAction(view);
+    const r = this.m.process(playerId, action as never);
+    if (!r.ok) {
+      // Bot somehow proposed an illegal action — fallback to draw + pass.
+      const drew = this.m.process(playerId, { type: "uno_draw" });
+      if (drew.ok && view.hasDrawn) {
+        // already drawn; pass instead
+        const passed = this.m.process(playerId, { type: "uno_pass" });
+        return { settlement: passed.ok ? passed.settlement ?? null : null, appliedAction: { type: "uno_pass" } };
+      }
+      const pass = this.m.process(playerId, { type: "uno_pass" });
+      return { settlement: pass.ok ? pass.settlement ?? null : null, appliedAction: { type: "uno_pass" } };
+    }
+    return { settlement: r.settlement ?? null, appliedAction: action };
+  }
+  startNextHand(): void { throw new Error("MULTIHAND_NOT_SUPPORTED"); }
+}
+
+// ──────────────────────────────────────────────
 //  Factory + Restore
 // ──────────────────────────────────────────────
 
@@ -331,9 +394,9 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
         sb, bb,
       ));
     }
-    // uno / yahtzee 已在 GameType union 中佔位（PR 1 infra），尚未實作引擎；
-    // GAME_TYPES 不會暴露這兩款給 UI，因此正常路徑不會走到這裡。           // L2_隔離
     case "uno":
+      return new UnoEngine(new UnoStateMachine(opts.gameId, opts.roundId, opts.playerIds));
+    // yahtzee 仍在 GameType union 中佔位，PR 3 才實作。                     // L2_隔離
     case "yahtzee":
       throw new Error(`Engine not implemented yet for gameType: ${opts.gameType}`);
   }
@@ -348,6 +411,7 @@ export function restoreEngine(gameType: GameType, snap: unknown): IGameEngine {
     case "texas":
       return new TexasEngine(TexasHoldemStateMachine.restore(snap as TexasSnapshot));
     case "uno":
+      return new UnoEngine(UnoStateMachine.restore(snap as UnoSnapshot));
     case "yahtzee":
       throw new Error(`restoreEngine not implemented yet for gameType: ${gameType}`);
   }

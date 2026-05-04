@@ -7,7 +7,7 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
-export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas"] as const;
+export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno"] as const;
 export const GAME_LABEL: Record<GameType, string> = {
   bigTwo:  "大老二",
   mahjong: "台灣 16 張麻將",
@@ -148,12 +148,63 @@ export interface PokerCheckAction { type: "check"; }
 export interface PokerCallAction  { type: "call"; }
 export interface PokerRaiseAction { type: "raise"; raiseAmount: number; }
 
+// ─── Uno ─────────────────────────────────────────────────────────────────────
+export type UnoColor = "red" | "yellow" | "green" | "blue";
+export type UnoValue =
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+  | "skip" | "reverse" | "draw2"
+  | "wild" | "wild_draw4";
+
+export interface UnoCard { color?: UnoColor; value: UnoValue; }
+
+export interface UnoPlayAction {
+  type: "uno_play";
+  card: UnoCard;
+  declaredColor?: UnoColor;
+}
+export interface UnoDrawAction { type: "uno_draw"; }
+export interface UnoPassAction { type: "uno_pass"; }
+
+export type UnoPhase = "playing" | "settled";
+
+export interface UnoSelfView {
+  playerId: PlayerId;
+  hand: UnoCard[];
+  cardCount: number;
+}
+export interface UnoOpponentView {
+  playerId: PlayerId;
+  cardCount: number;
+}
+export interface UnoLastPlay { playerId: PlayerId; card: UnoCard; }
+
+export interface UnoStateView {
+  gameId: string;
+  roundId: string;
+  phase: UnoPhase;
+  self: UnoSelfView;
+  opponents: UnoOpponentView[];
+  topDiscard: UnoLastPlay;
+  currentColor: UnoColor;
+  direction: 1 | -1;
+  drawPileCount: number;
+  currentTurn: PlayerId;
+  hasDrawn: boolean;
+  pendingDraw: number;
+  turnDeadlineMs: number;
+}
+
+export interface UnoSettlementDetail {
+  pointsByPlayer: Record<PlayerId, number>;
+}
+
 // ─── Unified PlayerAction (matches backend) ──────────────────────────────────
 export type PlayerAction =
   | PlayAction | PassAction
   | MahjongDiscardAction | MahjongChowAction | MahjongPongAction
   | MahjongKongAction | MahjongHuAction | MahjongPassAction
-  | PokerFoldAction | PokerCheckAction | PokerCallAction | PokerRaiseAction;
+  | PokerFoldAction | PokerCheckAction | PokerCallAction | PokerRaiseAction
+  | UnoPlayAction | UnoDrawAction | UnoPassAction;
 
 // ─── Settlement (shared) ─────────────────────────────────────────────────────
 export type SettlementReason = "lastCardPlayed" | "timeout" | "disconnect";
@@ -171,6 +222,7 @@ export interface SettlementResult {
   players:     PlayerSettlement[];
   winnerId:    PlayerId;
   fanDetail?:  { fan: number; base: number; detail: string[] };
+  unoDetail?:  UnoSettlementDetail;
   matchOver?:  boolean;
   matchProgress?: {
     handNumber:        number;
@@ -182,4 +234,4 @@ export interface SettlementResult {
 }
 
 // ─── Discriminated union for any state-view payload ──────────────────────────
-export type AnyStateView = GameStateView | MahjongStateView | PokerStateView;
+export type AnyStateView = GameStateView | MahjongStateView | PokerStateView | UnoStateView;

@@ -121,7 +121,7 @@ describe("private rooms API", () => {
 
   it("rejects bad gameType", async () => {
     const tok = await tokenFor("alice");
-    const r = await createPrivateRoom(authedReq("POST", "/", tok, { gameType: "uno" }), env);
+    const r = await createPrivateRoom(authedReq("POST", "/", tok, { gameType: "chess" }), env);
     expect(r.status).toBe(400);
   });
 

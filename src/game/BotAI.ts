@@ -14,7 +14,9 @@ import type {
   PlayerAction, GameStateView,
   MahjongTile, MahjongStateView,
   PokerStateView,
+  UnoCard, UnoColor, UnoStateView,
 } from "../types/game";
+import { canPlay as canPlayUno, unoCardPoints } from "./UnoStateMachine";
 
 import { detectCombo, cardVal } from "./BigTwoStateMachine";
 import { canWin } from "./MahjongStateMachine";
@@ -650,4 +652,93 @@ function bluffSeed(gameId: string, hole: [Card, Card]): number {
     h = Math.imul(h, 16777619);
   }
   return ((h >>> 0) % 10000) / 10000;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Uno
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Heuristic priorities (descending):
+//   1. If hand is empty after this play we win → play any legal card.
+//   2. If any opponent has ≤2 cards: prefer offensive action (skip/draw2/wd4
+//      pointed at the next-up player) > color-change wild > number cards.
+//   3. Otherwise: dump high-point cards first (numbers high → action → wild)
+//      to minimise loss if someone else goes out before us.
+//   4. Wild color declared = color we hold the most of.
+//   5. If nothing is legal → uno_draw, then play drawn card if it's legal,
+//      otherwise uno_pass.
+
+function pickWildColor(hand: UnoCard[]): UnoColor {
+  const counts: Record<UnoColor, number> = { red: 0, yellow: 0, green: 0, blue: 0 };
+  for (const c of hand) if (c.color) counts[c.color]++;
+  let best: UnoColor = "red"; let max = -1;
+  for (const c of ["red", "yellow", "green", "blue"] as UnoColor[]) {
+    if (counts[c] > max) { max = counts[c]; best = c; }
+  }
+  return best;
+}
+
+function isOffensive(c: UnoCard): boolean {
+  return c.value === "skip" || c.value === "draw2" || c.value === "wild_draw4";
+}
+
+export function getUnoBotAction(view: UnoStateView): PlayerAction {
+  const hand = view.self.hand;
+  const top = view.topDiscard.card;
+  const topValue = top.value;
+  const color = view.currentColor;
+
+  const legal = hand.filter(c => canPlayUno(c, topValue, color));
+
+  if (legal.length === 0) {
+    if (!view.hasDrawn) return { type: "uno_draw" };
+    // Drew already, still nothing legal (hasDrawn=true means we just drew this turn).
+    // Try the freshly-drawn card (last in hand).
+    const last = hand[hand.length - 1]!;
+    if (last && canPlayUno(last, topValue, color)) {
+      return last.value === "wild" || last.value === "wild_draw4"
+        ? { type: "uno_play", card: last, declaredColor: pickWildColor(hand) }
+        : { type: "uno_play", card: last };
+    }
+    return { type: "uno_pass" };
+  }
+
+  // Identify the next-up opponent's hand size.
+  const n = view.opponents.length + 1;
+  const myIdx = [view.self.playerId, ...view.opponents.map(o => o.playerId)]
+    .indexOf(view.self.playerId);
+  void myIdx;
+  const nextOpp = view.opponents[0];   // opponents[] is already in seat order from self+1
+  const nextLow = nextOpp ? nextOpp.cardCount <= 2 : false;
+  void n;
+
+  let chosen: UnoCard;
+  if (nextLow) {
+    // Prefer offensive cards.
+    const offensive = legal.filter(isOffensive);
+    if (offensive.length > 0) {
+      // pick highest-point offensive (wild_draw4 > draw2 > skip)
+      offensive.sort((a, b) => unoCardPoints(b) - unoCardPoints(a));
+      chosen = offensive[0]!;
+    } else {
+      // Fall back to a wild color-change to mess them up.
+      const wild = legal.find(c => c.value === "wild");
+      chosen = wild ?? this_dumpHighest(legal);
+    }
+  } else {
+    chosen = this_dumpHighest(legal);
+  }
+
+  if (chosen.value === "wild" || chosen.value === "wild_draw4") {
+    return { type: "uno_play", card: chosen, declaredColor: pickWildColor(hand) };
+  }
+  return { type: "uno_play", card: chosen };
+}
+
+function this_dumpHighest(legal: UnoCard[]): UnoCard {
+  // Save wilds for emergencies; dump high numbers / actions first.
+  const nonWild = legal.filter(c => c.value !== "wild" && c.value !== "wild_draw4");
+  const pool = nonWild.length > 0 ? nonWild : legal;
+  const sorted = [...pool].sort((a, b) => unoCardPoints(b) - unoCardPoints(a));
+  return sorted[0]!;
 }
