@@ -8,13 +8,9 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
 
 export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const;
-export const GAME_LABEL: Record<GameType, string> = {
-  bigTwo:  "大老二",
-  mahjong: "台灣 16 張麻將",
-  texas:   "德州撲克",
-  uno:     "Uno",
-  yahtzee: "快艇骰子",
-};
+// Game-name labels are translated via the i18n dictionary
+// (`select.bigTwo` / `tour.gameBigTwo` / etc.). The previous hardcoded
+// zh-TW `GAME_LABEL` constant was unused and prevented EN translation.
 
 // ─── Big Two ─────────────────────────────────────────────────────────────────
 export type Suit = "spades" | "hearts" | "clubs" | "diamonds";

@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { useT } from "../i18n/useT";
+import { Lock, RefreshCw } from "./Icons";
 
 export default function RotateHint() {
   const { t } = useT();
@@ -34,15 +35,16 @@ export default function RotateHint() {
 
   return (
     <div className="hidden portrait:fixed portrait:inset-0 portrait:z-[9999] portrait:flex portrait:flex-col portrait:items-center portrait:justify-center portrait:bg-black portrait:px-6 portrait:text-center portrait:text-yellow-300">
-      <div className="animate-spin text-7xl">⟳</div>
+      <div className="animate-spin"><RefreshCw size={72} /></div>
       <div className="mt-6 text-xl tracking-widest">{t("orient.rotate")}</div>
       <p className="mt-2 max-w-xs text-xs text-yellow-500/80">{t("orient.why")}</p>
 
       <button
         onClick={tryLockLandscape}
-        className="tap44 mt-6 rounded-xl bg-yellow-400 px-6 py-3 text-sm font-bold text-green-950 hover:bg-yellow-300 active:scale-95"
+        className="tap44 mt-6 inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-6 py-3 text-sm font-bold text-green-950 hover:bg-yellow-300 active:scale-95"
       >
-        🔒 {t("orient.tryLock")}
+        <Lock size={16} />
+        {t("orient.tryLock")}
       </button>
       <p className="mt-2 max-w-xs text-[10px] text-yellow-500/60">{t("orient.tryLockHint")}</p>
       {err && <p className="mt-1 max-w-xs text-[10px] text-red-400">{err}</p>}

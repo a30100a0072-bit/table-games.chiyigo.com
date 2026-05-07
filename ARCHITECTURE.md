@@ -591,6 +591,10 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - 5 個新 i18n key × 2 語系（orient.tryLock / orient.tryLockHint / orient.lockUnsupported）
   - 限制：tap44 為 opt-in（沒有掃過所有小 chip 與 utility 按鈕，避免 false positive 影響密集 UI 如 wallet ledger）；orientation lock 只在 PWA standalone / Android Chrome 真正生效
   - tsc 0 / 383 tests / build 8.10s（RotateHint chunk 4.31→4.99 kB / index 277.13→277.59 kB / css 43.84→44.10 kB）
-- [ ] **P7 — i18n / 編碼掃雷**
-  - 全站 grep 殘缺字串、emoji icon 改 lucide-react / SVG asset
-  - 補漏的 zh-TW / en key
+- [x] **P7 — i18n / 編碼掃雷** ✅ 2026-05-08
+  - **i18n key parity audit**: ZH=441 / EN=441 完全對齊（PowerShell regex `"([^"]+)":\s*"` 比對 ZH 區塊 vs EN 區塊）。0 個 key drift
+  - **CJK leak grep**: `[一-鿿]` 全 src 掃過 — 唯一一筆 user-facing CJK 硬寫死的是 `shared/types.ts` 的 `GAME_LABEL`（從未被 import 使用），已刪除留下解釋性註解。其餘 CJK 出現在：(a) 麻將牌面字料（萬筒條東南西北中發白春夏秋冬梅蘭竹菊 — 是資料不是文案）(b) 程式碼註解 — 兩類保留
+  - **Inline SVG icon set**: 新建 `components/Icons.tsx`（Lock / RefreshCw / Share2，stroke=2，viewBox 0-24，currentColor 繼承）— 不引入 `lucide-react` dep（5 個 icon 不值得加 50KB 樹搖風險）
+  - 套用：`RotateHint` ⟳→`<RefreshCw>` 並保留 `animate-spin` / 🔒→`<Lock size=16>`；`ResultScreen` 🔗→`<Share2>`
+  - 遊戲識別 emoji（🃏🀄♠️🎴🎲）刻意保留 — 是視覺品牌
+  - tsc 0 / 383 tests / build 5.25s（RotateHint 4.99→5.06 kB / index 277.59→278.49 kB / +1 個 Icons module）

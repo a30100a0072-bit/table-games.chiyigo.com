@@ -3,6 +3,7 @@ import type { SettlementResult } from "../shared/types";
 import { useT } from "../i18n/useT";
 import type { DictKey } from "../i18n/dict";
 import { shareReplayApi, formatApiError } from "../api/http";
+import { Share2 } from "./Icons";
 
 const RANK_KEY: DictKey[] = [
   "result.firstPlace", "result.firstPlace", "result.secondPlace", "result.thirdPlace", "result.fourthPlace",
@@ -169,10 +170,11 @@ export default function ResultScreen({ playerId, token, settlement, onPlayAgain 
         <button
           onClick={onShareReplay}
           disabled={shareState === "loading"}
-          className="tap44 rounded-xl bg-green-800 px-5 py-3 font-bold text-green-100 transition hover:bg-green-700 disabled:opacity-50"
+          className="tap44 inline-flex items-center gap-2 rounded-xl bg-green-800 px-5 py-3 font-bold text-green-100 transition hover:bg-green-700 disabled:opacity-50"
           title={t("result.shareReplay")}
         >
-          🔗 {shareState === "loading" ? t("common.loading") : t("result.shareReplay")}
+          <Share2 size={16} />
+          {shareState === "loading" ? t("common.loading") : t("result.shareReplay")}
         </button>
       </div>
 
