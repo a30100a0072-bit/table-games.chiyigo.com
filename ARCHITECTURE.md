@@ -555,12 +555,15 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - 新增 21 個 i18n key × 2 語系
   - e2e Uno 測試更新對應新流程
   - tsc 0 / 383 tests / build pass
-- [ ] **P2 — 麻將牌桌四方視角 + 牌面美化**（`MahjongGameScreen.tsx`）
-  - 自家下、三家上左右；河牌置中
-  - 每座位顯示：頭像 / 剩牌 / 門風 / 分數 / 莊家標記
-  - 手牌按花色（萬/筒/條/字）分隔；摸牌獨立放右側
-  - 選中牌上移 + 光暈
-  - CSS 牌面（白底厚邊陰影），sprite 留 P3 後
+- [x] **P2 — 麻將牌桌四方視角 + 牌面美化** ✅ 2026-05-07
+  - `MahjongGameScreen.tsx` 重排：3×3 grid（對家上/左家/河牌中/右家），自家固底
+  - `SeatView`：頭像 + 暱稱 + 座位標籤 + 牌背堆疊 + ×N + 花牌 + 副露；當前手座位高亮 yellow ring
+  - 莊家紅 chip（限制：dealerIdx→絕對座位映射假設自家為 idx 0；後端尚無座位 map 欄位）
+  - 河牌中央區聚合：局數進度 / 牌牆 / 上家打出 lg tile + 來源 / 行動倒數 pill / 聽牌 + 聽張 chips
+  - 手牌按花色分組（m/p/s/z），摸牌獨立黃環格在最右側
+  - Tile face 厚邊白底漸層 + 底邊較粗（fake 3D）；選中 -translate-y-3 + ring
+  - `TileBack` 元件視覺化對手剩牌
+  - 新增 7 個 i18n key × 2 語系；tsc 0 / 383 tests / build pass
 - [ ] **P3 — 情境式動作按鈕**
   - 只顯示當下可用動作；優先級配色（胡/自摸 金紅 / 碰槓 黃 / 過 灰）
   - 倒數時行動面板浮起

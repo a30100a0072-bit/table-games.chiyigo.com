@@ -480,6 +480,15 @@ const ZH = {
   "select.more.invites":     "邀請",
   "select.more.replays":     "我的回放",
   "select.more.spectate":    "觀戰",
+
+  // mahjong P2 (four-direction table)
+  "mj.seat.self":            "自家",
+  "mj.seat.right":           "右家",
+  "mj.seat.across":          "對家",
+  "mj.seat.left":            "左家",
+  "mj.river":                "河牌",
+  "mj.banker":               "莊",
+  "mj.drawnTile":            "摸",
 } as const;
 
 export type DictKey = keyof typeof ZH;
@@ -925,6 +934,14 @@ const EN: Partial<Record<DictKey, string>> = {
   "select.more.invites":      "Invites",
   "select.more.replays":      "My replays",
   "select.more.spectate":     "Spectate",
+
+  "mj.seat.self":             "You",
+  "mj.seat.right":            "Right",
+  "mj.seat.across":           "Across",
+  "mj.seat.left":             "Left",
+  "mj.river":                 "River",
+  "mj.banker":                "D",
+  "mj.drawnTile":             "Draw",
 };
 
 const DICTS: Record<Locale, Partial<Record<DictKey, string>>> = {
