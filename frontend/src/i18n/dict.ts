@@ -327,6 +327,9 @@ const ZH = {
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
   "orient.why":              "本遊戲為橫向五區塊版面設計，直立會擠壓手牌與底池。",
+  "orient.tryLock":          "全螢幕並鎖定橫向",
+  "orient.tryLockHint":      "Android Chrome / 已安裝至主畫面時可用；iOS Safari 請手動轉螢幕並關閉旋轉鎖。",
+  "orient.lockUnsupported":  "本裝置不支援自動鎖定，請手動轉螢幕。",
 
   // tournament round-start banner
   "tour.roundReady":         "你報名的賽事下一局已開始",
@@ -808,6 +811,9 @@ const EN: Partial<Record<DictKey, string>> = {
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",
+  "orient.tryLock":           "Full-screen + lock landscape",
+  "orient.tryLockHint":       "Works on Android Chrome / installed PWAs. iOS Safari has no orientation lock — rotate manually and disable rotation lock.",
+  "orient.lockUnsupported":   "Auto-lock not supported on this device — please rotate manually.",
 
   "tour.roundReady":          "Your tournament has started a new round",
   "tour.enter":               "Enter",

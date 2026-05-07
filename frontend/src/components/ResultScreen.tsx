@@ -162,14 +162,14 @@ export default function ResultScreen({ playerId, token, settlement, onPlayAgain 
       <div className="flex items-center gap-3">
         <button
           onClick={onPlayAgain}
-          className="rounded-xl bg-yellow-400 px-7 py-3 font-bold text-green-950 transition hover:bg-yellow-300"
+          className="tap44 rounded-xl bg-yellow-400 px-7 py-3 font-bold text-green-950 transition hover:bg-yellow-300"
         >
           {t("result.again")}
         </button>
         <button
           onClick={onShareReplay}
           disabled={shareState === "loading"}
-          className="rounded-xl bg-green-800 px-5 py-3 font-bold text-green-100 transition hover:bg-green-700 disabled:opacity-50"
+          className="tap44 rounded-xl bg-green-800 px-5 py-3 font-bold text-green-100 transition hover:bg-green-700 disabled:opacity-50"
           title={t("result.shareReplay")}
         >
           🔗 {shareState === "loading" ? t("common.loading") : t("result.shareReplay")}

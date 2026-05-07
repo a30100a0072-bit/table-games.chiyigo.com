@@ -583,8 +583,14 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - 新增 9 個 i18n key × 2 語系（select.title.* / select.streak / select.streakTitle / select.gamesPlayed / mj.danger.med / mj.danger.high）
   - 限制：放槍提示為 UI heuristic（無視 opponent 實際 winningTiles，因為 view 不暴露）；P5 不做語音/貼圖
   - tsc 0 / 383 tests / build 10.14s（mahjong chunk 16.47→16.89 kB / gz 5.34→5.46；index 274.66→277.13 kB / gz 81.45→82.19）
-- [ ] **P6 — 手機橫向優先**
-  - GameScreen 強制橫向、safe-area-inset、按鈕最小 44px、RotateHint 文案優化
+- [x] **P6 — 手機橫向優先** ✅ 2026-05-08
+  - `index.html` viewport meta 加 `viewport-fit=cover`，啟用 iOS 凹口下方繪製
+  - `src/index.css`：`#root` 套 `env(safe-area-inset-*)` 四向 padding + `green-950` 背景填補；新增 `.tap44 { min-h: 44px; min-w: 44px }` opt-in utility
+  - `RotateHint.tsx`：portrait 浮層加「🔒 全螢幕並鎖定橫向」按鈕 — 呼叫 `requestFullscreen({ navigationUI: "hide" })` + `screen.orientation.lock("landscape")` 雙連發；iOS Safari 無 API 時自動 fallback 為手動轉螢幕的提示文案
+  - `tap44` 套用於最常觸發的按鈕：mahjong contextual `ActionButton`（吃碰槓胡打）、bigTwo 出牌/PASS、LobbyScreen 換桌/好友房/取消、ResultScreen 再來一局/分享回放
+  - 5 個新 i18n key × 2 語系（orient.tryLock / orient.tryLockHint / orient.lockUnsupported）
+  - 限制：tap44 為 opt-in（沒有掃過所有小 chip 與 utility 按鈕，避免 false positive 影響密集 UI 如 wallet ledger）；orientation lock 只在 PWA standalone / Android Chrome 真正生效
+  - tsc 0 / 383 tests / build 8.10s（RotateHint chunk 4.31→4.99 kB / index 277.13→277.59 kB / css 43.84→44.10 kB）
 - [ ] **P7 — i18n / 編碼掃雷**
   - 全站 grep 殘缺字串、emoji icon 改 lucide-react / SVG asset
   - 補漏的 zh-TW / en key

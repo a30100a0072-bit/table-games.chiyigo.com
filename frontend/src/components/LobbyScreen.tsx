@@ -127,19 +127,19 @@ export default function LobbyScreen({ playerId, token, gameType, mahjongHands, o
       <div className="mt-2 flex gap-3">
         <button
           onClick={() => { called.current = false; setRetryKey(k => k + 1); }}
-          className="rounded-lg bg-green-800 px-4 py-2 text-sm font-bold text-green-200 hover:bg-green-700"
+          className="tap44 rounded-lg bg-green-800 px-4 py-2 text-sm font-bold text-green-200 hover:bg-green-700"
         >
           {t("lobby.swapTable")}
         </button>
         <button
           onClick={onBack}
-          className="rounded-lg bg-green-800 px-4 py-2 text-sm font-bold text-green-200 hover:bg-green-700"
+          className="tap44 rounded-lg bg-green-800 px-4 py-2 text-sm font-bold text-green-200 hover:bg-green-700"
         >
           {t("lobby.privateRoom")}
         </button>
         <button
           onClick={onBack}
-          className="rounded-lg bg-green-900 px-4 py-2 text-sm font-bold text-green-300 hover:bg-green-800"
+          className="tap44 rounded-lg bg-green-900 px-4 py-2 text-sm font-bold text-green-300 hover:bg-green-800"
         >
           {t("lobby.cancel")}
         </button>

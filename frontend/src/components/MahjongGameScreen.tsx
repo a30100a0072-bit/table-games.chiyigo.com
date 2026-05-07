@@ -784,7 +784,7 @@ function ActionButton({ action, large }: { action: ActionDescriptor; large: bool
     <button
       onClick={action.onClick}
       className={[
-        "flex-1 rounded-lg font-bold shadow-md transition active:scale-95",
+        "tap44 flex-1 rounded-lg font-bold shadow-md transition active:scale-95",
         size,
         action.color,
         action.primary ? "scale-105" : "",

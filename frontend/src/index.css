@@ -8,6 +8,23 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* P6 — honour iOS / Android display cutouts (notch / punch-hole / nav bar).
+ * `viewport-fit=cover` in index.html lets the page extend under the cutout;
+ * we then push the root container inward by env(safe-area-inset-*). Tailwind
+ * 3 has no built-in utility for this so we do it once at the document root. */
+#root {
+  padding-top:    env(safe-area-inset-top);
+  padding-right:  env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left:   env(safe-area-inset-left);
+  background: #052e1a; /* matches green-950 so the inset bands blend in */
+}
+
+/* Touch target floor — WCAG 2.5.5 / Apple HIG / Material recommend 44×44 px
+ * for primary interactive elements. We tag opt-in buttons with `.tap44` so
+ * we don't have to touch every existing chip. */
+.tap44 { min-height: 44px; min-width: 44px; }
+
 /* Card hand horizontal scroll — hide scrollbar but keep scroll behaviour */
 .hand-scroll::-webkit-scrollbar { display: none; }
 .hand-scroll { -ms-overflow-style: none; scrollbar-width: none; }
