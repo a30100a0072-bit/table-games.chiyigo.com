@@ -6,6 +6,7 @@ import { handleRequest }       from "./workers/gateway";
 import { handleQueue }         from "./workers/settlementConsumer";
 import { runCleanup }          from "./workers/cronCleanup";
 import { log }                 from "./utils/log";
+import { withTrace }           from "./utils/trace";
 import type { GatewayEnv }     from "./workers/gateway";
 import type { SettlementQueueMessage } from "./types/game";
 
@@ -26,7 +27,11 @@ export default {
    * Stateless: no game state is held here; all state lives in Durable Objects.
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    return handleRequest(request, env);
+    // withTrace generates a per-request traceId, stamps X-Request-Id on
+    // the response, emits one structured request_complete log line, and
+    // converts unhandled throws into traced 500s so support requests can
+    // round-trip a request id back to logs.                              // L3_架構含防禦觀測
+    return withTrace(request, () => handleRequest(request, env));
   },
 
   /**
