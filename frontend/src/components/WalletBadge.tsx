@@ -14,14 +14,10 @@ interface Props {
   onAccountDeleted?: () => void;
 }
 
-const REASON_LABEL: Record<string, string> = {
-  signup:     "開戶贈送",
-  settlement: "牌局結算",
-  bailout:    "救濟金",
-  daily:      "每日登入",
-  adjustment: "管理員調整",
-  tournament: "賽事",
-};
+const REASON_KEYS = ["signup", "settlement", "bailout", "daily", "adjustment", "tournament"] as const;
+type ReasonKey = typeof REASON_KEYS[number];
+const isReasonKey = (s: string): s is ReasonKey =>
+  (REASON_KEYS as readonly string[]).includes(s);
 
 function fmtTime(ms: number): string {
   const d = new Date(ms);
@@ -58,7 +54,8 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
     } catch (e) {
       if (e instanceof BailoutError && e.detail.nextEligibleAt) {
         const hrs = Math.ceil((e.detail.nextEligibleAt - Date.now()) / 3_600_000);
-        setError(`領取失敗：${e.message}${hrs > 0 ? `，再 ${hrs} 小時可領` : ""}`);
+        const followup = hrs > 0 ? t("wallet.bailoutFailFollowup", { h: hrs }) : "";
+        setError(t("wallet.bailoutFail", { m: e.message }) + followup);
       } else {
         setError(formatApiError(e, t));
       }
@@ -139,7 +136,7 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
               {wallet.ledger.map((e: LedgerEntry) => (
                 <li key={e.ledger_id} className="flex items-center justify-between gap-2 border-b border-green-800/60 pb-1">
                   <span className="flex flex-col">
-                    <span>{REASON_LABEL[e.reason] ?? e.reason}</span>
+                    <span>{isReasonKey(e.reason) ? t(`wallet.reason.${e.reason}` as `wallet.reason.signup`) : e.reason}</span>
                     <span className="text-[10px] text-green-500">{fmtTime(e.created_at)}</span>
                   </span>
                   <span className={e.delta >= 0 ? "font-bold text-emerald-300" : "font-bold text-red-300"}>
@@ -172,33 +169,33 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
               onClick={handleExport}
               disabled={exporting}
               className="text-yellow-300/80 hover:text-yellow-200 disabled:opacity-50"
-            >{exporting ? "匯出中…" : "匯出資料"}</button>
+            >{exporting ? t("wallet.exporting") : t("wallet.export")}</button>
             {deleteStep === 0 && (
               <button
                 onClick={() => setDeleteStep(1)}
                 className="text-red-400/70 hover:text-red-300"
-              >刪除帳號</button>
+              >{t("wallet.delete")}</button>
             )}
           </div>
           <div className={deleteStep === 0 ? "hidden" : "mt-2 border-t border-red-900/60 pt-2"}>
             {deleteStep === 1 && (
               <div className="text-[11px] text-red-200">
-                <p className="mb-2">刪除後好友 / 訊息 / 邀請會清空，籌碼帳本會匿名化（無法復原）。</p>
+                <p className="mb-2">{t("wallet.deleteWarning")}</p>
                 <div className="flex gap-1">
                   <button
                     onClick={() => setDeleteStep(0)}
                     className="flex-1 rounded bg-gray-700 py-1 text-[10px] font-bold text-gray-200"
-                  >取消</button>
+                  >{t("common.cancel")}</button>
                   <button
                     onClick={() => setDeleteStep(2)}
                     className="flex-1 rounded bg-red-700 py-1 text-[10px] font-bold text-white"
-                  >我了解，繼續</button>
+                  >{t("wallet.deleteContinue")}</button>
                 </div>
               </div>
             )}
             {deleteStep === 2 && (
               <div className="text-[11px] text-red-200">
-                <p className="mb-1">輸入 <code className="rounded bg-red-950 px-1">DELETE</code> 確認：</p>
+                <p className="mb-1">{t("wallet.deleteTypePrompt")}</p>
                 <input
                   type="text"
                   value={deleteText}
@@ -211,12 +208,12 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
                     onClick={() => { setDeleteStep(0); setDeleteText(""); }}
                     disabled={deleting}
                     className="flex-1 rounded bg-gray-700 py-1 text-[10px] font-bold text-gray-200 disabled:opacity-50"
-                  >取消</button>
+                  >{t("common.cancel")}</button>
                   <button
                     onClick={confirmDelete}
                     disabled={deleting || deleteText !== "DELETE"}
                     className="flex-1 rounded bg-red-700 py-1 text-[10px] font-bold text-white disabled:bg-gray-700 disabled:text-gray-500"
-                  >{deleting ? "刪除中…" : "確定刪除"}</button>
+                  >{deleting ? t("wallet.deleting") : t("wallet.deleteConfirm")}</button>
                 </div>
               </div>
             )}

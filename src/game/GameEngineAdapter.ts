@@ -337,25 +337,24 @@ class UnoEngine implements IGameEngine {
   }
   tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }   // uno no-op
 
-  // Uno timeout: try BotAI; if it picks draw and bot is in already-drawn state
-  // bot returns pass — both cycles bounded.                                // L2_實作
+  // Uno timeout: try BotAI's pick first. If illegal (rare — bot can race
+  // a state change), fall through draw → pass. The state machine itself
+  // rejects uno_draw when hasDrawn is already true, so we don't need to
+  // pre-check the view; failure of `drew` IS the already-drawn signal,
+  // and we pass instead. Both cycles are bounded.                          // L2_實作
   autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
     const view = this.m.viewFor(playerId);
     if (view.currentTurn !== playerId) return { settlement: null };
     const action = getUnoBotAction(view);
     const r = this.m.process(playerId, action as never);
-    if (!r.ok) {
-      // Bot somehow proposed an illegal action — fallback to draw + pass.
-      const drew = this.m.process(playerId, { type: "uno_draw" });
-      if (drew.ok && view.hasDrawn) {
-        // already drawn; pass instead
-        const passed = this.m.process(playerId, { type: "uno_pass" });
-        return { settlement: passed.ok ? passed.settlement ?? null : null, appliedAction: { type: "uno_pass" } };
-      }
-      const pass = this.m.process(playerId, { type: "uno_pass" });
-      return { settlement: pass.ok ? pass.settlement ?? null : null, appliedAction: { type: "uno_pass" } };
+    if (r.ok) return { settlement: r.settlement ?? null, appliedAction: action };
+
+    const drew = this.m.process(playerId, { type: "uno_draw" });
+    if (drew.ok) {
+      return { settlement: drew.settlement ?? null, appliedAction: { type: "uno_draw" } };
     }
-    return { settlement: r.settlement ?? null, appliedAction: action };
+    const pass = this.m.process(playerId, { type: "uno_pass" });
+    return { settlement: pass.ok ? pass.settlement ?? null : null, appliedAction: { type: "uno_pass" } };
   }
   startNextHand(): void { throw new Error("MULTIHAND_NOT_SUPPORTED"); }
 }

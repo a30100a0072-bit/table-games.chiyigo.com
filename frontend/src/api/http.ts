@@ -1,4 +1,4 @@
-import type { GameType } from "../shared/types";
+import type { GameType, PlayerAction } from "../shared/types";
 import { readApiError } from "../i18n/errorCodes";
 export { ApiError, formatApiError } from "../i18n/errorCodes";
 
@@ -361,18 +361,29 @@ export interface ReplaySummary {
   replayable:    boolean;
 }
 
-export interface ReplayEvent {
-  kind:     "action" | "tick" | "hand_boundary";
-  seq?:     number;
-  playerId?: string;
-  action?:  unknown;
+// Discriminated union — narrows correctly on `kind` so the consumer
+// doesn't have to deal with optional everything. Mirrors the backend
+// type in src/do/GameRoomDO.ts; keep them in sync.
+export interface ReplayEventAction {
+  kind:     "action";
+  seq:      number;
+  playerId: string;
+  action:   PlayerAction;
   ts:       number;
-  // hand_boundary only:
-  handNumber?:  number;
-  dealerIdx?:   number;
-  bankerStreak?: number;
-  snapshot?:    unknown;
 }
+export interface ReplayEventTick {
+  kind: "tick";
+  ts:   number;
+}
+export interface ReplayEventHandBoundary {
+  kind:         "hand_boundary";
+  handNumber:   number;
+  dealerIdx:    number;
+  bankerStreak: number;
+  snapshot:     unknown;
+  ts:           number;
+}
+export type ReplayEvent = ReplayEventAction | ReplayEventTick | ReplayEventHandBoundary;
 
 export interface ReplayDetail extends ReplaySummary {
   currentVersion:  number;

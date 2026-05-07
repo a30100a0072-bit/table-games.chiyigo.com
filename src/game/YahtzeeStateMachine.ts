@@ -254,8 +254,15 @@ export class YahtzeeStateMachine {
     const baseScore = scoreSlot(s.dice, slot);
     card[slot] = baseScore;
 
-    // Yahtzee bonus: if dice form a yahtzee AND yahtzee slot is already
-    // filled with a non-zero score, +100 bonus (simplified — no Joker rule).
+    // Yahtzee bonus — DELIBERATE DEVIATION FROM STANDARD RULES.            // L2_實作
+    // Standard Yahtzee awards +100 for any subsequent yahtzee regardless
+    // of what's in the yahtzee slot (including 0, the forced-zero case).
+    // We only award the bonus when the yahtzee slot is filled with a
+    // non-zero score. This is intentional: a forced-zero earlier in the
+    // game shouldn't perpetually mint +100s in a casual lobby setting,
+    // and we explicitly skip the Joker rule in the same vein. If you
+    // ever standardise this, also revisit the +100/-100 fixed-pot
+    // settlement which assumes bounded variance.
     const isYahtzee = countFaces(s.dice)[1] === 5
       || countFaces(s.dice)[2] === 5 || countFaces(s.dice)[3] === 5
       || countFaces(s.dice)[4] === 5 || countFaces(s.dice)[5] === 5

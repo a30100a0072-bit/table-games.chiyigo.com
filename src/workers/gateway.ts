@@ -78,6 +78,15 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
     return cors(await oauthExchange(request, env));
   }
   if (request.method === "POST" && url.pathname === "/auth/oauth/refresh") {
+    // IP rate limit BEFORE JWT verify so a flood of bad tokens can't burn
+    // JWKS work per request. Same `token` bucket as start/exchange
+    // (10/min/IP) — refresh is rare in legitimate flows.                  // L3_架構含防禦觀測
+    const ip = clientIp(request);
+    if (!takeToken(`token:${ip}`, "token")) {
+      bump("rate_limited");
+      log("warn", "rate_limited", { ip, route: "/auth/oauth/refresh" });
+      return cors(rateLimited());
+    }
     const auth  = request.headers.get("Authorization") ?? "";
     const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     let pid: string;

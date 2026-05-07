@@ -80,22 +80,9 @@ function MahjongTileChip({ tile }: { tile: { suit: string; rank: number } }) {
 }
 
 // ─── Event rendering ─────────────────────────────────────────────────────
-
-interface ActionShape {
-  type?: string;
-  cards?: { suit: string; rank: string }[];
-  combo?: string;
-  tile?:  { suit: string; rank: number };
-  tiles?: { suit: string; rank: number }[];
-  raiseAmount?: number;
-  selfDrawn?: boolean;
-  // Uno
-  card?: { color?: string; value: string | number };
-  declaredColor?: string;
-  // Yahtzee
-  held?: boolean[];
-  slot?: string;
-}
+// `ReplayEvent` is a discriminated union over `kind`; once we pass the
+// tick/hand_boundary early returns, `ev.action` is a fully-typed
+// `PlayerAction`. Narrowing happens off `action.type` per-case below.
 
 // Uno color → swatch class for the played-card chip.
 const UNO_COLOR_BG: Record<string, string> = {
@@ -174,17 +161,19 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
     );
   }
 
-  const a   = (ev.action as ActionShape) ?? {};
-  const who = ev.playerId ?? "?";
+  // ev.kind === "action" is now narrowed by the discriminated union; both
+  // ev.action: PlayerAction and ev.playerId: string are guaranteed.
+  const a   = ev.action;
+  const who = ev.playerId;
 
   let body: JSX.Element;
   let badge = "";
   switch (a.type) {
     case "play":
-      badge = `▶ ${a.combo ?? "play"}`;
+      badge = `▶ ${a.combo}`;
       body = (
         <div className="flex flex-wrap gap-1">
-          {(a.cards ?? []).map((c, i) => <PokerCardChip key={i} card={c} />)}
+          {a.cards.map((c, i) => <PokerCardChip key={i} card={c} />)}
         </div>
       );
       break;
@@ -194,23 +183,23 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       break;
     case "discard":
       badge = t("rep.act.discard");
-      body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
+      body  = <MahjongTileChip tile={a.tile} />;
       break;
     case "chow":
       badge = t("rep.act.chow");
       body  = (
         <div className="flex gap-1">
-          {(a.tiles ?? []).map((tt, i) => <MahjongTileChip key={i} tile={tt} />)}
+          {a.tiles.map((tt, i) => <MahjongTileChip key={i} tile={tt} />)}
         </div>
       );
       break;
     case "pong":
       badge = t("rep.act.pong");
-      body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
+      body  = <MahjongTileChip tile={a.tile} />;
       break;
     case "kong":
       badge = t("rep.act.kong");
-      body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
+      body  = <MahjongTileChip tile={a.tile} />;
       break;
     case "hu":
       badge = a.selfDrawn ? t("rep.act.huSelf") : t("rep.act.hu");
@@ -233,11 +222,11 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       body  = <span className="text-2xl">📞</span>;
       break;
     case "raise":
-      badge = `RAISE → ${a.raiseAmount ?? "?"}`;
+      badge = `RAISE → ${a.raiseAmount}`;
       body  = <span className="text-2xl">📈</span>;
       break;
     case "uno_play": {
-      const c = a.card ?? { value: "?" };
+      const c = a.card;
       const baseColor = c.color ?? "wild";
       const isWild = baseColor === "wild";
       const effectKey =
@@ -263,7 +252,7 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       body  = <span className="text-2xl">⏭</span>;
       break;
     case "yz_roll": {
-      const held = Array.isArray(a.held) ? a.held : [];
+      const held = a.held;
       const heldIdx = held
         .map((h, i) => (h ? i + 1 : 0))
         .filter(n => n > 0);
@@ -287,16 +276,19 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       body  = (
         <span className="text-base font-bold text-yellow-300">
           {slotLabel}
-          {a.slot && (YZ_SLOTS as readonly string[]).includes(a.slot) && (
-            <span className="ml-2 text-[10px] text-green-300/80">{a.slot}</span>
-          )}
+          <span className="ml-2 text-[10px] text-green-300/80">{a.slot}</span>
         </span>
       );
       break;
     }
-    default:
-      badge = a.type ?? "?";
-      body  = <span>{a.type}</span>;
+    default: {
+      // Exhaustiveness check — TypeScript flags any newly-added action type
+      // that this switch forgets to handle.
+      const _exhaustive: never = a;
+      void _exhaustive;
+      badge = (a as { type?: string }).type ?? "?";
+      body  = <span>{badge}</span>;
+    }
   }
 
   return (
@@ -748,31 +740,42 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
 /** One-line text fallback for the collapsed log. */
 function fmtEventOneLine(e: ReplayEvent, t: TFunction): string {
   if (e.kind === "tick") return "tick";
-  if (e.kind === "hand_boundary") return `▶ ${t("rep.hand.start", { n: e.handNumber ?? 0 })}`;
-  const a = (e.action as ActionShape) ?? {};
-  const who = e.playerId ?? "?";
+  if (e.kind === "hand_boundary") return `▶ ${t("rep.hand.start", { n: e.handNumber })}`;
+  const a   = e.action;
+  const who = e.playerId;
   switch (a.type) {
-    case "play":   return `${who} play ${(a.cards ?? []).length} (${a.combo ?? "?"})`;
+    case "play":   return `${who} play ${a.cards.length} (${a.combo})`;
     case "pass":   return `${who} pass`;
-    case "discard":return `${who} ${t("rep.act.discard")} ${a.tile?.rank ?? "?"}${a.tile?.suit ?? "?"}`;
-    case "raise":  return `${who} raise ${a.raiseAmount ?? "?"}`;
+    case "discard":return `${who} ${t("rep.act.discard")} ${a.tile.rank}${a.tile.suit}`;
+    case "chow":   return `${who} ${t("rep.act.chow")}`;
+    case "pong":   return `${who} ${t("rep.act.pong")}`;
+    case "kong":   return `${who} ${t("rep.act.kong")}`;
+    case "mj_pass":return `${who} ${t("rep.act.mjPass")}`;
+    case "fold":   return `${who} fold`;
+    case "check":  return `${who} check`;
+    case "call":   return `${who} call`;
+    case "raise":  return `${who} raise ${a.raiseAmount}`;
     case "hu":     return `${who} ${a.selfDrawn ? t("rep.act.huSelf") : t("rep.act.hu")}`;
     case "uno_play": {
       const c = a.card;
-      const color = unoColorLabel(t, c?.color ?? "wild");
-      const value = unoCardValueLabel(t, c?.value);
+      const color = unoColorLabel(t, c.color ?? "wild");
+      const value = unoCardValueLabel(t, c.value);
       const declared = a.declaredColor ? ` → ${unoColorLabel(t, a.declaredColor)}` : "";
       return `${who} ${color} ${value}${declared}`;
     }
     case "uno_draw": return `${who} ${t("rep.uno.draw")}`;
     case "uno_pass": return `${who} ${t("rep.uno.pass")}`;
     case "yz_roll": {
-      const held = (Array.isArray(a.held) ? a.held : []).map((h, i) => h ? i + 1 : 0).filter(n => n > 0);
-      return held.length > 0
-        ? `${who} ${t("rep.yz.rollHold", { seats: held.map(n => `#${n}`).join(",") })}`
+      const heldIdx = a.held.map((h, i) => h ? i + 1 : 0).filter(n => n > 0);
+      return heldIdx.length > 0
+        ? `${who} ${t("rep.yz.rollHold", { seats: heldIdx.map(n => `#${n}`).join(",") })}`
         : `${who} ${t("rep.yz.rollAll")}`;
     }
     case "yz_score": return `${who} ${t("rep.yz.fill", { slot: yzSlotLabel(t, a.slot) })}`;
-    default:       return `${who} ${a.type ?? "?"}`;
+    default: {
+      const _exhaustive: never = a;
+      void _exhaustive;
+      return `${who} ?`;
+    }
   }
 }

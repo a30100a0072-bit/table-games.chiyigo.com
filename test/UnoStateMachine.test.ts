@@ -12,9 +12,7 @@ function fromSnap(overrides: Partial<UnoSnapshot> & { hands: [string, UnoCard[]]
     gameId: "g", roundId: "r",
     phase: "playing",
     playerIds: ["p1", "p2"],
-    hands: [],
     drawPile: [card("red", 1), card("red", 2), card("red", 3)],   // generic stub
-    discardPile: [card("red", 0)],
     currentColor: "red",
     direction: 1,
     turnIndex: 0,
