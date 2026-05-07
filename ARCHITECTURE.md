@@ -1,7 +1,8 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-07 — 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述（顏色 chip / 效果中文 / 保留位置 / 槽位中文）。
+> 最後更新：2026-05-07 — 第十四批：post-ship 健康度體檢 + 加固。SW cache v3→v4（配合 ENGINE_VERSION 4）、ReplaysModal + WalletBadge 全面 i18n、Uno timeout fallback 死支重寫、Yahtzee bonus deviation 標 deliberate、`/auth/oauth/refresh` 加 IP rate-limit、`ReplayEvent` 改 discriminated union、**traceId middleware**（X-Request-Id + request_complete log line + 500-on-throw 帶 traceId）。
+> 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述。
 >
 > **核心架構**
 >   - 五款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas / **uno** / **yahtzee** ✅
@@ -24,11 +25,12 @@
 >   - Replay（token 分享、**手動撤銷**、**view_count + last_viewed_at**、JSON 下載、鍵盤快捷鍵、列表篩選）
 >
 > **可靠性與運維**
->   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass
+>   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass；CACHE 隨 ENGINE_VERSION 同步升版（目前 v4）
 >   - **WS keep-alive**：30s 週期 sync 防中介 proxy idle 斷線
 >   - **每日 cron retention sweep**（dms 7d / 過期 token / share / invite）+ `cron_runs` 稽核表
 >   - **`/api/admin/health` 儀表**（後端 + 前端 dashboard，session-stored secret，30s auto-refresh）
->   - rate-limit 細分桶：token / match / wallet / bailout / friend / dm / **invite** / **share**
+>   - rate-limit 細分桶：token / match / wallet / bailout / friend / dm / **invite** / **share**；`/auth/oauth/refresh` 也走 token 桶（IP-scoped，先於 JWT verify）
+>   - **traceId middleware**（`src/utils/trace.ts`）：每個 request 16-hex traceId、回 `X-Request-Id` 標頭、結構化 `request_complete` log line（含 method/path/status/ms/ip）；handler 拋出 → 500 帶 traceId 給支援用
 >
 > **隱私與合規**
 >   - GDPR DELETE + export `/api/me`（hybrid：個人資料硬刪 / 審計列匿名化為 tombstone）
@@ -42,9 +44,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：~~27 檔 / 316 案例~~ → **33 檔 / 376 案例**（新增 UnoStateMachine / unoArena / YahtzeeStateMachine / yahtzeeArena / oidc + tournamentDO 加 it.each(uno,yahtzee)）
+>   - **Node 單元測試**：~~33 檔 / 376 案例~~ → **34 檔 / 383 案例**（新增 `test/trace.test.ts` 7 案：traceId 產生 / inbound 重用 / 4xx warn 5xx error / expose-header merge / throw → 500 correlation）
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 392 測試**（376 unit + 16 workers + Playwright e2e smoke 5 案）
+>   - **總計 404 測試**（383 unit + 16 workers + Playwright e2e smoke 5 案）
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -345,16 +347,43 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - **Uno**（commit `77200a5`）：`UnoStateMachine` 108 張標準牌、4 色 × {0×1, 1-9×2, skip×2, reverse×2, draw2×2} + wild×4 + wild_draw4×4；`pendingDraw` 在 `applyPlay` 內立即吸收 + 跳過下家（含起手翻 +2 邊界）；wild 用 `declaredColor` 設 `currentColor`，view 把 `topDiscard.card.color` 補成當前色；牌堆耗盡自動洗棄牌堆。BotAI：對手 ≤ 2 張 → 攻擊牌（skip/draw2/wd4），否則先丟高分；wild 留底。Settlement：贏家拿全部敗者手牌點數（數字=面值、行動=20、wild=50），forfeit + 50 罰；scoreDelta sums to 0。**ENGINE_VERSION 3 → 4**。前端 `UnoGameScreen.tsx` + ColorPicker modal。Tests：`UnoStateMachine.test.ts` 20 案 + `unoArena.test.ts` 200 場 4-bot self-play（每座 15-35% 勝率）。
 - **Yahtzee**（commit `b0be439`）：`YahtzeeStateMachine` 13 槽計分卡 / 每回合最多 3 擲（`rollsLeft` 3→0 invariant，3=未擲 forces fresh，0=必填）；`secureDie()` rejection sampling；`scoreSlot(dice, slot)` pure 給 BotAI 用。Settle when `turnNumber >= playerIds.length × 13`。Yahtzee bonus 簡化：第二顆 yahtzee +100（不實作 Joker rule）。Settlement 固定盤：贏家 +100×(N-1)、其餘 -100；forfeit 贏家 +200 / forfeit 玩家 -200 / 其他 0。Spectator 公開所有計分卡（dice 公開資訊，不像撲克牌要遮）。前端 `YahtzeeGameScreen.tsx` 5 顆骰子 hold/release + preview-score badge。Tests：`YahtzeeStateMachine.test.ts` 20 案 + `yahtzeeArena.test.ts` 200 場（10-40% 勝率窗較寬，吃骰子變異）。
 
-**Tournament 整合（commit `350086f` + 本批未提交）**
+**Tournament 整合（commit `350086f` + `9d30bb2`）**
 - TournamentDO 本來就 gameType-agnostic — 接 Uno/Yahtzee 不需要動 orchestration code。
 - TournamentModal 創建格列入兩款，i18n `tour.gameUno` / `tour.gameYahtzee`（zh + en）。
-- 回歸測試（**本批新增，未提交**）：`test/tournamentDO.test.ts` 加 `it.each(["uno","yahtzee"])` — 4 join → 3 rounds → settle，驗證 gameType 透傳、非 texas 不帶 `smallBlind/bigBlind`、aggScore 跨輪正確累計（alice 500 / bob 100 / carol,dave -300）。
+- 回歸測試：`test/tournamentDO.test.ts` 加 `it.each(["uno","yahtzee"])` — 4 join → 3 rounds → settle，驗證 gameType 透傳、非 texas 不帶 `smallBlind/bigBlind`、aggScore 跨輪正確累計（alice 500 / bob 100 / carol,dave -300）。
 
-**Replay viewer 強化（本批未提交）**
+**Replay viewer 強化（commit `9d30bb2`）**
 - `frontend/src/components/ReplaysModal.tsx` 加 Uno/Yahtzee 專屬卡片描述：
   - Uno：`UnoCardChip` 顏色背景 + 中文牌身（跳過/反轉/+2/★/+4）；badge 帶顏色中文 + Wild 換色標示 + 效果說明（「下家 +2」/「下家 +4」/「跳過下家」/「反轉」）。
   - Yahtzee：`yz_roll` 列保留位置 `#1 #3` + 5 顆 🔒/🎲 視覺化；`yz_score` 槽位中文（一點/三條/葫蘆/小順/大順/快艇/機會）+ 英文小字輔助。
-  - One-line log fallback 同步中文化。
+  - 第十四批進一步走 `useT()` — 全部 hardcoded zh 抽成 dict keys（zh + en），EN locale 也讀得通。
+
+### ✅ 第十四批（2026-05-07）：post-ship 健康度體檢 + 加固
+
+**🔴 紅燈（已 ship）**
+- **SW cache 升版**（`frontend/public/sw.js`）：`chiyigo-tg-v3` → `v4`，配合 ENGINE_VERSION 4。沒升的話 stale-while-revalidate 會吐舊 shell，使用者第一次進來看不到 Uno/Yahtzee 大廳卡。
+- **ReplaysModal i18n**：全檔走 `useT()`，`EventCard` + `fmtEventOneLine` 接 `t` 參數；`UNO_COLOR_BG`/`UNO_VALUES`/`YZ_SLOTS` 改 allowlist，malformed action payload 不會把 raw bytes 漏進 UI。
+- **deferred regressions commit**：`test/tournamentDO.test.ts` it.each(["uno","yahtzee"])、ReplaysModal、ARCHITECTURE / MANUAL_TODO 一起進 `9d30bb2`。
+
+**🟡 黃燈（已 ship — `fcca618`）**
+- **Uno timeout dead-branch 重寫**（`src/game/GameEngineAdapter.ts`）：舊版讀動作前的 `view.hasDrawn` 是 stale；新版改 bot-action → fail → draw → fail → pass 漸進 fallback；state machine 自己的 `hasDrawn` 守會擋重複 draw，所以不需要 pre-check。
+- **Yahtzee bonus 標 deliberate**（`src/game/YahtzeeStateMachine.ts:263`）：把「yahtzee 槽要非 0 才給 +100」的偏離標準規則註解擴成 7 行，並提醒同時改的話要重視 +100/-100 結算守恆假設。
+- **`/auth/oauth/refresh` rate-limit**（`src/workers/gateway.ts`）：用既有 `token` 桶（10/min/IP）擋在 JWT verify 之前，避免被淹沒 token 燒 JWKS 工作。
+- **WalletBadge 全面 i18n**（`frontend/src/components/WalletBadge.tsx` + 16 個 `wallet.*` keys）：匯出 / 刪帳號 dialog / ledger reason 全部抽 keys；`REASON_LABEL` 改 typed allowlist。
+
+**🟢 綠燈（已 ship — `fcca618` + `2c44817`）**
+- **`ReplayEvent` 改 discriminated union**（`frontend/src/api/http.ts`）：`ReplayEventAction | ReplayEventTick | ReplayEventHandBoundary`；ReplaysModal switch 直接 narrow 在 `PlayerAction`，drop 掉 loose `ActionShape`，default 加 `never` 窮盡檢查。
+- **`test:workers` 進 CI** — 確認本來就在 `cloudflare-deploy.yml:62`。
+- **traceId middleware**（PR #1，commit `4d37c9d`）：`src/utils/trace.ts` `withTrace(request, handler)`；wire 在 `src/index.ts` 的 default export 最外層；7 個測試（`test/trace.test.ts`）鎖契約。**設計取捨**：只在 entry seam 寫一條 `request_complete` log line，不 retro-fit 內層 ~15 處 `log()` — 用 timing bracketing 對齊就夠，避免拉 AsyncLocalStorage 或 thread context 的工程成本。
+
+**🟢 i18n 漏網清掃（commit `9f450ea`）**
+- `GameSelectScreen.tsx`：spectator modal `"進行中（點擊進場）"` → `t("spec.live.heading")`。
+- `MahjongGameScreen.tsx`：`TileView` `title` `"對手副露多 — 此花色危險"` 經新 `dangerTitle` prop 改由 caller 注入 `t("mj.dangerSuit")`。
+
+**未動（明確標 audit-only）**
+- `gateway.ts` >900 行其它路由的深度 audit（這次只看了 OIDC + tournament + WS join + refresh）— 留給後續單獨體檢。
+- `npm audit --production` — 這次沒跑。
+- 麻將 fan/tai detail 的 i18n 完整性 — 不在這批 audit 範圍。
 
 ### 🔧 進行中（2026-05-04 第九批：chiyigo OIDC SSO）
 
