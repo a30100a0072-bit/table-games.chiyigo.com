@@ -232,7 +232,7 @@ export default function GameSelectScreen({
             <div className="mt-4 flex flex-col gap-3">
               {liveRooms.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-lg bg-green-950/60 p-2">
-                  <div className="mb-1 text-[11px] text-green-400">進行中（點擊進場）</div>
+                  <div className="mb-1 text-[11px] text-green-400">{t("spec.live.heading")}</div>
                   <ul className="space-y-1">
                     {liveRooms.map(r => {
                       const ageMin = Math.floor((Date.now() - r.startedAt) / 60_000);

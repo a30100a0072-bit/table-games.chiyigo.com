@@ -88,7 +88,7 @@ function sortTiles(tiles: MahjongTile[]): MahjongTile[] {
 
 // ─── views ────────────────────────────────────────────────────────────────────
 
-function TileView({ tile, selected, onClick, danger }: { tile: MahjongTile; selected: boolean; onClick?: () => void; danger?: boolean }) {
+function TileView({ tile, selected, onClick, danger, dangerTitle }: { tile: MahjongTile; selected: boolean; onClick?: () => void; danger?: boolean; dangerTitle?: string }) {
   return (
     <button
       onClick={onClick}
@@ -101,7 +101,7 @@ function TileView({ tile, selected, onClick, danger }: { tile: MahjongTile; sele
           : "border-gray-300",
         tileColor(tile),
       ].join(" ")}
-      title={danger ? "對手副露多 — 此花色危險" : undefined}
+      title={danger ? dangerTitle : undefined}
     >
       {tileLabel(tile)}
     </button>
@@ -392,13 +392,14 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
         )}
 
         <div className="hand-scroll flex gap-1 overflow-x-auto px-3 pb-2 pt-4">
-          {handSorted.map(t => (
+          {handSorted.map(tile => (
             <TileView
-              key={tileKey(t)}
-              tile={t}
-              selected={picked === tileKey(t)}
-              danger={isMyTurn && dangerSuits.has(t.suit)}
-              onClick={() => setPicked(p => p === tileKey(t) ? null : tileKey(t))}
+              key={tileKey(tile)}
+              tile={tile}
+              selected={picked === tileKey(tile)}
+              danger={isMyTurn && dangerSuits.has(tile.suit)}
+              dangerTitle={t("mj.dangerSuit")}
+              onClick={() => setPicked(p => p === tileKey(tile) ? null : tileKey(tile))}
             />
           ))}
         </div>

@@ -188,6 +188,8 @@ const ZH = {
   "spec.start":            "開始觀戰",
   "spec.invalidRoom":      "房號格式不正確",
   "spec.notStarted":       "對局尚未開始",
+  "spec.live.heading":     "進行中（點擊進場）",
+  "mj.dangerSuit":         "對手副露多 — 此花色危險",
 
   // game-screen overlay
   "game.roomId":           "房號",
@@ -619,6 +621,8 @@ const EN: Partial<Record<DictKey, string>> = {
   "spec.start":             "Start watching",
   "spec.invalidRoom":       "Invalid room ID",
   "spec.notStarted":        "Game has not started yet",
+  "spec.live.heading":      "Live (click to enter)",
+  "mj.dangerSuit":          "Opponents have many melds — this suit is risky",
 
   "game.roomId":            "Room",
   "game.copied":            "Copied",
