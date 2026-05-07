@@ -576,9 +576,13 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - `App.tsx`：result screen state 加 `token` + `gameType`；`onPlayAgain` 從「回登入」改為「回 select」（同 token，避免重新登入）；onSettled 同步帶上 token + gameType
   - 新增 9 個 i18n key × 2 語系（lobby.findingTable / lobby.eta / lobby.botSoon / lobby.swapTable / lobby.privateRoom / lobby.slot.* / result.shareReplay）
   - tsc 0 / 383 tests / build 3.65s（index chunk 273.86→274.66 kB / gz 81.45 kB）
-- [ ] **P5 — 角色情緒輕量版**
-  - 頭像、稱號、連勝 streak chip、胡牌動畫、放槍提示
-  - 語音 / 貼圖延後
+- [x] **P5 — 角色情緒輕量版** ✅ 2026-05-08
+  - `GameSelectScreen`：greeting 下方 chip 列 — 稱號（新手/玩家/老手/高手，由 `getHistory` 之 games + winrate 推導）/ 🔥 連勝 ×N（history 從新到舊累計 final_rank=1）/ N 場 chip；fetch 一次後快取於 component state
+  - `MahjongGameScreen.SeatView`：對手 ⚠ 危險徽章（左上角，與莊家紅 chip 對稱）— exposed.length≥3 紅色 pulse「可能聽牌」/ ≥2 琥珀「留意打牌」；保守啟發式（後端 discarder 歸屬非本期 scope）
+  - `ResultScreen`：勝者全螢幕浮層彩帶（5 個 emoji 浮 + 🏆 頂部 pulse）/ 標題 pulse / 名次徽章 animate-bounce；尊重 `motion-reduce:hidden`（系統設定 prefers-reduced-motion 時不顯示）
+  - 新增 9 個 i18n key × 2 語系（select.title.* / select.streak / select.streakTitle / select.gamesPlayed / mj.danger.med / mj.danger.high）
+  - 限制：放槍提示為 UI heuristic（無視 opponent 實際 winningTiles，因為 view 不暴露）；P5 不做語音/貼圖
+  - tsc 0 / 383 tests / build 10.14s（mahjong chunk 16.47→16.89 kB / gz 5.34→5.46；index 274.66→277.13 kB / gz 81.45→82.19）
 - [ ] **P6 — 手機橫向優先**
   - GameScreen 強制橫向、safe-area-inset、按鈕最小 44px、RotateHint 文案優化
 - [ ] **P7 — i18n / 編碼掃雷**

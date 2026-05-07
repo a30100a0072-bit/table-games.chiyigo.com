@@ -185,6 +185,12 @@ function SeatView({ pos, op, isCurrentTurn, isBanker }: SeatProps) {
   const seatLabel = pos === "across" ? t("mj.seat.across")
                   : pos === "right"  ? t("mj.seat.right")
                   :                    t("mj.seat.left");
+  // Conservative tenpai-likely heuristic for 放槍提示: opponents we can't
+  // see hands for, but the count of exposed melds is a public signal —
+  // 3+ exposed (chow/pong/kong) means they're 1–2 tiles from a winning
+  // structure. Engine-side discarder attribution would be more accurate
+  // but is out of P5 scope (UI-only).
+  const dangerLevel: 0 | 1 | 2 = op.exposed.length >= 3 ? 2 : op.exposed.length >= 2 ? 1 : 0;
 
   const wrapper = pos === "across"
     ? "flex flex-col items-center gap-1"
@@ -206,6 +212,18 @@ function SeatView({ pos, op, isCurrentTurn, isBanker }: SeatProps) {
             <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white shadow">
               {t("mj.banker")}
             </span>
+          )}
+          {dangerLevel > 0 && (
+            <span
+              className={[
+                "absolute -left-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[9px] shadow ring-1",
+                dangerLevel === 2
+                  ? "bg-red-600 text-white ring-red-300 animate-pulse"
+                  : "bg-amber-500 text-amber-50 ring-amber-300",
+              ].join(" ")}
+              title={t(dangerLevel === 2 ? "mj.danger.high" : "mj.danger.med")}
+              aria-label={t(dangerLevel === 2 ? "mj.danger.high" : "mj.danger.med")}
+            >⚠</span>
           )}
         </div>
         <div className="flex flex-col leading-tight">

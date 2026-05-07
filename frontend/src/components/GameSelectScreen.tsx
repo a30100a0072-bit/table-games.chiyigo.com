@@ -10,7 +10,7 @@ import ReplaysModal from "./ReplaysModal";
 import FeaturedReplaysModal from "./FeaturedReplaysModal";
 import LocaleToggle from "./LocaleToggle";
 import MuteToggle from "./MuteToggle";
-import { listInvitesApi, listLiveRoomsApi } from "../api/http";
+import { listInvitesApi, listLiveRoomsApi, getHistory } from "../api/http";
 import type { LiveRoom } from "../api/http";
 import { useT } from "../i18n/useT";
 
@@ -107,6 +107,36 @@ export default function GameSelectScreen({
   const lastPick = useMemo(() => readLastPick(), []);
   const quickGame: GameType = lastPick ?? "bigTwo";
 
+  // Lightweight profile chip data — derived from /api/me/history. Cached
+  // for the lifetime of this screen; we don't repoll because the chips
+  // refresh naturally next time the user lands here from a settlement.
+  const [profile, setProfile] = useState<{ games: number; wins: number; streak: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void getHistory(token).then(r => {
+      if (!alive) return;
+      const games = r.games.length;
+      const wins  = r.games.filter(g => g.final_rank === 1).length;
+      // History is returned newest-first; count leading wins for current streak.
+      let streak = 0;
+      for (const g of r.games) {
+        if (g.final_rank === 1) streak++;
+        else break;
+      }
+      setProfile({ games, wins, streak });
+    }).catch(() => { /* ignore — chips simply don't render */ });
+    return () => { alive = false; };
+  }, [token]);
+
+  const titleKey: "select.title.novice" | "select.title.regular" | "select.title.veteran" | "select.title.master" =
+    !profile || profile.games < 10
+      ? "select.title.novice"
+      : profile.games >= 20 && profile.wins / Math.max(1, profile.games) >= 0.6
+        ? "select.title.master"
+        : profile.wins / Math.max(1, profile.games) >= 0.5
+          ? "select.title.veteran"
+          : "select.title.regular";
+
   function pick(g: GameType, hands?: number) {
     writeLastPick(g);
     onPick(g, g === "mahjong" ? (hands ?? mjHands) : undefined);
@@ -150,16 +180,31 @@ export default function GameSelectScreen({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-500 text-base font-bold text-green-950 shadow ring-2 ring-yellow-300/50">
             {initial}
           </div>
-          <div className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 flex-col gap-1">
             <span className="truncate text-sm font-bold text-yellow-200">
               {t("select.greeting", { p: playerId.replace(/^oidc:/, "") })}
             </span>
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                className="self-start rounded-full bg-green-800/80 px-2 py-0.5 text-[10px] text-green-300 hover:bg-red-700 hover:text-red-100"
-              >{t("common.logout")}</button>
-            )}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="rounded-full bg-emerald-800/80 px-2 py-0.5 text-[10px] font-bold text-emerald-100 ring-1 ring-emerald-500/40">
+                {t(titleKey)}
+              </span>
+              {profile && profile.streak >= 2 && (
+                <span className="rounded-full bg-orange-700/80 px-2 py-0.5 text-[10px] font-bold text-orange-100 ring-1 ring-orange-400/50" title={t("select.streakTitle")}>
+                  🔥 {t("select.streak", { n: profile.streak })}
+                </span>
+              )}
+              {profile && profile.games > 0 && (
+                <span className="rounded-full bg-green-900/80 px-2 py-0.5 text-[10px] text-green-300">
+                  {t("select.gamesPlayed", { n: profile.games })}
+                </span>
+              )}
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="rounded-full bg-green-800/80 px-2 py-0.5 text-[10px] text-green-300 hover:bg-red-700 hover:text-red-100"
+                >{t("common.logout")}</button>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

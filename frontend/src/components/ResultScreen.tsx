@@ -42,6 +42,7 @@ export default function ResultScreen({ playerId, token, settlement, onPlayAgain 
   const sorted = [...settlement.players].sort((a, b) => a.finalRank - b.finalRank);
   const me = settlement.players.find(p => p.playerId === playerId);
   const rankLabel = (r: number) => t(RANK_KEY[r] ?? "result.fourthPlace");
+  const isWinner = settlement.winnerId === playerId;
 
   const animatedDelta = useCountUp(me ? Math.abs(me.scoreDelta) : 0);
   const sign = me && me.scoreDelta < 0 ? "-" : "+";
@@ -71,14 +72,26 @@ export default function ResultScreen({ playerId, token, settlement, onPlayAgain 
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-5 bg-green-950 px-4 text-white">
-      <h2 className="text-2xl font-bold text-yellow-300">
-        {settlement.winnerId === playerId ? t("result.win") : t("result.end")}
+    <div className="relative flex h-full flex-col items-center justify-center gap-5 bg-green-950 px-4 text-white">
+      {isWinner && (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden motion-reduce:hidden" aria-hidden="true">
+          <span className="absolute left-[12%] top-[14%] animate-bounce text-3xl">🎉</span>
+          <span className="absolute right-[14%] top-[10%] animate-bounce text-3xl delay-150">✨</span>
+          <span className="absolute left-[18%] bottom-[20%] animate-bounce text-2xl delay-300">🎊</span>
+          <span className="absolute right-[20%] bottom-[24%] animate-bounce text-2xl delay-500">⭐</span>
+          <span className="absolute left-1/2 top-[6%] -translate-x-1/2 animate-pulse text-4xl">🏆</span>
+        </div>
+      )}
+
+      <h2 className={`text-2xl font-bold text-yellow-300 ${isWinner ? "animate-pulse" : ""}`}>
+        {isWinner ? t("result.win") : t("result.end")}
       </h2>
 
       {me && (
         <div className="flex flex-col items-center gap-2">
-          <div className="text-6xl drop-shadow-lg">{RANK_BADGE[me.finalRank] ?? "🎴"}</div>
+          <div className={`text-6xl drop-shadow-lg ${isWinner ? "animate-bounce" : ""}`}>
+            {RANK_BADGE[me.finalRank] ?? "🎴"}
+          </div>
           <p className="text-lg text-green-100">{rankLabel(me.finalRank)}</p>
           <p className={`font-mono text-3xl font-bold ${me.scoreDelta >= 0 ? "text-green-300" : "text-red-400"}`}>
             🪙 {sign}{animatedDelta}
