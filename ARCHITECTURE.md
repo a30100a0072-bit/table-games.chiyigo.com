@@ -564,9 +564,11 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - Tile face 厚邊白底漸層 + 底邊較粗（fake 3D）；選中 -translate-y-3 + ring
   - `TileBack` 元件視覺化對手剩牌
   - 新增 7 個 i18n key × 2 語系；tsc 0 / 383 tests / build pass
-- [ ] **P3 — 情境式動作按鈕**
-  - 只顯示當下可用動作；優先級配色（胡/自摸 金紅 / 碰槓 黃 / 過 灰）
-  - 倒數時行動面板浮起
+- [x] **P3 — 情境式動作按鈕** ✅ 2026-05-08
+  - 固定 8 鈕 → `buildActions()` 只回當下可用，依 priority 排序（高優先級在右）
+  - 配色 tier：胡/自摸 紅金漸層+黃環 primary / 碰 blue / 槓 purple / 暗槓 purple-800 / 加槓 fuchsia / 吃 cyan / 打牌 yellow primary / 過 grey
+  - 兩種模式：`turn`（自家回合 inline）/ `react`（反應期浮起面板 + 倒數進度條 8s 綠→黃→紅）
+  - tsc 0 / 383 tests / build pass
 - [ ] **P4 — 配桌資訊 + 結算儀式**
   - `LobbyScreen`：「找桌中 X/4 / 預估秒數 / 換桌 / 好友房」
   - `ResultScreen`：名次 / 番型 / 金幣動畫 / 再來一局 / 分享回放

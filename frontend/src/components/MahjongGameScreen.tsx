@@ -577,49 +577,202 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
           )}
         </div>
 
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-          <button
-            disabled={!canDiscard}
-            onClick={() => pickedTile && send({ type: "discard", tile: pickedTile })}
-            className="rounded-lg bg-yellow-400 py-2 font-bold text-green-950 disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.discard")}</button>
-          <button
-            disabled={!canChow}
-            onClick={() => setChowPicker(true)}
-            className="rounded-lg bg-cyan-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{canChow && chowOptions.length > 1 ? t("mj.chowN", { n: chowOptions.length }) : t("mj.chow")}</button>
-          <button
-            disabled={!canPong}
-            onClick={() => ld && send({ type: "pong", tile: ld.tile })}
-            className="rounded-lg bg-blue-500 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.pong")}</button>
-          <button
-            disabled={!canKong}
-            onClick={() => ld && send({ type: "kong", tile: ld.tile, source: "exposed" })}
-            className="rounded-lg bg-purple-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.kong")}</button>
-          <button
-            disabled={!canAnkan}
-            onClick={() => ankanCandidates[0] && send({ type: "kong", tile: ankanCandidates[0], source: "concealed" })}
-            className="rounded-lg bg-purple-800 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.ankan")}</button>
-          <button
-            disabled={!canKakan}
-            onClick={() => kakanCandidates[0] && send({ type: "kong", tile: kakanCandidates[0], source: "added" })}
-            className="rounded-lg bg-fuchsia-700 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.kakan")}</button>
-          <button
-            disabled={!canHu && !(isMyTurn && view.phase === "playing")}
-            onClick={() => send({ type: "hu", selfDrawn: isMyTurn && view.phase === "playing" })}
-            className="rounded-lg bg-red-600 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >{isMyTurn && view.phase === "playing" ? t("mj.tsumo") : t("mj.hu")}</button>
-          <button
-            disabled={!canPass}
-            onClick={() => send({ type: "mj_pass" })}
-            className="rounded-lg bg-green-700 py-2 font-bold text-green-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >{t("mj.pass")}</button>
-        </div>
+        <ActionBar
+          mode={inReact ? "react" : turnAction ? "turn" : "idle"}
+          reactLeft={reactLeft}
+          actions={buildActions({
+            t, view, isMyTurn, inReact, turnAction,
+            canDiscard, canPong, canKong, canChow, canHu, canPass,
+            canAnkan, canKakan,
+            chowOptions, ankanCandidates, kakanCandidates, ld,
+            pickedTile, send, openChowPicker: () => setChowPicker(true),
+          })}
+        />
       </div>
     </div>
+  );
+}
+
+// ─── Contextual action bar (P3) ──────────────────────────────────────────────
+
+interface ActionDescriptor {
+  key: string;
+  label: string;
+  /** Lower number = lower priority. Buttons render left→right ascending so
+   *  high-priority (胡/自摸) sits on the right where the thumb naturally goes
+   *  on a landscape phone hold. */
+  priority: number;
+  onClick: () => void;
+  /** Tailwind classes for the colour tier. */
+  color: string;
+  /** Optional emphasis for primary actions (extra ring + scale on hover). */
+  primary?: boolean;
+}
+
+interface BuildArgs {
+  t: ReturnType<typeof useT>["t"];
+  view: MahjongStateView;
+  isMyTurn: boolean;
+  inReact: boolean;
+  turnAction: boolean;
+  canDiscard: boolean;
+  canPong: boolean;
+  canKong: boolean;
+  canChow: boolean;
+  canHu: boolean;
+  canPass: boolean;
+  canAnkan: boolean;
+  canKakan: boolean;
+  chowOptions: MahjongTile[][];
+  ankanCandidates: MahjongTile[];
+  kakanCandidates: MahjongTile[];
+  ld: MahjongStateView["lastDiscard"];
+  pickedTile: MahjongTile | null;
+  send: (a: PlayerAction) => void;
+  openChowPicker: () => void;
+}
+
+function buildActions(a: BuildArgs): ActionDescriptor[] {
+  const out: ActionDescriptor[] = [];
+  const PASS_GREY    = "bg-gray-600 text-gray-200 hover:bg-gray-500";
+  const DISCARD_GOLD = "bg-yellow-400 text-green-950 hover:bg-yellow-300";
+  const CHOW_CYAN    = "bg-cyan-600 text-white hover:bg-cyan-500";
+  const PONG_BLUE    = "bg-blue-500 text-white hover:bg-blue-400";
+  const KONG_PURPLE  = "bg-purple-600 text-white hover:bg-purple-500";
+  const ANKAN_PURPLE = "bg-purple-800 text-white hover:bg-purple-700";
+  const KAKAN_FUCH   = "bg-fuchsia-700 text-white hover:bg-fuchsia-600";
+  const HU_GOLD_RED  = "bg-gradient-to-br from-red-500 to-amber-500 text-white shadow-yellow-300/60 ring-2 ring-yellow-300/70 hover:from-red-400 hover:to-amber-400";
+
+  // Reaction window — only the reaction-eligible actions are drawn.
+  if (a.inReact) {
+    if (a.canPass) {
+      out.push({
+        key: "pass", priority: 1, color: PASS_GREY,
+        label: a.t("mj.pass"),
+        onClick: () => a.send({ type: "mj_pass" }),
+      });
+    }
+    if (a.canChow) {
+      out.push({
+        key: "chow", priority: 2, color: CHOW_CYAN,
+        label: a.chowOptions.length > 1 ? a.t("mj.chowN", { n: a.chowOptions.length }) : a.t("mj.chow"),
+        onClick: a.openChowPicker,
+      });
+    }
+    if (a.canPong) {
+      out.push({
+        key: "pong", priority: 3, color: PONG_BLUE,
+        label: a.t("mj.pong"),
+        onClick: () => a.ld && a.send({ type: "pong", tile: a.ld.tile }),
+      });
+    }
+    if (a.canKong) {
+      out.push({
+        key: "kong", priority: 4, color: KONG_PURPLE,
+        label: a.t("mj.kong"),
+        onClick: () => a.ld && a.send({ type: "kong", tile: a.ld.tile, source: "exposed" }),
+      });
+    }
+    if (a.canHu) {
+      out.push({
+        key: "hu", priority: 5, color: HU_GOLD_RED, primary: true,
+        label: a.t("mj.hu"),
+        onClick: () => a.send({ type: "hu", selfDrawn: false }),
+      });
+    }
+    return out.sort((x, y) => x.priority - y.priority);
+  }
+
+  // Own turn during play — discard primary; ankan/kakan/tsumo when applicable.
+  if (a.turnAction) {
+    out.push({
+      key: "discard", priority: 1, color: DISCARD_GOLD, primary: true,
+      label: a.pickedTile ? a.t("mj.discard") : a.t("mj.discard"),
+      onClick: () => { if (a.pickedTile) a.send({ type: "discard", tile: a.pickedTile }); },
+    });
+    if (a.canAnkan) {
+      out.push({
+        key: "ankan", priority: 2, color: ANKAN_PURPLE,
+        label: a.t("mj.ankan"),
+        onClick: () => a.ankanCandidates[0] && a.send({ type: "kong", tile: a.ankanCandidates[0], source: "concealed" }),
+      });
+    }
+    if (a.canKakan) {
+      out.push({
+        key: "kakan", priority: 3, color: KAKAN_FUCH,
+        label: a.t("mj.kakan"),
+        onClick: () => a.kakanCandidates[0] && a.send({ type: "kong", tile: a.kakanCandidates[0], source: "added" }),
+      });
+    }
+    // Self-drawn winning attempt — server validates can-win, so always offer
+    // the option during own turn while in playing phase.
+    out.push({
+      key: "tsumo", priority: 4, color: HU_GOLD_RED, primary: true,
+      label: a.t("mj.tsumo"),
+      onClick: () => a.send({ type: "hu", selfDrawn: true }),
+    });
+    return out.sort((x, y) => x.priority - y.priority);
+  }
+
+  return out; // idle — opponent's turn, no actions
+}
+
+interface ActionBarProps {
+  mode: "react" | "turn" | "idle";
+  reactLeft: number;
+  actions: ActionDescriptor[];
+}
+function ActionBar({ mode, reactLeft, actions }: ActionBarProps) {
+  if (actions.length === 0 && mode !== "react") {
+    return <div className="h-12" />; // reserve a strip so the layout doesn't jump
+  }
+
+  // Reaction phase: floating, elevated panel with countdown progress bar.
+  if (mode === "react") {
+    // 8s reaction window assumed (matches MahjongStateMachine). Bar fills
+    // green→amber→red as time runs out.
+    const total = 8;
+    const pct = Math.max(0, Math.min(100, (reactLeft / total) * 100));
+    const barColor = pct > 50 ? "bg-emerald-400" : pct > 25 ? "bg-amber-400" : "bg-red-500";
+    return (
+      <div className="relative -mt-2 rounded-xl bg-emerald-950/90 ring-2 ring-yellow-400/50 p-2 shadow-2xl shadow-yellow-300/20 backdrop-blur">
+        <div className="mb-1.5 h-1 overflow-hidden rounded-full bg-emerald-900">
+          <div className={["h-full transition-all", barColor].join(" ")} style={{ width: `${pct}%` }} />
+        </div>
+        <div className="flex items-center gap-2">
+          {actions.map(act => (
+            <ActionButton key={act.key} action={act} large />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Own turn — inline row, primary actions slightly larger.
+  return (
+    <div className="flex items-center gap-2">
+      {actions.map(act => (
+        <ActionButton key={act.key} action={act} large={false} />
+      ))}
+    </div>
+  );
+}
+
+function ActionButton({ action, large }: { action: ActionDescriptor; large: boolean }) {
+  const size = large
+    ? (action.primary ? "min-w-[88px] py-3 text-base" : "min-w-[72px] py-3 text-sm")
+    : (action.primary ? "min-w-[80px] py-2.5 text-sm" : "min-w-[64px] py-2 text-sm");
+  return (
+    <button
+      onClick={action.onClick}
+      className={[
+        "flex-1 rounded-lg font-bold shadow-md transition active:scale-95",
+        size,
+        action.color,
+        action.primary ? "scale-105" : "",
+      ].join(" ")}
+    >
+      {action.label}
+    </button>
   );
 }
