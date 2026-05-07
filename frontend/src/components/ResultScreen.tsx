@@ -1,53 +1,115 @@
+import { useEffect, useState } from "react";
 import type { SettlementResult } from "../shared/types";
 import { useT } from "../i18n/useT";
 import type { DictKey } from "../i18n/dict";
+import { shareReplayApi, formatApiError } from "../api/http";
 
 const RANK_KEY: DictKey[] = [
   "result.firstPlace", "result.firstPlace", "result.secondPlace", "result.thirdPlace", "result.fourthPlace",
 ];
+const RANK_BADGE = ["", "🥇", "🥈", "🥉", "4️⃣"];
+const RANK_RING  = ["", "ring-yellow-300", "ring-stone-300", "ring-amber-600", "ring-green-600"];
+
+function stripOidc(id: string): string { return id.replace(/^oidc:/, ""); }
+
+function useCountUp(target: number, durationMs = 1100): number {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (target === 0) { setV(0); return; }
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - (1 - p) * (1 - p);
+      setV(Math.round(target * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, durationMs]);
+  return v;
+}
 
 interface Props {
-  playerId:   string;
-  settlement: SettlementResult;
+  playerId:    string;
+  token:       string;
+  settlement:  SettlementResult;
   onPlayAgain: () => void;
 }
 
-export default function ResultScreen({ playerId, settlement, onPlayAgain }: Props) {
+export default function ResultScreen({ playerId, token, settlement, onPlayAgain }: Props) {
   const { t } = useT();
   const sorted = [...settlement.players].sort((a, b) => a.finalRank - b.finalRank);
   const me = settlement.players.find(p => p.playerId === playerId);
   const rankLabel = (r: number) => t(RANK_KEY[r] ?? "result.fourthPlace");
 
+  const animatedDelta = useCountUp(me ? Math.abs(me.scoreDelta) : 0);
+  const sign = me && me.scoreDelta < 0 ? "-" : "+";
+
+  const [shareState, setShareState] = useState<"idle" | "loading" | "ok" | "err">("idle");
+  const [shareMsg,   setShareMsg]   = useState<string>("");
+
+  async function onShareReplay() {
+    if (shareState === "loading") return;
+    setShareState("loading");
+    setShareMsg("");
+    try {
+      const r = await shareReplayApi(token, settlement.gameId);
+      const url = `${window.location.origin}${window.location.pathname}?replay=${encodeURIComponent(r.token)}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareState("ok");
+        setShareMsg(t("rep.shareCopied", { preview: url.slice(0, 56) }));
+      } catch {
+        setShareState("ok");
+        setShareMsg(url);
+      }
+    } catch (e) {
+      setShareState("err");
+      setShareMsg(formatApiError(e, t));
+    }
+  }
+
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 bg-green-950 text-white">
+    <div className="flex h-full flex-col items-center justify-center gap-5 bg-green-950 px-4 text-white">
       <h2 className="text-2xl font-bold text-yellow-300">
         {settlement.winnerId === playerId ? t("result.win") : t("result.end")}
       </h2>
 
       {me && (
-        <p className="text-lg text-green-200">
-          {rankLabel(me.finalRank)}
-          <span className={me.scoreDelta >= 0 ? "ml-3 text-green-400" : "ml-3 text-red-400"}>
-            {t("result.delta", { n: `${me.scoreDelta >= 0 ? "+" : ""}${me.scoreDelta}` })}
-          </span>
-        </p>
+        <div className="flex flex-col items-center gap-2">
+          <div className="text-6xl drop-shadow-lg">{RANK_BADGE[me.finalRank] ?? "🎴"}</div>
+          <p className="text-lg text-green-100">{rankLabel(me.finalRank)}</p>
+          <p className={`font-mono text-3xl font-bold ${me.scoreDelta >= 0 ? "text-green-300" : "text-red-400"}`}>
+            🪙 {sign}{animatedDelta}
+          </p>
+        </div>
       )}
 
-      <div className="w-72 rounded-2xl bg-green-900 p-4 shadow-xl">
+      <div className="w-72 rounded-2xl bg-green-900 p-3 shadow-xl">
         {sorted.map(p => (
-          <div key={p.playerId} className="flex items-center justify-between py-2 border-b border-green-800 last:border-0">
-            <span className="font-bold">{rankLabel(p.finalRank)}</span>
-            <span className={p.playerId === playerId ? "text-yellow-300 font-bold" : "text-green-200"}>
-              {p.playerId}
-            </span>
-            <span className={p.scoreDelta >= 0 ? "text-green-400" : "text-red-400"}>
+          <div
+            key={p.playerId}
+            className={[
+              "flex items-center justify-between gap-2 rounded-lg px-2 py-1.5",
+              p.playerId === playerId ? "bg-green-800/60 ring-1 ring-yellow-400/50" : "",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full bg-green-950 text-base ring-2 ${RANK_RING[p.finalRank] ?? "ring-green-700"}`}>
+                {RANK_BADGE[p.finalRank] ?? p.finalRank}
+              </span>
+              <span className={`truncate text-sm ${p.playerId === playerId ? "font-bold text-yellow-300" : "text-green-100"}`}>
+                {stripOidc(p.playerId)}
+              </span>
+            </div>
+            <span className={`shrink-0 font-mono text-sm ${p.scoreDelta >= 0 ? "text-green-300" : "text-red-400"}`}>
               {p.scoreDelta >= 0 ? "+" : ""}{p.scoreDelta}
             </span>
           </div>
         ))}
       </div>
 
-      {/* 多局賽事結算摘要 — 顯示整場累積分排名（per-hand scoreDelta 上方已列） */}
       {settlement.matchProgress && settlement.matchProgress.targetHands > 1 && settlement.matchProgress.cumulativeScores && (
         <div className="w-72 rounded-2xl border border-amber-700/40 bg-amber-900/30 p-3 text-sm shadow-inner">
           <div className="mb-2 flex items-baseline justify-between">
@@ -59,7 +121,7 @@ export default function ResultScreen({ playerId, settlement, onPlayAgain }: Prop
             .sort(([, a], [, b]) => b - a)
             .map(([pid, total]) => (
               <div key={pid} className="flex items-center justify-between py-1 text-[12px]">
-                <span className={pid === playerId ? "font-bold text-yellow-300" : "text-amber-100"}>{pid}</span>
+                <span className={pid === playerId ? "font-bold text-yellow-300" : "text-amber-100"}>{stripOidc(pid)}</span>
                 <span className={total >= 0 ? "font-mono text-green-300" : "font-mono text-red-300"}>
                   {total >= 0 ? "+" : ""}{total}
                 </span>
@@ -68,7 +130,6 @@ export default function ResultScreen({ playerId, settlement, onPlayAgain }: Prop
         </div>
       )}
 
-      {/* 麻將台數明細 — 只有麻將會帶 fanDetail，其他遊戲為 undefined */}
       {settlement.fanDetail && (
         <div className="w-72 rounded-2xl border border-yellow-700/40 bg-green-900/50 p-3 text-sm shadow-inner">
           <div className="mb-2 flex items-baseline justify-between">
@@ -85,12 +146,28 @@ export default function ResultScreen({ playerId, settlement, onPlayAgain }: Prop
         </div>
       )}
 
-      <button
-        onClick={onPlayAgain}
-        className="rounded-xl bg-yellow-400 px-8 py-3 font-bold text-green-950 hover:bg-yellow-300 transition"
-      >
-        {t("result.again")}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onPlayAgain}
+          className="rounded-xl bg-yellow-400 px-7 py-3 font-bold text-green-950 transition hover:bg-yellow-300"
+        >
+          {t("result.again")}
+        </button>
+        <button
+          onClick={onShareReplay}
+          disabled={shareState === "loading"}
+          className="rounded-xl bg-green-800 px-5 py-3 font-bold text-green-100 transition hover:bg-green-700 disabled:opacity-50"
+          title={t("result.shareReplay")}
+        >
+          🔗 {shareState === "loading" ? t("common.loading") : t("result.shareReplay")}
+        </button>
+      </div>
+
+      {shareMsg && (
+        <p className={`max-w-xs break-all text-center text-[11px] ${shareState === "err" ? "text-red-400" : "text-green-300"}`}>
+          {shareMsg}
+        </p>
+      )}
     </div>
   );
 }

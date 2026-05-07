@@ -25,7 +25,7 @@ type Screen =
   | { name: "select"; playerId: string; token: string; dailyBonus: number | null }
   | { name: "lobby";  playerId: string; token: string; gameType: GameType; mahjongHands?: number }
   | { name: "game";   playerId: string; token: string; roomId: string; wsUrl: string; gameType: GameType; spectator?: boolean }
-  | { name: "result"; playerId: string; settlement: SettlementResult };
+  | { name: "result"; playerId: string; token: string; gameType: GameType; settlement: SettlementResult };
 
 export default function App() {
   const { t } = useT();
@@ -319,7 +319,7 @@ export default function App() {
         gameType={screen.gameType}
         spectator={screen.spectator}
         onSettled={(result) =>
-          setScreen({ name: "result", playerId: screen.playerId, settlement: result })
+          setScreen({ name: "result", playerId: screen.playerId, token: screen.token, gameType: screen.gameType, settlement: result })
         }
       />
     );
@@ -327,8 +327,9 @@ export default function App() {
     body = (
       <ResultScreen
         playerId={screen.playerId}
+        token={screen.token}
         settlement={screen.settlement}
-        onPlayAgain={() => setScreen({ name: "login" })}
+        onPlayAgain={() => setScreen({ name: "select", playerId: screen.playerId, token: screen.token, dailyBonus: null })}
       />
     );
   }

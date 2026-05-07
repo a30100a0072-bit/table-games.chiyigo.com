@@ -56,6 +56,13 @@ const ZH = {
   // lobby
   "lobby.matching":        "配對中",
   "lobby.cancel":          "取消",
+  "lobby.findingTable":    "找桌中 {n}/{m}",
+  "lobby.eta":             "預估 {n} 秒…",
+  "lobby.botSoon":         "Bot 即將補位",
+  "lobby.swapTable":       "換桌",
+  "lobby.privateRoom":     "好友房",
+  "lobby.slot.filled":     "已就坐",
+  "lobby.slot.waiting":    "等待玩家",
 
   // wallet / stats
   "stats.tab.leaderboard": "🏆 排行榜",
@@ -92,6 +99,7 @@ const ZH = {
   "result.end":            "遊戲結束",
   "result.again":          "再來一局",
   "result.fanDetail":      "台數明細",
+  "result.shareReplay":    "分享回放",
 
   // pwa
   "pwa.offline":           "📡 離線中 — 連線恢復後會自動重連",
@@ -534,6 +542,13 @@ const EN: Partial<Record<DictKey, string>> = {
 
   "lobby.matching":         "Matching",
   "lobby.cancel":           "Cancel",
+  "lobby.findingTable":     "Finding table {n}/{m}",
+  "lobby.eta":              "~{n}s",
+  "lobby.botSoon":          "Bot joining soon",
+  "lobby.swapTable":        "Swap table",
+  "lobby.privateRoom":      "Friends room",
+  "lobby.slot.filled":      "Seated",
+  "lobby.slot.waiting":     "Waiting",
 
   "stats.tab.leaderboard":  "🏆 Leaderboard",
   "stats.tab.history":      "📋 History",
@@ -568,6 +583,7 @@ const EN: Partial<Record<DictKey, string>> = {
   "result.end":             "Game over",
   "result.again":           "Play again",
   "result.fanDetail":       "Hand breakdown",
+  "result.shareReplay":     "Share replay",
 
   "pwa.offline":            "📡 Offline — will reconnect automatically",
   "pwa.install":            "📲 Install to home screen",

@@ -569,9 +569,13 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - 配色 tier：胡/自摸 紅金漸層+黃環 primary / 碰 blue / 槓 purple / 暗槓 purple-800 / 加槓 fuchsia / 吃 cyan / 打牌 yellow primary / 過 grey
   - 兩種模式：`turn`（自家回合 inline）/ `react`（反應期浮起面板 + 倒數進度條 8s 綠→黃→紅）
   - tsc 0 / 383 tests / build pass
-- [ ] **P4 — 配桌資訊 + 結算儀式**
-  - `LobbyScreen`：「找桌中 X/4 / 預估秒數 / 換桌 / 好友房」
-  - `ResultScreen`：名次 / 番型 / 金幣動畫 / 再來一局 / 分享回放
+- [x] **P4 — 配桌資訊 + 結算儀式** ✅ 2026-05-08
+  - `LobbyScreen`：4 座位圓形 slot（自家黃 / 等待中虛線 / 已坐 pulse）+ 「找桌中 X/4」+ 預估秒數倒數（8s→0，到 0 顯示「Bot 即將補位」）+ 換桌 / 好友房 / 取消三鈕
+  - 限制：findMatch 是 long-poll，沒有 progress 事件 — slot 動畫純為 wall-clock theatre（1.8s/3.6s/5.4s 階梯填入），用來給等待塑形；換桌透過 nonce 重置動畫並重發 fetch，後端會在 timeout 自動清掉舊 waiter
+  - `ResultScreen`：6xl 名次徽章 (🥇🥈🥉4️⃣) + `useCountUp()` 1.1s easeOut 金幣動畫 + 排名列高亮自家 + ring color tier + `🔗 分享回放` 按鈕（呼叫 `shareReplayApi` → 寫入 clipboard，沿用 `rep.shareCopied` toast）
+  - `App.tsx`：result screen state 加 `token` + `gameType`；`onPlayAgain` 從「回登入」改為「回 select」（同 token，避免重新登入）；onSettled 同步帶上 token + gameType
+  - 新增 9 個 i18n key × 2 語系（lobby.findingTable / lobby.eta / lobby.botSoon / lobby.swapTable / lobby.privateRoom / lobby.slot.* / result.shareReplay）
+  - tsc 0 / 383 tests / build 3.65s（index chunk 273.86→274.66 kB / gz 81.45 kB）
 - [ ] **P5 — 角色情緒輕量版**
   - 頭像、稱號、連勝 streak chip、胡牌動畫、放槍提示
   - 語音 / 貼圖延後
