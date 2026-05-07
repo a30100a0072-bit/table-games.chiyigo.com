@@ -231,4 +231,48 @@ describe("TournamentDO lifecycle", () => {
     const live = await (await t.fetch(req("GET", "/state"))).json() as { winnerId: string };
     expect(live.winnerId).toBe("alice");
   });
+
+  // Tournament orchestration is gameType-agnostic — these guards lock that in
+  // for Uno + Yahtzee so a future state-machine refactor that broke the
+  // settlement contract would surface here instead of in production.
+  it.each(["uno", "yahtzee"] as const)(
+    "%s tournament: 4 joins → 3 rounds → settles with correct winner + no blind escalation",
+    async (gameType) => {
+      const t = makeDO();
+      await t.fetch(req("POST", "/init", { tournamentId: "T1", gameType, buyIn: 200 }));
+      for (const pid of ["alice", "bob", "carol", "dave"]) {
+        await t.fetch(req("POST", "/join", { playerId: pid }));
+      }
+      // Each round's deltas mirror the per-game scheme (winner +300, others -100).
+      const round = (winner: string) => settlement(
+        Object.fromEntries(["alice", "bob", "carol", "dave"]
+          .map(p => [p, p === winner ? 300 : -100])),
+      );
+
+      // alice wins R1, bob wins R2, alice wins R3 → alice 300+(-100)+300 = 500
+      await t.fetch(req("POST", "/round-result", { settlement: round("alice") }));
+      await t.fetch(req("POST", "/round-result", { settlement: round("bob") }));
+      await t.fetch(req("POST", "/round-result", { settlement: round("alice") }));
+
+      // GameRoomDO init body must NOT include blind fields for non-texas games.
+      for (const call of gameRoomCalls) {
+        const body = call.body as Record<string, unknown>;
+        expect(body.gameType).toBe(gameType);
+        expect(body.smallBlind).toBeUndefined();
+        expect(body.bigBlind).toBeUndefined();
+      }
+
+      const live = await (await t.fetch(req("GET", "/state"))).json() as {
+        status: string; winnerId: string;
+        entries: Array<{ playerId: string; aggScore: number }>;
+      };
+      expect(live.status).toBe("settled");
+      expect(live.winnerId).toBe("alice");
+      const scores = Object.fromEntries(live.entries.map(e => [e.playerId, e.aggScore]));
+      expect(scores.alice).toBe(500);
+      expect(scores.bob).toBe(100);    // -100 + 300 + -100
+      expect(scores.carol).toBe(-300); // three losses
+      expect(scores.dave).toBe(-300);
+    },
+  );
 });

@@ -90,7 +90,7 @@ npm run dev
 
 - [ ] Uno / Yahtzee 進行中 → 從別人帳號用 spectator URL 進入 → 牌面隱藏（Uno）或公開（Yahtzee 是公開資訊）
 - [ ] 一局結束後在 ReplaysModal 看得到該局
-- [ ] 點開 replay 步進 → 每個 action 卡片顯示正確（PR 後續會補 Uno/Yahtzee 專屬描述文）
+- [ ] 點開 replay 步進 → 每個 action 卡片顯示正確（Uno: 顏色 chip + 效果中文；Yahtzee: 保留位置 + 槽位中文）
 
 ---
 
@@ -99,4 +99,4 @@ npm run dev
 - [ ] WalletBadge 流水帳本顯示 settlement 條目，reason 標籤正確
 - [ ] StatsModal 戰績含 Uno + Yahtzee
 - [ ] FriendsModal 推薦能跨 5 款遊戲找共玩夥伴
-- [ ] Tournament（PR 後續會接）：Uno / Yahtzee 賽事建立 → 4 人 join → 三輪 → 派彩
+- [ ] Tournament：Uno / Yahtzee 賽事建立 → 4 人 join → 三輪 → 派彩（已接，TournamentDO 含 it.each(["uno","yahtzee"]) 回歸測試；UI 在 TournamentModal 創建格已含兩款）

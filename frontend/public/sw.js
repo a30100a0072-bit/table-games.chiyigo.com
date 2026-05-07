@@ -15,7 +15,7 @@
 //
 // Bump CACHE on shape changes so old SW data evicts cleanly.
 
-const CACHE         = "chiyigo-tg-v3";
+const CACHE         = "chiyigo-tg-v4";
 const REPLAY_CACHE  = "chiyigo-replays-v1";
 const REPLAY_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days
 const STATIC = ["/", "/index.html", "/manifest.json", "/sw-register.js"];

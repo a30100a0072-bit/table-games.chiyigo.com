@@ -8,6 +8,7 @@ import {
 import type { ReplayDetail, ReplaySummary, ReplayEvent, MyShareEntry } from "../api/http";
 import type { GameType } from "../shared/types";
 import { useT } from "../i18n/useT";
+import type { TFunction } from "../i18n/useT";
 
 interface Props {
   /** Required for the owner-side flow (list + per-game open + share). */
@@ -96,12 +97,68 @@ interface ActionShape {
   slot?: string;
 }
 
-function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
+// Uno color → swatch class for the played-card chip.
+const UNO_COLOR_BG: Record<string, string> = {
+  red:    "bg-red-600 text-white",
+  yellow: "bg-yellow-400 text-black",
+  green:  "bg-green-600 text-white",
+  blue:   "bg-blue-600 text-white",
+  wild:   "bg-gradient-to-br from-red-500 via-yellow-400 to-blue-600 text-white",
+};
+// Allowlists of valid Uno colours + values and Yahtzee slots. Anything
+// outside the lists falls back to `"?"`, so a malformed action payload
+// can never surface raw server bytes as visible UI text.
+const UNO_COLORS = ["red", "yellow", "green", "blue", "wild"] as const;
+const UNO_VALUES = ["skip", "reverse", "draw2", "wild", "wild_draw4"] as const;
+const YZ_SLOTS = [
+  "ones", "twos", "threes", "fours", "fives", "sixes",
+  "threeKind", "fourKind", "fullHouse",
+  "smallStraight", "largeStraight", "yahtzee", "chance",
+] as const;
+
+function unoColorLabel(t: TFunction, color: string | undefined): string {
+  if (!color) return "?";
+  if ((UNO_COLORS as readonly string[]).includes(color)) {
+    return t(`rep.uno.color.${color}` as `rep.uno.color.red`);
+  }
+  return "?";
+}
+function unoCardValueLabel(t: TFunction, value: string | number | undefined): string {
+  if (typeof value === "number") return String(value);
+  if (value && (UNO_VALUES as readonly string[]).includes(value)) {
+    return t(`rep.uno.value.${value}` as `rep.uno.value.skip`);
+  }
+  return value == null ? "?" : "?";
+}
+function UnoCardChip({ t, card }: { t: TFunction; card: { color?: string; value: string | number } }) {
+  const color = card.color ?? "wild";
+  const bg = (UNO_COLORS as readonly string[]).includes(color)
+    ? (UNO_COLOR_BG[color] ?? UNO_COLOR_BG.wild)
+    : UNO_COLOR_BG.wild;
+  return (
+    <span className={[
+      "inline-flex h-9 w-7 items-center justify-center rounded border-2 border-white text-sm font-bold shadow-sm",
+      bg,
+    ].join(" ")}>
+      {unoCardValueLabel(t, card.value)}
+    </span>
+  );
+}
+
+function yzSlotLabel(t: TFunction, slot: string | undefined): string {
+  if (!slot) return "?";
+  if ((YZ_SLOTS as readonly string[]).includes(slot)) {
+    return t(`rep.yz.slot.${slot}` as `rep.yz.slot.ones`);
+  }
+  return "?";
+}
+
+function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction }) {
   if (ev.kind === "tick") {
     return (
       <div className="rounded-lg bg-amber-700/30 p-3 text-center text-xs text-amber-200">
         <span className="text-green-500">{String(idx + 1).padStart(3, "0")}</span>{" "}
-        ⏱️ 反應視窗結束
+        ⏱️ {t("rep.tick.reactionEnded")}
       </div>
     );
   }
@@ -109,8 +166,10 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
     return (
       <div className="rounded-lg bg-yellow-700/40 p-3 text-center text-xs font-bold text-yellow-100 ring-1 ring-yellow-500/40">
         <span className="text-green-500">{String(idx + 1).padStart(3, "0")}</span>{" "}
-        🀄 第 {ev.handNumber} 局開始
-        {(ev.bankerStreak ?? 0) > 0 && <span className="ml-2 text-amber-300">連莊 ×{ev.bankerStreak}</span>}
+        🀄 {t("rep.hand.start", { n: ev.handNumber ?? 0 })}
+        {(ev.bankerStreak ?? 0) > 0 && (
+          <span className="ml-2 text-amber-300">{t("rep.hand.bankerStreak", { n: ev.bankerStreak ?? 0 })}</span>
+        )}
       </div>
     );
   }
@@ -134,31 +193,31 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
       body  = <span className="text-2xl">🔁</span>;
       break;
     case "discard":
-      badge = "打牌";
+      badge = t("rep.act.discard");
       body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
       break;
     case "chow":
-      badge = "吃";
+      badge = t("rep.act.chow");
       body  = (
         <div className="flex gap-1">
-          {(a.tiles ?? []).map((t, i) => <MahjongTileChip key={i} tile={t} />)}
+          {(a.tiles ?? []).map((tt, i) => <MahjongTileChip key={i} tile={tt} />)}
         </div>
       );
       break;
     case "pong":
-      badge = "碰";
+      badge = t("rep.act.pong");
       body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
       break;
     case "kong":
-      badge = "槓";
+      badge = t("rep.act.kong");
       body  = a.tile ? <MahjongTileChip tile={a.tile} /> : <span>?</span>;
       break;
     case "hu":
-      badge = a.selfDrawn ? "自摸" : "胡";
+      badge = a.selfDrawn ? t("rep.act.huSelf") : t("rep.act.hu");
       body  = <span className="text-2xl">🀄</span>;
       break;
     case "mj_pass":
-      badge = "過";
+      badge = t("rep.act.mjPass");
       body  = <span className="text-xl text-green-400">⏭</span>;
       break;
     case "fold":
@@ -178,39 +237,63 @@ function EventCard({ ev, idx }: { ev: ReplayEvent; idx: number }) {
       body  = <span className="text-2xl">📈</span>;
       break;
     case "uno_play": {
-      const c = a.card;
-      const color = a.declaredColor ?? c?.color ?? "wild";
-      badge = `🎴 ${color}`;
+      const c = a.card ?? { value: "?" };
+      const baseColor = c.color ?? "wild";
+      const isWild = baseColor === "wild";
+      const effectKey =
+        c.value === "skip"       ? "rep.uno.eff.skip"    as const :
+        c.value === "reverse"    ? "rep.uno.eff.reverse" as const :
+        c.value === "draw2"      ? "rep.uno.eff.draw2"   as const :
+        c.value === "wild_draw4" ? "rep.uno.eff.draw4"   as const :
+        null;
+      const effect  = effectKey ? ` · ${t(effectKey)}` : "";
+      const declared = isWild && a.declaredColor
+        ? ` → ${unoColorLabel(t, a.declaredColor)}`
+        : "";
+      badge = `🎴 ${unoColorLabel(t, baseColor)}${declared}${effect}`;
+      body = <UnoCardChip t={t} card={c} />;
+      break;
+    }
+    case "uno_draw":
+      badge = `🃏 ${t("rep.uno.draw")}`;
+      body  = <span className="text-2xl">🃏</span>;
+      break;
+    case "uno_pass":
+      badge = `⏭ ${t("rep.uno.pass")}`;
+      body  = <span className="text-2xl">⏭</span>;
+      break;
+    case "yz_roll": {
+      const held = Array.isArray(a.held) ? a.held : [];
+      const heldIdx = held
+        .map((h, i) => (h ? i + 1 : 0))
+        .filter(n => n > 0);
+      badge = heldIdx.length > 0
+        ? `🎲 ${t("rep.yz.rollHold", { seats: heldIdx.map(n => `#${n}`).join(" ") })}`
+        : `🎲 ${t("rep.yz.rollAll")}`;
       body = (
-        <span className="text-2xl">
-          {c?.value === "skip" ? "🚫" :
-           c?.value === "reverse" ? "🔄" :
-           c?.value === "draw2" ? "+2" :
-           c?.value === "wild" ? "★" :
-           c?.value === "wild_draw4" ? "+4" :
-           String(c?.value ?? "?")}
+        <div className="flex gap-1 text-2xl">
+          {[0, 1, 2, 3, 4].map(i => (
+            <span key={i} className={held[i] ? "text-yellow-300" : "text-green-200/60"}>
+              {held[i] ? "🔒" : "🎲"}
+            </span>
+          ))}
+        </div>
+      );
+      break;
+    }
+    case "yz_score": {
+      const slotLabel = yzSlotLabel(t, a.slot);
+      badge = `📋 ${t("rep.yz.fill", { slot: slotLabel })}`;
+      body  = (
+        <span className="text-base font-bold text-yellow-300">
+          {slotLabel}
+          {a.slot && (YZ_SLOTS as readonly string[]).includes(a.slot) && (
+            <span className="ml-2 text-[10px] text-green-300/80">{a.slot}</span>
+          )}
         </span>
       );
       break;
     }
-    case "uno_draw":
-      badge = "DRAW";
-      body  = <span className="text-2xl">🃏</span>;
-      break;
-    case "uno_pass":
-      badge = "PASS";
-      body  = <span className="text-2xl">⏭</span>;
-      break;
-    case "yz_roll": {
-      const heldCount = (a.held ?? []).filter(Boolean).length;
-      badge = heldCount > 0 ? `🎲 hold×${heldCount}` : "🎲 ROLL";
-      body  = <span className="text-2xl">🎲🎲🎲</span>;
-      break;
-    }
-    case "yz_score":
-      badge = `📋 ${a.slot ?? "?"}`;
-      body  = <span className="text-xl text-yellow-300">{a.slot ?? "?"}</span>;
-      break;
     default:
       badge = a.type ?? "?";
       body  = <span>{a.type}</span>;
@@ -374,7 +457,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
             )}
             {isShared && detail && (
               <span className="self-center text-[10px] text-green-300">
-                🔗 由 {detail.sharedBy} 分享
+                🔗 {t("rep.sharedBy", { p: detail.sharedBy ?? "?" })}
               </span>
             )}
             <button
@@ -578,6 +661,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
                       <EventCard
                         ev={detail.events[step - 1]!}
                         idx={step - 1}
+                        t={t}
                       />
                     )}
                   </div>
@@ -646,7 +730,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
                           ].join(" ")}
                         >
                           <span className="text-green-500">{String(i + 1).padStart(3, "0")}</span>{" "}
-                          {fmtEventOneLine(e)}
+                          {fmtEventOneLine(e, t)}
                         </li>
                       ))}
                     </ol>
@@ -662,22 +746,33 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
 }
 
 /** One-line text fallback for the collapsed log. */
-function fmtEventOneLine(e: ReplayEvent): string {
+function fmtEventOneLine(e: ReplayEvent, t: TFunction): string {
   if (e.kind === "tick") return "tick";
-  if (e.kind === "hand_boundary") return `▶ hand ${e.handNumber}`;
+  if (e.kind === "hand_boundary") return `▶ ${t("rep.hand.start", { n: e.handNumber ?? 0 })}`;
   const a = (e.action as ActionShape) ?? {};
   const who = e.playerId ?? "?";
   switch (a.type) {
     case "play":   return `${who} play ${(a.cards ?? []).length} (${a.combo ?? "?"})`;
     case "pass":   return `${who} pass`;
-    case "discard":return `${who} discard ${a.tile?.rank}${a.tile?.suit}`;
+    case "discard":return `${who} ${t("rep.act.discard")} ${a.tile?.rank ?? "?"}${a.tile?.suit ?? "?"}`;
     case "raise":  return `${who} raise ${a.raiseAmount ?? "?"}`;
-    case "hu":     return `${who} ${a.selfDrawn ? "tsumo" : "hu"}`;
-    case "uno_play": return `${who} uno ${a.card?.color ?? "wild"}/${a.card?.value ?? "?"}${a.declaredColor ? `→${a.declaredColor}` : ""}`;
-    case "uno_draw": return `${who} draw`;
-    case "uno_pass": return `${who} pass`;
-    case "yz_roll":  return `${who} roll (hold×${(a.held ?? []).filter(Boolean).length})`;
-    case "yz_score": return `${who} score ${a.slot ?? "?"}`;
+    case "hu":     return `${who} ${a.selfDrawn ? t("rep.act.huSelf") : t("rep.act.hu")}`;
+    case "uno_play": {
+      const c = a.card;
+      const color = unoColorLabel(t, c?.color ?? "wild");
+      const value = unoCardValueLabel(t, c?.value);
+      const declared = a.declaredColor ? ` → ${unoColorLabel(t, a.declaredColor)}` : "";
+      return `${who} ${color} ${value}${declared}`;
+    }
+    case "uno_draw": return `${who} ${t("rep.uno.draw")}`;
+    case "uno_pass": return `${who} ${t("rep.uno.pass")}`;
+    case "yz_roll": {
+      const held = (Array.isArray(a.held) ? a.held : []).map((h, i) => h ? i + 1 : 0).filter(n => n > 0);
+      return held.length > 0
+        ? `${who} ${t("rep.yz.rollHold", { seats: held.map(n => `#${n}`).join(",") })}`
+        : `${who} ${t("rep.yz.rollAll")}`;
+    }
+    case "yz_score": return `${who} ${t("rep.yz.fill", { slot: yzSlotLabel(t, a.slot) })}`;
     default:       return `${who} ${a.type ?? "?"}`;
   }
 }

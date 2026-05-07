@@ -1,17 +1,18 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-03 — 第十二批：多局 replay 接通（hand_boundary）+ admin featured UI + shanten cross-turn memo + match summary + 防守視覺化 + e2e lobby 場景。詳細見下方 roster；近期重點：連莊 N 全套（含 replay）、Replay 精選 + admin UI、e2e（smoke + lobby）、Block 列表、Friend 推薦、PWA 離線快取、WS keep-alive。
+> 最後更新：2026-05-07 — 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述（顏色 chip / 效果中文 / 保留位置 / 槽位中文）。
 >
 > **核心架構**
->   - 三款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas ✅
->   - 三款 BotAI ✅；BOT_FILL ✅；前端三遊戲 UI ✅
+>   - 五款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas / **uno** / **yahtzee** ✅
+>   - 五款 BotAI ✅；BOT_FILL ✅；前端五遊戲 UI ✅
 >   - CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅
 >   - ES256 JWKS + 多 key 輪換；結構化 JSON log → tail forwarder（含 retry/backoff）→ 通用 webhook
 >
 > **遊戲與經濟**
 >   - 籌碼錢包 + 流水帳本（cursor 分頁） + ANTE + bailout + daily bonus + forfeit + admin freeze
->   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）
+>   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）；**5 款遊戲全支援**（it.each(["uno","yahtzee"]) 回歸測試鎖定）
+>   - Uno（108 卡標準局 / 無堆疊 / 無 UNO! shout）+ Yahtzee（13 槽計分 / 3 擲/回合 / 簡化 Joker bonus +100）；ENGINE_VERSION = 4
 >   - Mahjong `ENGINE_VERSION = 3`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）
 >   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong + shanten-based discard + shanten-based pong/chow + **outs tiebreak** + **soft-danger 對手 ≥3 副露之花色降級**；Texas OESD draw + 位置感知 Chen 門檻 + paired-board kicker awareness
 >   - **麻將自家聽牌指示**：MahjongSelfView 帶 `shanten` + `winningTiles`，前端 shanten==0 時亮燈 + 列出聽張縮圖
@@ -41,9 +42,9 @@
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
->   - **Node 單元測試**：27 檔 / **316 案例**（含 BigTwo / Mahjong / Texas / Adapter / BotAI / MahjongShanten / auth / rateLimit / tournamentDO / gateway / friends / friendRecommendations / privateRooms / roomInvites / replays / spectatorView / wsFrame / gameRoomDO / liveRooms / dms / forwarder / account / cronCleanup / errors / blocks），全綠
+>   - **Node 單元測試**：~~27 檔 / 316 案例~~ → **33 檔 / 376 案例**（新增 UnoStateMachine / unoArena / YahtzeeStateMachine / yahtzeeArena / oidc + tournamentDO 加 it.each(uno,yahtzee)）
 >   - **Workers 整合測試**（vitest 4 + @cloudflare/vitest-pool-workers）：6 檔 / **16 案例**，真 workerd / miniflare runtime（jwks / auth-flow / replay-share / account-export / dms-flow / admin-health）
->   - **總計 332 測試**（+ Playwright e2e smoke 1 案，跑於獨立 GitHub Actions workflow）
+>   - **總計 392 測試**（376 unit + 16 workers + Playwright e2e smoke 5 案）
 > **TypeScript**：src + test + frontend 三組 typecheck 皆 0 error
 > **線上端點**：
 >   - Worker：`https://big-two-game-production.a30100a0072.workers.dev`
@@ -320,9 +321,10 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 **Tournament**
 - D1 schema：`tournaments` + `tournament_entries`
-- TournamentDO（一賽一實例）：init / 4 join 自動開賽 / round-result hook 累積分數 / 三輪後 settle 派彩
+- TournamentDO（一賽一實例）：init / 4 join 自動開賽 / round-result hook 累積分數 / 三輪後 settle 派彩；**gameType-agnostic — 五款遊戲全支援**，靠 `SettlementResult.players[].scoreDelta` 守恆契約累計
 - 五個端點：POST `/api/tournaments`、GET `/api/tournaments`、POST `/api/tournaments/:id/join`、GET `/api/tournaments/:id`、+ TournamentDO 內 `/round-result`
-- 前端 `TournamentModal`：列表 + 建立（gameType + 預設 buy-in 200/500/1000）+ 詳情（entries + 分數）+ 自動 join room；`🏆` 按鈕掛在 GameSelect
+- 前端 `TournamentModal`：列表 + 建立（gameType 5 選 1：bigTwo / mahjong / texas / uno / yahtzee + 預設 buy-in 200/500/1000）+ 詳情（entries + 分數）+ 自動 join room；`🏆` 按鈕掛在 GameSelect
+- 回歸測試：`test/tournamentDO.test.ts` it.each(["uno","yahtzee"]) 鎖三輪 round-result 累計 + 非 texas 不帶 blind 欄位
 
 **前端工程**
 - i18n（zh-TW + en）涵蓋全部畫面：`dict.ts`、`useT.ts`、`LocaleToggle.tsx`，~80 keys
@@ -336,6 +338,23 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - Handler 層：`test/gateway.handler.test.ts` 13 案（routing / auth / 籌碼經濟 / freeze / admin 含 mock D1）
 - `.gitattributes`：commit 不再噴 CRLF 警告
 - 死碼清理（MahjongStateMachine `indexToTile` / `isHonor`）
+
+### ✅ 第十三批（2026-05-04 ~ 2026-05-07）：兩款新遊戲 + Tournament 整合 + Replay 強化
+
+**新遊戲（兩款）**
+- **Uno**（commit `77200a5`）：`UnoStateMachine` 108 張標準牌、4 色 × {0×1, 1-9×2, skip×2, reverse×2, draw2×2} + wild×4 + wild_draw4×4；`pendingDraw` 在 `applyPlay` 內立即吸收 + 跳過下家（含起手翻 +2 邊界）；wild 用 `declaredColor` 設 `currentColor`，view 把 `topDiscard.card.color` 補成當前色；牌堆耗盡自動洗棄牌堆。BotAI：對手 ≤ 2 張 → 攻擊牌（skip/draw2/wd4），否則先丟高分；wild 留底。Settlement：贏家拿全部敗者手牌點數（數字=面值、行動=20、wild=50），forfeit + 50 罰；scoreDelta sums to 0。**ENGINE_VERSION 3 → 4**。前端 `UnoGameScreen.tsx` + ColorPicker modal。Tests：`UnoStateMachine.test.ts` 20 案 + `unoArena.test.ts` 200 場 4-bot self-play（每座 15-35% 勝率）。
+- **Yahtzee**（commit `b0be439`）：`YahtzeeStateMachine` 13 槽計分卡 / 每回合最多 3 擲（`rollsLeft` 3→0 invariant，3=未擲 forces fresh，0=必填）；`secureDie()` rejection sampling；`scoreSlot(dice, slot)` pure 給 BotAI 用。Settle when `turnNumber >= playerIds.length × 13`。Yahtzee bonus 簡化：第二顆 yahtzee +100（不實作 Joker rule）。Settlement 固定盤：贏家 +100×(N-1)、其餘 -100；forfeit 贏家 +200 / forfeit 玩家 -200 / 其他 0。Spectator 公開所有計分卡（dice 公開資訊，不像撲克牌要遮）。前端 `YahtzeeGameScreen.tsx` 5 顆骰子 hold/release + preview-score badge。Tests：`YahtzeeStateMachine.test.ts` 20 案 + `yahtzeeArena.test.ts` 200 場（10-40% 勝率窗較寬，吃骰子變異）。
+
+**Tournament 整合（commit `350086f` + 本批未提交）**
+- TournamentDO 本來就 gameType-agnostic — 接 Uno/Yahtzee 不需要動 orchestration code。
+- TournamentModal 創建格列入兩款，i18n `tour.gameUno` / `tour.gameYahtzee`（zh + en）。
+- 回歸測試（**本批新增，未提交**）：`test/tournamentDO.test.ts` 加 `it.each(["uno","yahtzee"])` — 4 join → 3 rounds → settle，驗證 gameType 透傳、非 texas 不帶 `smallBlind/bigBlind`、aggScore 跨輪正確累計（alice 500 / bob 100 / carol,dave -300）。
+
+**Replay viewer 強化（本批未提交）**
+- `frontend/src/components/ReplaysModal.tsx` 加 Uno/Yahtzee 專屬卡片描述：
+  - Uno：`UnoCardChip` 顏色背景 + 中文牌身（跳過/反轉/+2/★/+4）；badge 帶顏色中文 + Wild 換色標示 + 效果說明（「下家 +2」/「下家 +4」/「跳過下家」/「反轉」）。
+  - Yahtzee：`yz_roll` 列保留位置 `#1 #3` + 5 顆 🔒/🎲 視覺化；`yz_score` 槽位中文（一點/三條/葫蘆/小順/大順/快艇/機會）+ 英文小字輔助。
+  - One-line log fallback 同步中文化。
 
 ### 🔧 進行中（2026-05-04 第九批：chiyigo OIDC SSO）
 
