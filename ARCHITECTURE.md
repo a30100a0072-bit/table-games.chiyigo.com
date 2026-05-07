@@ -543,3 +543,35 @@ gateway.ts ──verifyJWT──► GameRoomDO
   但細節未提供 — 請在階段 1 報告中列出你「最可能壞掉」的 5 個地方，等我確認後再處理。
 ```
 
+
+---
+
+## UX Rebuild TODO（2026-05-07 啟動，七階段，每階段 1 PR）
+
+商業棋牌感重塑。每階段做完 commit + push + 更新本檔 + 更新 memory。
+
+- [x] **P1 — 大廳資訊架構重排** ✅ 2026-05-07
+  - `GameSelectScreen.tsx` 重寫：頂列 avatar+暱稱+logout / 右側錢包+語系+靜音；快速開始 CTA（記 `localStorage[ux.lastPickedGame]`）；5 張分類卡（麻將 / 撲克 sub-picker / 骰子 / 好友房 / 比賽 full-width）；麻將局數選擇置卡下；更多抽屜收 stats/friends/invites/replays/featured/spectate
+  - 新增 21 個 i18n key × 2 語系
+  - e2e Uno 測試更新對應新流程
+  - tsc 0 / 383 tests / build pass
+- [ ] **P2 — 麻將牌桌四方視角 + 牌面美化**（`MahjongGameScreen.tsx`）
+  - 自家下、三家上左右；河牌置中
+  - 每座位顯示：頭像 / 剩牌 / 門風 / 分數 / 莊家標記
+  - 手牌按花色（萬/筒/條/字）分隔；摸牌獨立放右側
+  - 選中牌上移 + 光暈
+  - CSS 牌面（白底厚邊陰影），sprite 留 P3 後
+- [ ] **P3 — 情境式動作按鈕**
+  - 只顯示當下可用動作；優先級配色（胡/自摸 金紅 / 碰槓 黃 / 過 灰）
+  - 倒數時行動面板浮起
+- [ ] **P4 — 配桌資訊 + 結算儀式**
+  - `LobbyScreen`：「找桌中 X/4 / 預估秒數 / 換桌 / 好友房」
+  - `ResultScreen`：名次 / 番型 / 金幣動畫 / 再來一局 / 分享回放
+- [ ] **P5 — 角色情緒輕量版**
+  - 頭像、稱號、連勝 streak chip、胡牌動畫、放槍提示
+  - 語音 / 貼圖延後
+- [ ] **P6 — 手機橫向優先**
+  - GameScreen 強制橫向、safe-area-inset、按鈕最小 44px、RotateHint 文案優化
+- [ ] **P7 — i18n / 編碼掃雷**
+  - 全站 grep 殘缺字串、emoji icon 改 lucide-react / SVG asset
+  - 補漏的 zh-TW / en key

@@ -291,7 +291,12 @@ test("Uno: lobby tap → GameScreen with discard pile + draw button", async ({ p
   await page.goto("/");
   await page.locator("input[maxlength='16']").fill("alice");
   await page.locator("button[type='submit']").click();
-  await expect(page.locator("text=🎴").first()).toBeVisible();
+
+  // P1 lobby IA: Uno lives behind the "Card" sub-picker. The category card
+  // shows 🃏 — the first 🃏 on screen is the quick-start CTA, so click the
+  // second one (the category card) to open the sub-picker, then pick Uno.
+  await expect(page.locator("text=🀄").first()).toBeVisible();
+  await page.locator("button:has-text('🃏')").nth(1).click();
   await page.locator("button:has-text('🎴')").first().click();
 
   // Uno screen mounted: draw pile count visible (88) + Draw / Pass buttons.
