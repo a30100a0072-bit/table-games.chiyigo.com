@@ -1,7 +1,8 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-07 — 第十四批：post-ship 健康度體檢 + 加固。SW cache v3→v4（配合 ENGINE_VERSION 4）、ReplaysModal + WalletBadge 全面 i18n、Uno timeout fallback 死支重寫、Yahtzee bonus deviation 標 deliberate、`/auth/oauth/refresh` 加 IP rate-limit、`ReplayEvent` 改 discriminated union、**traceId middleware**（X-Request-Id + request_complete log line + 500-on-throw 帶 traceId）。
+> 最後更新：2026-05-08 — 第十五批：UX 重塑七階段（**P1–P7 全 ship**）。商業棋牌感重塑：(P1) 大廳資訊架構 — 快速開始 CTA + 5 卡片 + 更多抽屜；(P2) 麻將 3×3 四方視角 + 牌面美化；(P3) 情境式動作按鈕（buildActions 依 priority 排序、反應期浮層 + 倒數進度條）；(P4) 配桌 4-slot 動畫 + ETA + 結算金幣 count-up + 分享回放；(P5) 角色 chips（稱號 / 連勝 / 場數）+ 對手危險徽章 + 勝者彩帶；(P6) safe-area-inset + `.tap44` 觸控底線 + screen.orientation.lock；(P7) i18n parity audit（ZH=441/EN=441）+ `Icons.tsx` 手刻 SVG（Lock/RefreshCw/Share2，不引 lucide-react）+ 刪未用的 GAME_LABEL 硬寫死 zh-TW。**383 tests 全程綠 / tsc 0**。
+> 第十四批：post-ship 健康度體檢 + 加固。SW cache v3→v4（配合 ENGINE_VERSION 4）、ReplaysModal + WalletBadge 全面 i18n、Uno timeout fallback 死支重寫、Yahtzee bonus deviation 標 deliberate、`/auth/oauth/refresh` 加 IP rate-limit、`ReplayEvent` 改 discriminated union、**traceId middleware**（X-Request-Id + request_complete log line + 500-on-throw 帶 traceId）。
 > 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述。
 >
 > **核心架構**
@@ -41,6 +42,7 @@
 >   - 全 7 modal a11y kit：Escape 關閉 / role="dialog" + aria-modal / focus-trap / 初始焦點 + 還原
 >   - 嚴格 CSP（`script-src 'self'` 無 inline、SW reg 移到外部檔）
 >   - 前端 code-split：login/lobby + 三遊戲 + admin dashboard 各為獨立 chunk
+>   - **UX commercial-feel rebuild（批 15）**：lobby 快速開始 CTA + 5 分類卡 + 更多抽屜；mahjong 3×3 四方桌 + 對手 ⚠ 危險徽章；情境式 contextual `ActionButton`（priority 排序、反應期浮層 + 倒數進度條）；配桌 4-slot 動畫 + 結算金幣 `useCountUp` 動畫 + 勝者彩帶浮層 + 分享回放；safe-area-inset + `.tap44` 44px 觸控底線 + RotateHint `screen.orientation.lock`；`components/Icons.tsx` 手刻 inline SVG icon set（Lock / RefreshCw / Share2）取代脆弱 emoji
 >   - **API 錯誤鏈路**：server `errorResponse(code, status)` → response `{error, code, message}` → frontend `ApiError` class + `formatApiError(e, t)` → translated UI
 >   - D1 索引調優：`chip_ledger(player_id, ledger_id DESC)` 複合索引；`replay_participants` 取代 LIKE-scan
 > **測試矩陣**：
