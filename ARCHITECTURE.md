@@ -546,9 +546,9 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 ---
 
-## UX Rebuild TODO（2026-05-07 啟動，七階段，每階段 1 PR）
+## UX Rebuild（2026-05-07 啟動 → 2026-05-08 全部完成）
 
-商業棋牌感重塑。每階段做完 commit + push + 更新本檔 + 更新 memory。
+商業棋牌感重塑。七階段每階段 1 PR、commit + push + 更新本檔 + 更新 memory。**P1–P7 全部 ✅ 已 ship**；本批啟動的「commit 後立即 push」cadence override 結案，恢復預設 ask-before-push 流程。
 
 - [x] **P1 — 大廳資訊架構重排** ✅ 2026-05-07
   - `GameSelectScreen.tsx` 重寫：頂列 avatar+暱稱+logout / 右側錢包+語系+靜音；快速開始 CTA（記 `localStorage[ux.lastPickedGame]`）；5 張分類卡（麻將 / 撲克 sub-picker / 骰子 / 好友房 / 比賽 full-width）；麻將局數選擇置卡下；更多抽屜收 stats/friends/invites/replays/featured/spectate
