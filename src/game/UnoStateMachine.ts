@@ -419,18 +419,29 @@ export class UnoStateMachine {
     }
 
     // Conservation: scoreDelta sums to 0.
-    // Winner gains the sum of all losers' hand points; each loser pays
-    // their own hand points. Forfeit takes a +50 floor penalty on top.
-    const FORFEIT_PENALTY = 50;
+    // Two settlement models:
+    //   - Forfeit (disconnect / forced): fixed pot — forfeit -200, winner
+    //     +200, others 0. Aligns with BigTwo/Mahjong/Texas/Yahtzee so the
+    //     wallet ledger has one predictable disconnect penalty across all
+    //     games. ENGINE_VERSION 4→5 captures this change.
+    //   - Natural finish: winner gains sum of losers' hand points, each
+    //     loser pays their own. This is the actual Uno scoring rule.
     const deltas: Record<PlayerId, number> = {};
-    let pot = 0;
-    for (const pid of s.playerIds) {
-      if (pid === winnerId) continue;
-      const base = pointsByPlayer[pid]! + (pid === forfeitPlayerId ? FORFEIT_PENALTY : 0);
-      deltas[pid] = -base;
-      pot += base;
+    if (forfeitPlayerId) {
+      const FORFEIT = 200;
+      for (const pid of s.playerIds) deltas[pid] = 0;
+      deltas[forfeitPlayerId] = -FORFEIT;
+      deltas[winnerId] = FORFEIT;
+    } else {
+      let pot = 0;
+      for (const pid of s.playerIds) {
+        if (pid === winnerId) continue;
+        const base = pointsByPlayer[pid]!;
+        deltas[pid] = -base;
+        pot += base;
+      }
+      deltas[winnerId] = pot;
     }
-    deltas[winnerId] = pot;
 
     // Build players[] sorted: winner first, then by hand points ascending.
     const ordered = [

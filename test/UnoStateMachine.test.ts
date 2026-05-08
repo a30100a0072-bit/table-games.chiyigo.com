@@ -203,20 +203,25 @@ describe("settlement", () => {
     expect(s.unoDetail!.pointsByPlayer.p2).toBe(9 + 20);
   });
 
-  it("forceSettle with forfeit applies +50 penalty", () => {
+  it("forceSettle with forfeit: fixed -200 / winner +200 / others 0", () => {
     const m = fromSnap({
+      playerIds: ["p1", "p2", "p3", "p4"],
       hands: [
         ["p1", [card("red", 5), card("blue", 5)]],
         ["p2", [card("blue", 9)]],
+        ["p3", [card("green", 3)]],
+        ["p4", [card("yellow", 7)]],
       ],
       discardPile: [card("red", 0)],
     });
     const s = m.forceSettle("disconnect", "p1");
-    expect(s.winnerId).toBe("p2");
-    const p1 = s.players.find(p => p.playerId === "p1")!;
-    expect(p1.scoreDelta).toBe(-(10 + 50));   // hand 10 + 50 forfeit
-    const sum = s.players.reduce((a, p) => a + p.scoreDelta, 0);
-    expect(sum).toBe(0);
+    expect(s.winnerId).toBe("p3");                           // lowest hand pts (3)
+    const byId = (id: string) => s.players.find(p => p.playerId === id)!;
+    expect(byId("p1").scoreDelta).toBe(-200);
+    expect(byId("p3").scoreDelta).toBe(200);
+    expect(byId("p2").scoreDelta).toBe(0);
+    expect(byId("p4").scoreDelta).toBe(0);
+    expect(s.players.reduce((a, p) => a + p.scoreDelta, 0)).toBe(0);
   });
 });
 

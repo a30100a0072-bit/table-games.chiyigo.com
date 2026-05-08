@@ -3,15 +3,20 @@
 // ZERO direct D1 writes; all settlement flows through SETTLEMENT_QUEUE.           // L3_架構含防禦觀測
 // setTimeout is FORBIDDEN; every timeout uses state.storage.setAlarm().           // L3_架構含防禦觀測
 //
-// 多遊戲版本：透過 IGameEngine 適配層支援 bigTwo / mahjong / texas。              // L2_模組
-// 機器人補位目前僅支援 bigTwo（其它遊戲 Lobby 不會塞 BOT_）。                     // L2_實作
+// 多遊戲版本：透過 IGameEngine 適配層支援 bigTwo / mahjong / texas / uno / yahtzee。// L2_模組
+// 機器人補位：bigTwo / texas / uno / yahtzee 走 currentTurn 排程；mahjong 額外處理 // L2_實作
+// pending_reactions 多 bot 反應的串接。
 
 import { createEngine, restoreEngine, ENGINE_VERSION } from "../game/GameEngineAdapter";
 import type { IGameEngine } from "../game/GameEngineAdapter";
-import { getBigTwoBotAction, getMahjongBotAction, getTexasBotAction } from "../game/BotAI";
+import {
+  getBigTwoBotAction, getMahjongBotAction, getTexasBotAction,
+  getUnoBotAction, getYahtzeeBotAction,
+} from "../game/BotAI";
 import type {
   PlayerAction,
   PlayerId, GameType, GameStateView, MahjongStateView, PokerStateView,
+  UnoStateView, YahtzeeStateView,
   SettlementResult, SettlementQueueMessage,
 } from "../types/game";
 import { isGameType } from "../types/game";
@@ -561,6 +566,16 @@ export class GameRoomDO implements DurableObject {
       if (v.currentTurn !== botId) return null;
       return getTexasBotAction(v);
     }
+    if (gt === "uno") {
+      const v = this.engine.getView(botId) as UnoStateView;
+      if (v.currentTurn !== botId) return null;
+      return getUnoBotAction(v);
+    }
+    if (gt === "yahtzee") {
+      const v = this.engine.getView(botId) as YahtzeeStateView;
+      if (v.currentTurn !== botId) return null;
+      return getYahtzeeBotAction(v);
+    }
     // mahjong: bot may be the active discarder or one of the 3 reactors.
     const v = this.engine.getView(botId) as MahjongStateView;
     const isReactor = v.phase === "pending_reactions" && v.awaitingReactionsFrom.includes(botId);
@@ -577,7 +592,7 @@ export class GameRoomDO implements DurableObject {
     if (!this.engine || this.room?.phase !== "playing") return;
     const gt = this.room.gameType;
 
-    if (gt === "bigTwo" || gt === "texas") {
+    if (gt === "bigTwo" || gt === "texas" || gt === "uno" || gt === "yahtzee") {
       const currentTurn = this.engine.currentTurn();
       if (!isBot(currentTurn)) return;
       this.alarms = this.alarms.filter(a => a.kind !== "turn");
