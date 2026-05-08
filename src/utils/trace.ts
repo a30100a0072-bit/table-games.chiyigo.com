@@ -86,6 +86,18 @@ export async function withTrace(
     );
   }
 
+  // WebSocket upgrade (101) MUST pass through untouched. Cloning a WS
+  // upgrade response via `new Response(body, {...})` drops the special
+  // `webSocket` field and CF returns 500 — the client sees a handshake
+  // failure. We still emit the request_complete log line below.       // L3_架構含防禦觀測
+  if (status === 101) {
+    log("info", "request_complete", {
+      traceId, method: ctx.method, path: ctx.path, ip: ctx.ip,
+      status, durationMs: Date.now() - startMs,
+    });
+    return res;
+  }
+
   // Always stamp the response. Cloning via `new Response(...)` because
   // some upstream paths return a frozen Response (e.g. Response.json).
   const h = new Headers(res.headers);
