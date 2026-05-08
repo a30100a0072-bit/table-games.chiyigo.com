@@ -5,15 +5,17 @@
 ## How to run
 
 ```powershell
-# Terminal 1 — Worker + D1 + Queues local emulation
-npm run dev
+# Terminal 1 — Worker + D1 + Queues local emulation (root has no `dev` script).
+npx wrangler dev --port 8787
 
-# Terminal 2 — frontend dev server (Vite, hot-reload)
+# Terminal 2 — frontend dev server (Vite, hot-reload).
 cd frontend
-npm run dev
+npx vite --host 127.0.0.1 --port 5173
 ```
 
-開 http://localhost:5173，登入任一名字（會自動建錢包 +1000 籌碼）。
+開 http://127.0.0.1:5173，登入任一名字（會自動建錢包 +1000 籌碼）。
+
+> Vite 一定要綁 `127.0.0.1`，不能用預設 `localhost` — Windows 上 v6/v4 解析會打到 wrangler 的 8787 失敗（已記在 memory `project_e2e_harness.md`）。
 
 ---
 

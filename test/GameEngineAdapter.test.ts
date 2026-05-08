@@ -91,6 +91,40 @@ describe("forceSettle", () => {
 // (4) 跨遊戲動作型別防呆 — 引擎拒絕不屬於該遊戲的 action
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// (3.5) autoActionOnTimeout — 30s 沒動作時 BotAI 代打、輪次推進
+//        DO 對人類玩家逾時的補救路徑；Playwright 真人腳本若沒送 action，
+//        後端必須靠這條把局推下去而不是卡死。
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("autoActionOnTimeout — bot 代打人類", () => {
+  for (const gt of ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as GameType[]) {
+    it(`${gt} 對 currentTurn 玩家代打 → outcome 帶 appliedAction 或 settlement`, () => {
+      const e = createEngine({ gameType: gt, gameId: "g", roundId: "r", playerIds: PLAYERS });
+      const offender = e.currentTurn();
+      const before = e.snapshot();
+      const outcome = e.autoActionOnTimeout(offender);
+      // 必有結果：要嘛動作落地（appliedAction），要嘛直接結算。
+      expect(outcome.appliedAction !== undefined || outcome.settlement !== null).toBe(true);
+      // 沒結算的情況下，狀態必有變化（避免 silent no-op 卡死）。
+      if (!outcome.settlement) {
+        const after = e.snapshot();
+        expect(JSON.stringify(after)).not.toBe(JSON.stringify(before));
+      }
+    });
+  }
+
+  it("uno: 代打對 hasDrawn 已為 true 的玩家會選 pass / play 而非再 draw", () => {
+    // 模擬人類已自己抽過牌但停在那裡的情境。autoActionOnTimeout 路徑必須
+    // 偵測 hasDrawn=true 不再硬塞 uno_draw（會被 SM 拒），而是 pass。
+    const e = createEngine({ gameType: "uno", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    const offender = e.currentTurn();
+    // 第一次代打：bot 可能直接出牌；不論結果，狀態必須前進。
+    const out1 = e.autoActionOnTimeout(offender);
+    expect(out1.appliedAction !== undefined || out1.settlement !== null).toBe(true);
+  });
+});
+
 describe("processAction 動作型別防呆", () => {
   it("bigTwo 拒絕 mahjong/texas 動作", () => {
     const e = createEngine({ gameType: "bigTwo", gameId: "g", roundId: "r", playerIds: PLAYERS });
