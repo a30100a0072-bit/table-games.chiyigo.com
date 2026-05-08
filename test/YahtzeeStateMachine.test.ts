@@ -137,6 +137,71 @@ describe("flow", () => {
   });
 });
 
+describe("yahtzee bonus (+100)", () => {
+  it("awards +100 when rolling yahtzee after yahtzee slot filled non-zero", () => {
+    const card = emptyCard();
+    card.yahtzee = 50;                                     // already scored
+    const m = fromSnap({
+      rollsLeft: 2,
+      dice: [3, 3, 3, 3, 3] as DiceTuple,                  // five 3s
+      scorecards: [["p1", card], ["p2", emptyCard()]],
+    });
+    const r = m.process("p1", { type: "yz_score", slot: "threes" });
+    expect(r.ok).toBe(true);
+    const snap = m.snapshot();
+    const bonus = new Map(snap.yahtzeeBonus).get("p1");
+    expect(bonus).toBe(100);
+  });
+
+  it("does NOT award +100 when yahtzee slot is forced-zero (deliberate deviation)", () => {
+    const card = emptyCard();
+    card.yahtzee = 0;                                      // forced-zero earlier
+    const m = fromSnap({
+      rollsLeft: 2,
+      dice: [4, 4, 4, 4, 4] as DiceTuple,
+      scorecards: [["p1", card], ["p2", emptyCard()]],
+    });
+    const r = m.process("p1", { type: "yz_score", slot: "fours" });
+    expect(r.ok).toBe(true);
+    expect(new Map(m.snapshot().yahtzeeBonus).get("p1")).toBe(0);
+  });
+
+  it("does NOT award +100 when scoring INTO the yahtzee slot itself", () => {
+    const m = fromSnap({
+      rollsLeft: 2,
+      dice: [5, 5, 5, 5, 5] as DiceTuple,
+    });
+    const r = m.process("p1", { type: "yz_score", slot: "yahtzee" });
+    expect(r.ok).toBe(true);
+    expect(new Map(m.snapshot().yahtzeeBonus).get("p1")).toBe(0);
+  });
+
+  it("stacks +100 across multiple subsequent yahtzees", () => {
+    const card = emptyCard();
+    card.yahtzee = 50;
+    const m = fromSnap({
+      rollsLeft: 2,
+      dice: [2, 2, 2, 2, 2] as DiceTuple,
+      scorecards: [["p1", card], ["p2", emptyCard()]],
+    });
+    // First subsequent yahtzee → +100 into "twos".
+    const r1 = m.process("p1", { type: "yz_score", slot: "twos" });
+    expect(r1.ok).toBe(true);
+    // Round-trip back to p1 with another yahtzee.
+    const snap = m.snapshot();
+    const m2 = YahtzeeStateMachine.restore({
+      ...snap,
+      rollsLeft: 2,
+      dice: [6, 6, 6, 6, 6] as DiceTuple,
+      held: [false, false, false, false, false],
+      turnNumber: snap.turnNumber + 1,                     // back to p1 (2 players)
+    });
+    const r2 = m2.process("p1", { type: "yz_score", slot: "sixes" });
+    expect(r2.ok).toBe(true);
+    expect(new Map(m2.snapshot().yahtzeeBonus).get("p1")).toBe(200);
+  });
+});
+
 describe("settlement", () => {
   it("after totalTurns scores filled, settle returns", () => {
     // Fast-forward to last turn: turnNumber = totalTurns - 1, all slots filled for p1.
