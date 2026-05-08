@@ -17,6 +17,8 @@ const ACTION_TYPES = new Set<string>([
   "play", "pass",
   "discard", "chow", "pong", "kong", "hu", "mj_pass",
   "fold", "check", "call", "raise",
+  "uno_play", "uno_draw", "uno_pass",
+  "yz_roll", "yz_score",
 ]);
 
 function isObj(v: unknown): v is Record<string, unknown> {

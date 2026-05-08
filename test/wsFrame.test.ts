@@ -78,6 +78,8 @@ describe("parseIncomingFrame", () => {
     const types = [
       "play", "pass", "discard", "chow", "pong", "kong", "hu", "mj_pass",
       "fold", "check", "call", "raise",
+      "uno_play", "uno_draw", "uno_pass",
+      "yz_roll", "yz_score",
     ];
     for (const type of types) {
       const r = parseIncomingFrame(JSON.stringify({
