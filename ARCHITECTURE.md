@@ -1,7 +1,8 @@
 # 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-08 — 第十五批：UX 重塑七階段（**P1–P7 全 ship**）。商業棋牌感重塑：(P1) 大廳資訊架構 — 快速開始 CTA + 5 卡片 + 更多抽屜；(P2) 麻將 3×3 四方視角 + 牌面美化；(P3) 情境式動作按鈕（buildActions 依 priority 排序、反應期浮層 + 倒數進度條）；(P4) 配桌 4-slot 動畫 + ETA + 結算金幣 count-up + 分享回放；(P5) 角色 chips（稱號 / 連勝 / 場數）+ 對手危險徽章 + 勝者彩帶；(P6) safe-area-inset + `.tap44` 觸控底線 + screen.orientation.lock；(P7) i18n parity audit（ZH=441/EN=441）+ `Icons.tsx` 手刻 SVG（Lock/RefreshCw/Share2，不引 lucide-react）+ 刪未用的 GAME_LABEL 硬寫死 zh-TW。**383 tests 全程綠 / tsc 0**。
+> 最後更新：2026-05-08 — 第十六批：實站真人驗收抓出 4 條 batch 13–15 的潛在洞。(1) **Prod WS handshake 500** — `src/utils/trace.ts` `withTrace` 把 status-101 的 Response 重包，丟掉 `webSocket` 欄位；fix：101 short-circuit 直接回原 res（仍寫 `request_complete`）。(2) **Bot dispatch 漏 uno+yahtzee** — `GameRoomDO.computeBotAction` / `checkBotTurn` 沒分支，bot 座位走進 mahjong fallback 視圖型別 mismatch；fix：補 5 款 explicit dispatch。(3) **Uno forfeit 跟其他 4 款不一致** — 原本 hand+50，改成固定 -200 / +200 / 0，與 BigTwo / Mahjong / Texas / Yahtzee 對齊；ENGINE_VERSION **4→5** + SW cache **v4→v5**。(4) **WS action allowlist 漏 uno_*+yz_*** — `src/utils/wsFrame.ts` 從 batch 13 起就沒同步，人類 action frame 在 parser 被擋下，看起來像「BOT_x 卡住」實際是 human 沒 actioned；defensive plumbing：`computeBotAction` throw 時 force-settle 不再靜默。**394 tests 全程綠 / tsc 0**。
+> 第十五批：UX 重塑七階段（**P1–P7 全 ship**）。商業棋牌感重塑：(P1) 大廳資訊架構 — 快速開始 CTA + 5 卡片 + 更多抽屜；(P2) 麻將 3×3 四方視角 + 牌面美化；(P3) 情境式動作按鈕（buildActions 依 priority 排序、反應期浮層 + 倒數進度條）；(P4) 配桌 4-slot 動畫 + ETA + 結算金幣 count-up + 分享回放；(P5) 角色 chips（稱號 / 連勝 / 場數）+ 對手危險徽章 + 勝者彩帶；(P6) safe-area-inset + `.tap44` 觸控底線 + screen.orientation.lock；(P7) i18n parity audit（ZH=441/EN=441）+ `Icons.tsx` 手刻 SVG（Lock/RefreshCw/Share2，不引 lucide-react）+ 刪未用的 GAME_LABEL 硬寫死 zh-TW。**383 tests 全程綠 / tsc 0**。
 > 第十四批：post-ship 健康度體檢 + 加固。SW cache v3→v4（配合 ENGINE_VERSION 4）、ReplaysModal + WalletBadge 全面 i18n、Uno timeout fallback 死支重寫、Yahtzee bonus deviation 標 deliberate、`/auth/oauth/refresh` 加 IP rate-limit、`ReplayEvent` 改 discriminated union、**traceId middleware**（X-Request-Id + request_complete log line + 500-on-throw 帶 traceId）。
 > 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述。
 >
@@ -14,7 +15,7 @@
 > **遊戲與經濟**
 >   - 籌碼錢包 + 流水帳本（cursor 分頁） + ANTE + bailout + daily bonus + forfeit + admin freeze
 >   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）；**5 款遊戲全支援**（it.each(["uno","yahtzee"]) 回歸測試鎖定）
->   - Uno（108 卡標準局 / 無堆疊 / 無 UNO! shout）+ Yahtzee（13 槽計分 / 3 擲/回合 / 簡化 Joker bonus +100）；ENGINE_VERSION = 4
+>   - Uno（108 卡標準局 / 無堆疊 / 無 UNO! shout）+ Yahtzee（13 槽計分 / 3 擲/回合 / 簡化 Joker bonus +100）；ENGINE_VERSION = 5（批 16：Uno forfeit 改固定 -200 對齊四款 fixed-pot 結算）
 >   - Mahjong `ENGINE_VERSION = 3`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）
 >   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong + shanten-based discard + shanten-based pong/chow + **outs tiebreak** + **soft-danger 對手 ≥3 副露之花色降級**；Texas OESD draw + 位置感知 Chen 門檻 + paired-board kicker awareness
 >   - **麻將自家聽牌指示**：MahjongSelfView 帶 `shanten` + `winningTiles`，前端 shanten==0 時亮燈 + 列出聽張縮圖
@@ -26,7 +27,7 @@
 >   - Replay（token 分享、**手動撤銷**、**view_count + last_viewed_at**、JSON 下載、鍵盤快捷鍵、列表篩選）
 >
 > **可靠性與運維**
->   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass；CACHE 隨 ENGINE_VERSION 同步升版（目前 v4）
+>   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass；CACHE 隨 ENGINE_VERSION 同步升版（目前 v5）
 >   - **WS keep-alive**：30s 週期 sync 防中介 proxy idle 斷線
 >   - **每日 cron retention sweep**（dms 7d / 過期 token / share / invite）+ `cron_runs` 稽核表
 >   - **`/api/admin/health` 儀表**（後端 + 前端 dashboard，session-stored secret，30s auto-refresh）
@@ -359,6 +360,31 @@ gateway.ts ──verifyJWT──► GameRoomDO
   - Uno：`UnoCardChip` 顏色背景 + 中文牌身（跳過/反轉/+2/★/+4）；badge 帶顏色中文 + Wild 換色標示 + 效果說明（「下家 +2」/「下家 +4」/「跳過下家」/「反轉」）。
   - Yahtzee：`yz_roll` 列保留位置 `#1 #3` + 5 顆 🔒/🎲 視覺化；`yz_score` 槽位中文（一點/三條/葫蘆/小順/大順/快艇/機會）+ 英文小字輔助。
   - 第十四批進一步走 `useT()` — 全部 hardcoded zh 抽成 dict keys（zh + en），EN locale 也讀得通。
+
+### ✅ 第十六批（2026-05-08）：實站真人驗收洞 + Uno forfeit 統一 + ENGINE_VERSION 5
+
+**起因**：實站真人驗收連串紅燈，靜態程式碼 + 自動測試全綠卻在 prod 撞到 4 個潛在問題。Playwright e2e stub WS 整層、單元測試繞過 parser、bot 自玩 arena 不走人類路徑——三個 layer 一起讓 batch 13–15 的洞潛伏一週才被真人抓到。
+
+**🔴 紅燈（已 ship）**
+- **Prod `/rooms/:id/join` WS handshake 500**（`src/utils/trace.ts`，commit `f91d30a`）：`withTrace` 對每個 response 做 `new Response(res.body, {...})` 重包以 stamp `X-Request-Id`，把 status-101 升級回應的特殊 `webSocket` 欄位丟掉，CF runtime 翻成 500。fix：`status === 101` 直接 short-circuit 回原 Response 不重包，仍寫 `request_complete` log line。Test：`test/trace.test.ts` 加「101 passes through untouched (identity assert)」。
+- **WS action allowlist 漏 uno+yahtzee**（`src/utils/wsFrame.ts`，commit `26e398e`）：Uno (`uno_play`/`uno_draw`/`uno_pass`) + Yahtzee (`yz_roll`/`yz_score`) 在 batch 13 ship 時沒同步 `ACTION_TYPES` Set。人類 action frame 在 parser 就被擋掉，看起來像「BOT_x 卡住」實際是 human 沒 actioned。Bot 座位繞過 parser 直接 `engine.processAction` 所以表面健康。Symptom 經 wrangler tail 確認 `request_complete` 沒走到 action 路徑才反推到這條。Memory `feedback_ws_action_allowlist.md` 鎖：新增遊戲必同時更新 `wsFrame.ts` allowlist。
+- **Bot dispatch 漏 uno+yahtzee**（`src/do/GameRoomDO.ts`，commit `2e7dab5`）：`computeBotAction` + `checkBotTurn` 只有 bigTwo/texas/mahjong 分支，uno+yahtzee 落到 mahjong fallback，cast `UnoStateView`/`YahtzeeStateView` 為 `MahjongStateView` 後讀 `awaitingReactionsFrom` 會 throw → 原本路徑只 console.error 然後靜默吞 → bot 鏈沒 reschedule → 卡住。fix：補 5 款 explicit dispatch（uno → `getUnoBotAction` / yahtzee → `getYahtzeeBotAction`）。
+
+**🟡 黃燈（已 ship）**
+- **Uno forfeit 規則對齊**（`src/game/UnoStateMachine.ts`，commit `2e7dab5`）：原本 forfeit 是 hand-points + 50，與 BigTwo/Mahjong/Texas/Yahtzee 的固定 -200/+200/0 不同。改成相同模型，wallet ledger 跨五款一致；自然結算（lastCardPlayed）保留 hand-points 規則不變。**ENGINE_VERSION 4 → 5**；SW cache `chiyigo-tg-v4` → `v5`（per coupling rule）。`UnoStateMachine.test.ts` 重寫 forfeit 測試成 4 人 fixed-pot 模型。
+- **defensive：bot computation throw → forceSettle**（`src/do/GameRoomDO.ts`，commit `d9d92bc`）：原本 `computeBotAction` throw 時設 `action=null` 然後 `if (!action) return` 靜默吞掉。但 alarm() handler 已經把 bot alarm 移出 `this.alarms`，沒有後續 reschedule → 整條 bot 鏈死掉，無觀測訊號。fix：throw 路徑改為 `forceSettle("timeout")` + log + handleSettlement，silent stuck 變成可見 settlement 行 + log line，下次 regression 可診斷。`null` 路徑（race condition / turn moved on）保持靜默是對的，因為一定有另一個 alarm 對應新 currentTurn。
+
+**🟢 綠燈（已 ship）**
+- **Yahtzee 第二顆 +100 bonus 鎖測**（`test/YahtzeeStateMachine.test.ts`，commit `11d261e`）：4 個 case — 正常 +100、forced-zero 不給（deliberate deviation）、score INTO yahtzee slot 不給、連續累計 +200。
+- **autoActionOnTimeout 契約鎖測**（`test/GameEngineAdapter.test.ts`，commit `a1e8c08`）：5 款遊戲都鎖「outcome 必前進狀態或結算（不可 silent no-op）」；額外 case：uno hasDrawn=true 時代打不能再 uno_draw。直接補上原本 Playwright 真人腳本沒覆蓋的逾時路徑。
+- **`MANUAL_TODO.md` 啟動指令修正**（commit `a1e8c08`）：root 沒有 `dev` script，正確指令是 `npx wrangler dev`；Vite 加 `--host 127.0.0.1` 註腳（Windows v6/v4 gotcha 已記在 memory `project_e2e_harness.md`）。
+
+**測試矩陣變化**：383 → **394 tests**（+11：trace 101 短路 1 / Yahtzee bonus 4 / Uno forfeit 重寫 1 / autoActionOnTimeout 6）。tsc 0 / frontend build 0 / `test:workers` 16 持平。
+
+**未動（明確標）**
+- `chiyigo OIDC` 真人驗收：等 chiyigo console 設 `OIDC_CLIENT_ID` + redirect_uri 白名單；scaffold 完整在批 13。
+- 五款遊戲耗時驗收：52 回合 Yahtzee 完整結算 / 完整 60s 斷線→重開查 ledger / 三輪 Tournament 派彩 / spectator 牌面遮罩 — 自動測試已蓋核心契約，真人路徑核心 action 已通，剩耗時跑完即可。
+- `npm audit --production` — 這批沒跑。
 
 ### ✅ 第十四批（2026-05-07）：post-ship 健康度體檢 + 加固
 
