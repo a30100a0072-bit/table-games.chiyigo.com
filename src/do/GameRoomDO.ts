@@ -518,15 +518,25 @@ export class GameRoomDO implements DurableObject {
     if (!this.engine || this.room?.phase !== "playing") return;
     const gt = this.room.gameType;
 
-    // Compute action; null = bot has no current obligation (race condition). // L3_架構含防禦觀測
+    // Compute action. Distinguish two outcomes:
+    //   - throw  → BotAI bug (e.g. unexpected view shape). The bot owns the
+    //     turn but cannot act. Silently dropping leaves the game stuck with
+    //     no further alarms. Force-settle so the lobby unblocks and the
+    //     incident shows up as a real settlement row.
+    //   - null   → race condition (turn moved on while alarm was queued).
+    //     Safe to drop; another alarm exists for the new active player.
+    //                                                                     // L3_架構含防禦觀測
     let action: PlayerAction | null;
     try {
       action = this.computeBotAction(gt, botId);
     } catch (err) {
       console.error(`[BotAI] action computation failed for ${botId}:`, err);
-      action = null;
+      const settlement = this.engine.forceSettle("timeout");
+      this.broadcastViews();
+      await this.handleSettlement(settlement);
+      return;
     }
-    if (!action) return;     // turn moved on while we were waiting — drop silently // L3_架構含防禦觀測
+    if (!action) return;     // race-condition no-op; another alarm covers the new turn. // L3_架構含防禦觀測
 
     let outcome: ReturnType<IGameEngine["processAction"]>;
     try {
