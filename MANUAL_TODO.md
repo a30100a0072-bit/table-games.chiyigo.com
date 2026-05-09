@@ -29,6 +29,56 @@ npx vite --host 127.0.0.1 --port 5173
 
 需 `OIDC_CLIENT_ID` 設定到 `wrangler.toml` 的 `[vars]` 與 `[env.production.vars]`，redirect_uri 白名單同時加 dev + production。
 
+### 註冊流程（2026-05-09 已對齊 chiyigo admin schema）
+
+`client_id` 已敲定 `playing-games`（小寫英數+`-`，validator regex `^[a-z0-9][a-z0-9_-]{1,63}$`）。`wrangler.toml` 兩處 `OIDC_CLIENT_ID` 已預填，POST 成功後直接 `wrangler deploy` 即生效。
+
+對 chiyigo admin endpoint POST：
+
+```http
+POST https://chiyigo.com/api/admin/oauth-clients
+Authorization: Bearer <admin token with admin:clients:write>
+Content-Type: application/json
+
+{
+  "client_id": "playing-games",
+  "client_name": "玩牌遊戲（大老二 / 麻將 / 撲克 / Uno / Yahtzee）",
+  "app_type": "web",
+  "redirect_uris": [
+    "https://big-two-frontend.pages.dev/auth/callback",
+    "http://127.0.0.1:5173/auth/callback"
+  ],
+  "post_logout_redirect_uris": [
+    "https://big-two-frontend.pages.dev/",
+    "http://127.0.0.1:5173/"
+  ],
+  "frontchannel_logout_uris": [],
+  "backchannel_logout_uri": null,
+  "allowed_scopes": ["openid", "profile", "email"],
+  "origins": ["https://big-two-frontend.pages.dev", "http://127.0.0.1:5173"],
+  "aud": "playing-games"
+}
+```
+
+預期 `201 { client_id: "playing-games" }`。
+
+### 未來選項：參與 chiyigo 全域登出（OP→RP 反向）
+
+目前 `frontchannel_logout_uris: []` / `backchannel_logout_uri: null` —
+使用者在 chiyigo 或其他 RP 登出時，遊戲端不會即時收到通知，要等
+silent refresh 撞 `invalid_grant` 才察覺。
+
+刻意這樣選的原因：牌局中途被踢出 session 體驗很差，讓 refresh
+自然過期更順。
+
+未來若要參與，補一個 SPA 頁清 token 即可（chiyigo 用 hidden iframe
+載入），不需要 backend：
+
+- 前端新增 `/frontchannel-logout` 路由：清 localStorage token + 通知
+  Worker 撤銷 refresh row
+- chiyigo admin PATCH 此 client：
+  `frontchannel_logout_uris: ["https://big-two-frontend.pages.dev/frontchannel-logout"]`
+
 ---
 
 ## Uno（PR 2 — commit 77200a5）

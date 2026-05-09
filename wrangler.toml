@@ -10,7 +10,7 @@ compatibility_date = "2024-09-23"
 # must be allowlisted in the chiyigo console.
 [vars]
 OIDC_ISSUER       = "https://chiyigo.com"
-OIDC_CLIENT_ID    = ""                                                # fill via chiyigo registration, then `wrangler deploy`
+OIDC_CLIENT_ID    = "playing-games"                                   # registered via chiyigo admin POST /api/admin/oauth-clients
 OIDC_REDIRECT_URI = "http://127.0.0.1:5173/auth/callback"             # local dev default; override per-env below
 
 # ── Migrations (free plan requires new_sqlite_classes) ────────────────── # L3_架構含防禦觀測
@@ -64,7 +64,7 @@ name = "big-two-game-production"
 
 [env.production.vars]
 OIDC_ISSUER       = "https://chiyigo.com"
-OIDC_CLIENT_ID    = ""                                                          # fill via chiyigo registration
+OIDC_CLIENT_ID    = "playing-games"                                             # registered via chiyigo admin POST /api/admin/oauth-clients
 OIDC_REDIRECT_URI = "https://big-two-frontend.pages.dev/auth/callback"          # adjust if you point a custom domain at Pages
 
 [[env.production.durable_objects.bindings]]
