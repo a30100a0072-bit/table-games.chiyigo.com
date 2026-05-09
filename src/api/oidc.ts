@@ -283,7 +283,18 @@ export async function oauthLogout(playerId: string, env: Partial<OidcEnv>): Prom
   let endSession: string | null = null;
   try {
     const disco = await loadDiscovery(env.OIDC_ISSUER);
-    endSession  = disco.end_session_endpoint ?? null;
+    if (disco.end_session_endpoint) {
+      // Append client_id + post_logout_redirect_uri so chiyigo knows
+      // which RP is logging out and where to send the user back. The
+      // post_logout URI must match one of the values registered with
+      // the IdP — we derive it from OIDC_REDIRECT_URI's origin so dev
+      // and production each get their own host.                       // L2_鎖定
+      const u           = new URL(disco.end_session_endpoint);
+      const redirectUri = new URL(env.OIDC_REDIRECT_URI);
+      u.searchParams.set("client_id",                env.OIDC_CLIENT_ID);
+      u.searchParams.set("post_logout_redirect_uri", `${redirectUri.origin}/`);
+      endSession = u.toString();
+    }
   } catch {
     // Discovery failure on logout is non-fatal — client-side state is
     // already cleared, the IdP session can be ended on next login.

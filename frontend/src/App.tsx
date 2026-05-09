@@ -12,6 +12,7 @@ import ReplaysModal     from "./components/ReplaysModal";
 const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
 import { listMyTournamentsApi } from "./api/http";
 import type { MyTournamentRow } from "./api/http";
+import { logoutOidcSession } from "./api/oidc";
 import { useT } from "./i18n/useT";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -297,7 +298,26 @@ export default function App() {
           });
         }}
         initialJoinToken={pendingJoinToken}
-        onLogout={() => setScreen({ name: "login" })}
+        onLogout={async () => {
+          // OIDC users: drop the worker-side refresh row and bounce
+          // through chiyigo's end_session_endpoint so chiyigo's own
+          // session is also terminated (RP→OP front-channel logout).
+          // Falls back to local-only reset if the IdP doesn't publish
+          // an end_session_endpoint or the worker call fails.       // L2_鎖定
+          if (screen.name === "select" && screen.playerId.startsWith("oidc:")) {
+            try {
+              const { endSessionEndpoint } = await logoutOidcSession(screen.token);
+              if (endSessionEndpoint) {
+                window.location.assign(endSessionEndpoint);
+                return;
+              }
+            } catch {
+              // Network / 401 — proceed to local reset; the refresh row
+              // either never existed or already expired server-side.
+            }
+          }
+          setScreen({ name: "login" });
+        }}
       />
     );
   } else if (screen.name === "lobby") {
