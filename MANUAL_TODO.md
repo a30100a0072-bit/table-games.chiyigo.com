@@ -21,11 +21,16 @@ npx vite --host 127.0.0.1 --port 5173
 
 ## chiyigo OIDC（等 chiyigo console 設定後）
 
-- [ ] 登入頁點「使用 chiyigo 登入」→ 跳到 chiyigo IdP
-- [ ] 完成 IdP 認證 → 回到 `/auth/callback` → 拿到 JWT
-- [ ] 確認 `playerId` 是 `oidc:<sub>` 前綴
+- [x] 登入頁點「使用 chiyigo 登入」→ 跳到 chiyigo IdP
+- [x] 完成 IdP 認證 → 回到 `/auth/callback` → 拿到 JWT（2026-05-09 通過）
+- [ ] 確認 `playerId` 是 `oidc:<sub>` 前綴（DevTools localStorage 看一眼）
 - [ ] silent refresh：靜置 ~1h 後仍能正常請求（背景刷 token）
-- [ ] 三方登出：點登出 → 跳 chiyigo `end_session_endpoint` → 確認 chiyigo 那邊也登出
+- [x] 三方登出：點登出 → 跳 chiyigo `end_session_endpoint` → 確認 chiyigo 那邊也登出（2026-05-09 通過，含 RP→OP 方向）
+
+> ⚠️ 兩個刻意不做的設計缺口（不是 bug）：
+> 1. **沒有 silent SSO auto-login** — chiyigo 已登入時來到本站仍需再按一次登入鈕
+> 2. **沒有 OP→RP backchannel/frontchannel logout** — chiyigo 端登出時，本站要等使用者重整或下次 silent refresh 撞 `invalid_grant` 才察覺
+> 兩者皆評估後選擇不做（牌局中途被踢體驗差），未來要補時參考下方「未來選項」段。
 
 需 `OIDC_CLIENT_ID` 設定到 `wrangler.toml` 的 `[vars]` 與 `[env.production.vars]`，redirect_uri 白名單同時加 dev + production。
 
