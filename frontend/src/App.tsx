@@ -30,13 +30,17 @@ type Screen =
 export default function App() {
   const { t } = useT();
   const [screen, setScreen] = useState<Screen>(() => {
-    // OIDC redirect lands at /auth/callback#code=…&state=…. Detect on
-    // initial render so the callback screen mounts before LoginScreen
-    // would briefly flash. Path-only check (fragments are not in
-    // window.location.pathname) — fragment parsing happens inside the
-    // OAuthCallbackScreen once it mounts.                             // L2_隔離
-    if (typeof window !== "undefined" && window.location.pathname === "/auth/callback") {
-      return { name: "oauth-callback" };
+    // OIDC redirect lands at /auth/callback?code=…&state=… (chiyigo
+    // downgrades response_mode=fragment to query). Also accept the same
+    // params at root path — Cloudflare Pages occasionally normalises the
+    // callback path to `/` while preserving the query (observed
+    // 2026-05-09); detecting `?code=&state=` at any path keeps us
+    // resilient to that edge.                                         // L2_隔離
+    if (typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      const isCallbackPath = u.pathname === "/auth/callback";
+      const hasCallbackQuery = u.searchParams.has("code") && u.searchParams.has("state");
+      if (isCallbackPath || hasCallbackQuery) return { name: "oauth-callback" };
     }
     return { name: "login" };
   });

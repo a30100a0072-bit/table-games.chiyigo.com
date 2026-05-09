@@ -1,4 +1,6 @@
-# Cloudflare Pages SPA fallback. Required for client-side routes that
-# aren't backed by a real file in dist/ — without this, /auth/callback
-# (the OIDC redirect target) returns a 404 page.                       # L2_隔離
-/auth/callback   /index.html   200
+# Cloudflare Pages SPA fallback. Wildcard form is required: an exact
+# rule like `/auth/callback /index.html 200` is silently overridden by
+# Pages's directory-normalisation 308 (path → `/`), which strips the
+# `/auth/callback` from the OIDC redirect — observed in prod 2026-05-09.
+# `/*` is the standard SPA pattern and applies before normalisation.    # L2_隔離
+/*   /index.html   200
