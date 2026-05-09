@@ -274,6 +274,11 @@ export interface TokenResponse {
   scope?:        string;
 }
 
+// chiyigo's /oauth/token endpoint deviates from RFC 6749 §3.2 (which
+// mandates application/x-www-form-urlencoded) and requires JSON bodies
+// instead. Verified 2026-05-09 — form-encoded posts get a 415 with
+// {"error":"Content-Type must be application/json"}. Both exchange and
+// refresh paths are affected.                                           // L2_鎖定
 export async function exchangeCode(
   discovery:   OidcDiscovery,
   clientId:    string,
@@ -282,17 +287,16 @@ export async function exchangeCode(
   codeVerifier: string,
   fetchFn:     FetchLike = fetch,
 ): Promise<TokenResponse> {
-  const body = new URLSearchParams({
-    grant_type:    "authorization_code",
-    code,
-    redirect_uri:  redirectUri,
-    client_id:     clientId,
-    code_verifier: codeVerifier,
-  });
   const res = await fetchFn(discovery.token_endpoint, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-    body,
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      grant_type:    "authorization_code",
+      code,
+      redirect_uri:  redirectUri,
+      client_id:     clientId,
+      code_verifier: codeVerifier,
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -307,15 +311,14 @@ export async function refreshTokens(
   refreshToken: string,
   fetchFn:     FetchLike = fetch,
 ): Promise<TokenResponse> {
-  const body = new URLSearchParams({
-    grant_type:    "refresh_token",
-    refresh_token: refreshToken,
-    client_id:     clientId,
-  });
   const res = await fetchFn(discovery.token_endpoint, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-    body,
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      grant_type:    "refresh_token",
+      refresh_token: refreshToken,
+      client_id:     clientId,
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
