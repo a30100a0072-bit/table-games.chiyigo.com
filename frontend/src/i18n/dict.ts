@@ -325,6 +325,8 @@ const ZH = {
   "rep.yz.slot.largeStraight":"大順",
   "rep.yz.slot.yahtzee":     "快艇",
   "rep.yz.slot.chance":      "機會",
+  "rep.hearts.pass":         "交換",
+  "rep.hearts.play":         "出牌",
 
   // orientation gate
   "orient.rotate":           "請將設備轉為橫向",
@@ -833,6 +835,8 @@ const EN: Partial<Record<DictKey, string>> = {
   "rep.yz.slot.largeStraight":"Large Straight",
   "rep.yz.slot.yahtzee":      "Yahtzee",
   "rep.yz.slot.chance":       "Chance",
+  "rep.hearts.pass":          "Pass",
+  "rep.hearts.play":          "Play",
 
   "orient.rotate":            "Please rotate to landscape",
   "orient.why":               "This game uses a wide 5-zone table layout — portrait crushes the hand and pot areas.",

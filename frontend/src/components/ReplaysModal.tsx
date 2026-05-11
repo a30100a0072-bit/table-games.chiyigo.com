@@ -281,12 +281,22 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       );
       break;
     }
-    // Hearts 已在 PlayerAction union 中佔位（PR 2.1 infra），ReplaysModal 的
-    // Hearts 卡片渲染（顏色 chip + 中文牌身）留待 PR 3 補上。                  // L2_隔離
-    case "hearts_pass":
+    case "hearts_pass": {
+      badge = `↔ ${t("rep.hearts.pass")}`;
+      body = (
+        <div className="flex gap-1">
+          {a.cards.map((c, i) => <PokerCardChip key={i} card={c} />)}
+        </div>
+      );
+      break;
+    }
     case "hearts_play": {
-      badge = (a as { type: string }).type;
-      body  = <span>{badge}</span>;
+      const c = a.card;
+      const isQS = c.suit === "spades" && c.rank === "Q";
+      const isHeart = c.suit === "hearts";
+      const tag = isQS ? " · ♠Q" : isHeart ? " · ♥" : "";
+      badge = `▶ ${t("rep.hearts.play")}${tag}`;
+      body = <PokerCardChip card={c} />;
       break;
     }
     default: {
@@ -780,9 +790,12 @@ function fmtEventOneLine(e: ReplayEvent, t: TFunction): string {
         : `${who} ${t("rep.yz.rollAll")}`;
     }
     case "yz_score": return `${who} ${t("rep.yz.fill", { slot: yzSlotLabel(t, a.slot) })}`;
-    case "hearts_pass":
+    case "hearts_pass": {
+      const cards = a.cards.map(c => `${c.rank}${SUIT_SYMBOL[c.suit] ?? ""}`).join(" ");
+      return `${who} ${t("rep.hearts.pass")} ${cards}`;
+    }
     case "hearts_play":
-      return `${who} ${a.type}`;
+      return `${who} ${t("rep.hearts.play")} ${a.card.rank}${SUIT_SYMBOL[a.card.suit] ?? ""}`;
     default: {
       const _exhaustive: never = a;
       void _exhaustive;
