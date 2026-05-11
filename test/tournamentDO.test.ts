@@ -235,7 +235,7 @@ describe("TournamentDO lifecycle", () => {
   // Tournament orchestration is gameType-agnostic — these guards lock that in
   // for Uno + Yahtzee so a future state-machine refactor that broke the
   // settlement contract would surface here instead of in production.
-  it.each(["uno", "yahtzee"] as const)(
+  it.each(["uno", "yahtzee", "hearts"] as const)(
     "%s tournament: 4 joins → 3 rounds → settles with correct winner + no blind escalation",
     async (gameType) => {
       const t = makeDO();
