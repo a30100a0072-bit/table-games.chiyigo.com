@@ -98,7 +98,7 @@ describe("forceSettle", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe("autoActionOnTimeout — bot 代打人類", () => {
-  for (const gt of ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as GameType[]) {
+  for (const gt of ["bigTwo", "mahjong", "texas", "uno", "yahtzee", "hearts"] as GameType[]) {
     it(`${gt} 對 currentTurn 玩家代打 → outcome 帶 appliedAction 或 settlement`, () => {
       const e = createEngine({ gameType: gt, gameId: "g", roundId: "r", playerIds: PLAYERS });
       const offender = e.currentTurn();
@@ -140,5 +140,64 @@ describe("processAction 動作型別防呆", () => {
     const e = createEngine({ gameType: "texas", gameId: "g", roundId: "r", playerIds: PLAYERS });
     expect(() => e.processAction("p1", { type: "pass" })).toThrow();          // L3_邏輯安防
     expect(() => e.processAction("p1", { type: "mj_pass" })).toThrow();
+  });
+  it("hearts 拒絕其他遊戲動作", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    expect(() => e.processAction("p1", { type: "pass" })).toThrow();
+    expect(() => e.processAction("p1", { type: "fold" })).toThrow();
+    expect(() => e.processAction("p1", { type: "mj_pass" })).toThrow();
+    expect(() => e.processAction("p1", { type: "uno_draw" })).toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// (5) hearts engine wiring — createEngine / restoreEngine / forceSettle
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("hearts engine 接線", () => {
+  it("createEngine('hearts') 給出 passing-phase 視圖、currentTurn 在 4 人席之中", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    expect(e.gameType).toBe("hearts");
+    expect(PLAYERS).toContain(e.currentTurn());
+    const view = e.getView("p1") as { phase: string };
+    expect(view.phase).toBe("passing");
+  });
+
+  it("snapshot / restore 往返後 view 一致", () => {
+    const e1 = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    const snap = JSON.parse(JSON.stringify(e1.snapshot()));
+    const e2 = restoreEngine("hearts", snap);
+    expect(e2.currentTurn()).toBe(e1.currentTurn());
+    expect(JSON.stringify(e2.getView("p1"))).toBe(JSON.stringify(e1.getView("p1")));
+  });
+
+  it("forceSettle('timeout') 產出合法 SettlementResult，players[].length=4", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    const s = e.forceSettle("timeout");
+    expect(s.reason).toBe("timeout");
+    expect(s.players).toHaveLength(4);
+    expect(PLAYERS).toContain(s.winnerId);
+    expect(s.heartsDetail).toBeDefined();
+  });
+
+  it("forceSettle('disconnect', offender) — 棄局者 -200、winner +200、其他 0", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    const s = e.forceSettle("disconnect", PLAYERS[0]!);
+    const off = s.players.find(p => p.playerId === PLAYERS[0])!;
+    expect(off.scoreDelta).toBe(-200);
+    const sum = s.players.reduce((n, p) => n + p.scoreDelta, 0);
+    expect(sum).toBe(0);
+  });
+
+  it("forceSettle 拒絕 'lastCardPlayed' 理由", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    expect(() => e.forceSettle("lastCardPlayed")).toThrow();
+  });
+
+  it("spectatorView phantom 自己 + 4 個 opponents", () => {
+    const e = createEngine({ gameType: "hearts", gameId: "g", roundId: "r", playerIds: PLAYERS });
+    const v = e.getSpectatorView() as { self: { hand: unknown[] }; opponents: unknown[] };
+    expect(v.self.hand.length).toBe(0);
+    expect(v.opponents.length).toBe(4);
   });
 });

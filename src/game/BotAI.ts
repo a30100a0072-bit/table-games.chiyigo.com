@@ -16,6 +16,7 @@ import type {
   PokerStateView,
   UnoCard, UnoColor, UnoStateView,
   YahtzeeStateView, YahtzeeSlot, DiceTuple, HeldTuple,
+  HeartsStateView,
 } from "../types/game";
 import { YAHTZEE_SLOTS } from "../types/game";
 import { canPlay as canPlayUno, unoCardPoints } from "./UnoStateMachine";
@@ -849,4 +850,114 @@ export function getYahtzeeBotAction(view: YahtzeeStateView): PlayerAction {
   }
   // No rolls left — must score.
   return { type: "yz_score", slot: pickBestSlot(view.dice, open) };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Hearts
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Pass phase: dump cards that are most dangerous to KEEP — ♠Q first (13
+// pts liability), then high ♠ above Q (♠A/♠K can capture ♠Q if pushed),
+// then high ♥. Off-suit high cards mildly penalised since they often
+// win unwanted tricks once you void into ♠Q dumps from others.
+//
+// Play phase: SM has already filtered to legalCards. Strategy:
+//   · Leading        → play lowest non-point (legalCards already excludes
+//                      ♥ pre-break unless forced).
+//   · Following:
+//     - has led suit → if can duck below trick high, dump highest below
+//                      (offload high without winning); else play lowest
+//                      (forced over-cut).
+//     - void in led  → drop ♠Q first, else high ♥, else high off-suit.
+//
+// No Shoot the Moon detection in v1 — arena fairness test (PR 2.8) will
+// flag if seats systematically lose because nobody attempts moons.
+
+const RANK_VAL_HEARTS: Readonly<Record<Rank, number>> = {
+  "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+  "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14,
+} as const;
+
+function isSpadeQ(c: Card): boolean { return c.suit === "spades" && c.rank === "Q"; }
+
+function passDanger(c: Card): number {
+  if (isSpadeQ(c)) return 1000;
+  if (c.suit === "spades") {
+    if (c.rank === "A") return 95;
+    if (c.rank === "K") return 85;
+    return 0;  // ♠2-♠J are useful for ducking under ♠Q
+  }
+  if (c.suit === "hearts") {
+    // ♥A=54, ♥2=42 — heart pile is collectively dangerous regardless of rank.
+    return 40 + RANK_VAL_HEARTS[c.rank];
+  }
+  // clubs/diamonds: prefer to keep low cards (good for ducking on those suits);
+  // high off-suit cards are mild liability since they win tricks on void.
+  return RANK_VAL_HEARTS[c.rank] / 4;
+}
+
+function pickHeartsPass(hand: Card[]): [Card, Card, Card] {
+  // Defensive: hand must have >=3 cards (SM enforces 13 at pass time).
+  const sorted = [...hand].sort((a, b) => passDanger(b) - passDanger(a));
+  return [sorted[0]!, sorted[1]!, sorted[2]!];
+}
+
+function pickHeartsPlay(view: HeartsStateView): Card {
+  const legal = view.legalCards;
+  if (legal.length === 0) {
+    // Shouldn't happen if it's the bot's turn and they have any card —
+    // SM filter always returns at least one option. Defensive fallback:
+    // play first hand card.
+    return view.self.hand[0]!;
+  }
+  if (legal.length === 1) return legal[0]!;
+
+  const trick = view.currentTrick;
+  if (trick.length === 0) {
+    // Leading. legalCards already removed ♥ pre-break (unless all-♥).
+    // Goal: lead low so we don't accidentally win with high. ♠Q never
+    // played as a lead (it's only a liability we want others to capture)
+    // unless it's literally the only legal card — handled above.
+    const safe = legal.filter(c => !isSpadeQ(c));
+    const pool = safe.length > 0 ? safe : legal;
+    return [...pool].sort((a, b) => RANK_VAL_HEARTS[a.rank] - RANK_VAL_HEARTS[b.rank])[0]!;
+  }
+
+  // Following.
+  const ledSuit = trick[0]!.card.suit;
+  const trickCardsInSuit = trick.map(p => p.card).filter(c => c.suit === ledSuit);
+  const inSuit = legal.filter(c => c.suit === ledSuit);
+
+  if (inSuit.length > 0) {
+    const currentHigh = trickCardsInSuit.reduce((m, c) => Math.max(m, RANK_VAL_HEARTS[c.rank]), 0);
+    const below = inSuit.filter(c => RANK_VAL_HEARTS[c.rank] < currentHigh);
+    if (below.length > 0) {
+      // Dump the HIGHEST safe card — offloads high holdings while still
+      // letting someone else take the trick.
+      return [...below].sort((a, b) => RANK_VAL_HEARTS[b.rank] - RANK_VAL_HEARTS[a.rank])[0]!;
+    }
+    // Forced over-cut: play lowest in-suit (lose the least if we end up
+    // taking it).
+    return [...inSuit].sort((a, b) => RANK_VAL_HEARTS[a.rank] - RANK_VAL_HEARTS[b.rank])[0]!;
+  }
+
+  // Void in led suit — free choice. Dump dangerous cards.
+  const sq = legal.find(isSpadeQ);
+  if (sq) return sq;
+
+  const hearts = legal.filter(c => c.suit === "hearts");
+  if (hearts.length > 0) {
+    return [...hearts].sort((a, b) => RANK_VAL_HEARTS[b.rank] - RANK_VAL_HEARTS[a.rank])[0]!;
+  }
+
+  // No points to dump — drop the highest off-suit card to thin out
+  // future winners.
+  return [...legal].sort((a, b) => RANK_VAL_HEARTS[b.rank] - RANK_VAL_HEARTS[a.rank])[0]!;
+}
+
+export function getHeartsBotAction(view: HeartsStateView): PlayerAction {
+  if (view.phase === "passing") {
+    return { type: "hearts_pass", cards: pickHeartsPass(view.self.hand) };
+  }
+  return { type: "hearts_play", card: pickHeartsPlay(view) };
 }

@@ -12,11 +12,14 @@ import { UnoStateMachine } from "./UnoStateMachine";
 import type { UnoSnapshot } from "./UnoStateMachine";
 import { YahtzeeStateMachine } from "./YahtzeeStateMachine";
 import type { YahtzeeSnapshot } from "./YahtzeeStateMachine";
-import { getBigTwoBotAction, getMahjongBotAction, getUnoBotAction, getYahtzeeBotAction } from "./BotAI";
+import { HeartsStateMachine } from "./HeartsStateMachine";
+import type { HeartsSnapshot } from "./HeartsStateMachine";
+import { getBigTwoBotAction, getMahjongBotAction, getUnoBotAction, getYahtzeeBotAction, getHeartsBotAction } from "./BotAI";
 
 import type {
   GameType, PlayerId, PlayerAction, SettlementResult, SettlementReason,
   GameStateView, MahjongStateView, PokerStateView, UnoStateView, YahtzeeStateView,
+  HeartsStateView,
 } from "../types/game";
 
 /** Sentinel playerId used in spectator views — guaranteed not collidable
@@ -28,7 +31,7 @@ export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
  *  (mahjong fan calc, texas side-pot rules, big two combo ordering).
  *  Replays stamped with an older version still surface the final
  *  settlement, but the client refuses to step through the action list.   */
-export const ENGINE_VERSION = 5;
+export const ENGINE_VERSION = 6;
 
 // ──────────────────────────────────────────────
 //  統一介面  (L3_架構)
@@ -423,6 +426,72 @@ class YahtzeeEngine implements IGameEngine {
 }
 
 // ──────────────────────────────────────────────
+//  Hearts Adapter
+// ──────────────────────────────────────────────
+
+class HeartsEngine implements IGameEngine {
+  readonly gameType: GameType = "hearts";
+  private m: HeartsStateMachine;
+  constructor(m: HeartsStateMachine) { this.m = m; }
+
+  processAction(playerId: PlayerId, action: PlayerAction): ProcessOutcome {
+    const t = action.type;
+    if (t !== "hearts_pass" && t !== "hearts_play")
+      throw new Error("illegal action type for hearts");
+    const r = this.m.process(playerId, action);
+    if (!r.ok) throw new Error(r.error);
+    return { settlement: r.settlement ?? null };
+  }
+  getView(playerId: PlayerId)  { return this.m.viewFor(playerId); }
+  getSpectatorView(): HeartsStateView {
+    return this.m.spectatorView(SPECTATOR_PLAYER_ID);
+  }
+  snapshot()                              { return this.m.snapshot(); }
+  currentTurn(): PlayerId                 { return this.m.currentTurn(); }
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
+    if (reason === "lastCardPlayed") throw new Error("invalid forceSettle reason");
+    return this.m.forceSettle(reason, forfeitPlayerId);
+  }
+  tickReactionDeadline(): ProcessOutcome { return { settlement: null }; }   // hearts no-op
+
+  // Hearts timeout: ask BotAI for an action. If illegal (rare race with
+  // state change), fall through: pass-phase picks first 3 cards from hand
+  // as a defensive last-ditch; play-phase plays the first legal card. The
+  // BotAI stub in PR 2.6 already returns legal-by-construction, so the
+  // fallback only trips on snapshot/restore races.                          // L2_實作
+  autoActionOnTimeout(playerId: PlayerId): ProcessOutcome {
+    const view = this.m.viewFor(playerId) as HeartsStateView;
+    // Passing phase is parallel — only act when this specific seat still
+    // owes a pass (myPass === null). Play phase: only when on-turn.
+    if (view.phase === "passing") {
+      if (view.self.myPass !== null) return { settlement: null };
+    } else if (view.phase === "playing") {
+      if (view.currentTurn !== playerId) return { settlement: null };
+    } else {
+      return { settlement: null };  // between_hands / settled — nothing to auto.
+    }
+    const action = getHeartsBotAction(view);
+    const r = this.m.process(playerId, action as never);
+    if (r.ok) return { settlement: r.settlement ?? null, appliedAction: action };
+
+    // Defensive fallback. Pass phase: try first 3 cards. Play phase: first
+    // legal card (or first hand card if legalCards is empty — should never
+    // happen in playing phase but bound the failure mode).
+    if (view.phase === "passing") {
+      const h = view.self.hand;
+      const fb = { type: "hearts_pass", cards: [h[0]!, h[1]!, h[2]!] as [typeof h[0], typeof h[0], typeof h[0]] } as const;
+      const r2 = this.m.process(playerId, fb as never);
+      return { settlement: r2.ok ? r2.settlement ?? null : null, appliedAction: fb };
+    }
+    const fbCard = view.legalCards[0] ?? view.self.hand[0]!;
+    const fb = { type: "hearts_play", card: fbCard } as const;
+    const r2 = this.m.process(playerId, fb as never);
+    return { settlement: r2.ok ? r2.settlement ?? null : null, appliedAction: fb };
+  }
+  startNextHand(): void { this.m.startNextHand(); }
+}
+
+// ──────────────────────────────────────────────
 //  Factory + Restore
 // ──────────────────────────────────────────────
 
@@ -462,10 +531,8 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
       return new UnoEngine(new UnoStateMachine(opts.gameId, opts.roundId, opts.playerIds));
     case "yahtzee":
       return new YahtzeeEngine(new YahtzeeStateMachine(opts.gameId, opts.roundId, opts.playerIds));
-    // hearts 已在 GameType union 中佔位（PR 1 infra），尚未實作引擎；
-    // GAME_TYPES 不會暴露這款給 UI，因此正常路徑不會走到這裡。              // L2_隔離
     case "hearts":
-      throw new Error(`Engine not implemented yet for gameType: ${opts.gameType}`);
+      return new HeartsEngine(new HeartsStateMachine(opts.gameId, opts.roundId, opts.playerIds));
   }
 }
 
@@ -482,6 +549,6 @@ export function restoreEngine(gameType: GameType, snap: unknown): IGameEngine {
     case "yahtzee":
       return new YahtzeeEngine(YahtzeeStateMachine.restore(snap as YahtzeeSnapshot));
     case "hearts":
-      throw new Error(`restoreEngine not implemented yet for gameType: ${gameType}`);
+      return new HeartsEngine(HeartsStateMachine.restore(snap as HeartsSnapshot));
   }
 }

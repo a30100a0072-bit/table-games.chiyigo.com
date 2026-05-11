@@ -6,9 +6,11 @@ import {
   getBigTwoBotAction,
   getMahjongBotAction,
   getTexasBotAction,
+  getHeartsBotAction,
 } from "../src/game/BotAI";
 import type {
   Card, GameStateView, MahjongStateView, MahjongTile, PokerStateView,
+  HeartsStateView, HeartsTrickPlay, PlayerId,
 } from "../src/types/game";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -709,5 +711,178 @@ describe("Texas Hold'em bot", () => {
       pots: [{ amount: 100, eligiblePlayerIds: ["BOT_1", "p2"] }],
     });
     expect(getTexasBotAction(v).type).toBe("fold");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Hearts
+// ════════════════════════════════════════════════════════════════════════════
+
+function C(suit: Card["suit"], rank: Card["rank"]): Card { return { suit, rank }; }
+
+function heartsView(over: Partial<HeartsStateView> & { self: HeartsStateView["self"] }): HeartsStateView {
+  const PIDS: PlayerId[] = ["p0", "p1", "p2", "p3"];
+  return {
+    gameId: "g", roundId: "r",
+    phase: over.phase ?? "playing",
+    self: over.self,
+    opponents: over.opponents ?? PIDS.filter(p => p !== over.self.playerId).map(p => ({
+      playerId: p, cardCount: 0, takenCount: 0, hasPassed: false,
+    })),
+    handIndex: over.handIndex ?? 0,
+    passDirection: over.passDirection ?? "left",
+    heartsBroken: over.heartsBroken ?? false,
+    currentTrick: over.currentTrick ?? [],
+    cumulativeScores: over.cumulativeScores ?? { p0: 0, p1: 0, p2: 0, p3: 0 },
+    legalCards: over.legalCards ?? over.self.hand,
+    currentTurn: over.currentTurn ?? over.self.playerId,
+    turnDeadlineMs: over.turnDeadlineMs ?? Date.now() + 30_000,
+  };
+}
+
+describe("Hearts bot — pass phase", () => {
+  it("always dumps ♠Q when held", () => {
+    const hand: Card[] = [
+      C("spades","Q"), C("clubs","3"), C("clubs","4"), C("clubs","5"),
+      C("diamonds","6"), C("diamonds","7"), C("diamonds","8"), C("diamonds","9"),
+      C("hearts","2"), C("hearts","3"), C("hearts","4"), C("hearts","5"), C("hearts","6"),
+    ];
+    const v = heartsView({ phase: "passing", self: { playerId: "p0", hand, cardCount: 13, takenCount: 0, myPass: null } });
+    const a = getHeartsBotAction(v);
+    expect(a.type).toBe("hearts_pass");
+    if (a.type !== "hearts_pass") return;
+    expect(a.cards.some(c => c.suit === "spades" && c.rank === "Q")).toBe(true);
+  });
+
+  it("prefers to dump high hearts over low off-suit cards", () => {
+    const hand: Card[] = [
+      C("clubs","2"), C("clubs","3"), C("clubs","4"), C("clubs","5"),
+      C("diamonds","2"), C("diamonds","3"), C("diamonds","4"), C("diamonds","5"),
+      C("hearts","A"), C("hearts","K"), C("hearts","Q"),
+      C("spades","2"), C("spades","3"),
+    ];
+    const v = heartsView({ phase: "passing", self: { playerId: "p0", hand, cardCount: 13, takenCount: 0, myPass: null } });
+    const a = getHeartsBotAction(v);
+    expect(a.type).toBe("hearts_pass");
+    if (a.type !== "hearts_pass") return;
+    // Top 3 by danger: ♥A, ♥K, ♥Q
+    const picked = new Set(a.cards.map(c => `${c.suit}/${c.rank}`));
+    expect(picked.has("hearts/A")).toBe(true);
+    expect(picked.has("hearts/K")).toBe(true);
+    expect(picked.has("hearts/Q")).toBe(true);
+  });
+
+  it("dumps high ♠ (A/K) above Q when no ♠Q in hand (avoid capturing ♠Q later)", () => {
+    const hand: Card[] = [
+      C("spades","A"), C("spades","K"), C("spades","2"), C("spades","3"),
+      C("clubs","2"), C("clubs","3"), C("clubs","4"),
+      C("diamonds","2"), C("diamonds","3"), C("diamonds","4"),
+      C("hearts","2"), C("hearts","3"), C("hearts","4"),
+    ];
+    const v = heartsView({ phase: "passing", self: { playerId: "p0", hand, cardCount: 13, takenCount: 0, myPass: null } });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_pass") throw new Error("expected hearts_pass");
+    const picked = new Set(a.cards.map(c => `${c.suit}/${c.rank}`));
+    // ♠A, ♠K are the top two; third is some ♥ (danger 40+rank vs ♠2/3 at 0).
+    expect(picked.has("spades/A")).toBe(true);
+    expect(picked.has("spades/K")).toBe(true);
+  });
+});
+
+describe("Hearts bot — play phase", () => {
+  it("leading: plays lowest non-point card", () => {
+    const hand: Card[] = [C("clubs","2"), C("clubs","K"), C("diamonds","9")];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 3, takenCount: 0, myPass: null },
+      legalCards: hand,  // heartsBroken=false but no ♥ in hand, all legal
+    });
+    const a = getHeartsBotAction(v);
+    expect(a.type).toBe("hearts_play");
+    if (a.type !== "hearts_play") return;
+    expect(a.card).toEqual(C("clubs","2"));
+  });
+
+  it("following: ducks below trick high — plays highest below", () => {
+    // Trick has ♣K played. We hold ♣2, ♣5, ♣J — all under K.
+    // Highest below K is ♣J → play ♣J (offload the highest safely).
+    const hand: Card[] = [C("clubs","2"), C("clubs","5"), C("clubs","J")];
+    const trick: HeartsTrickPlay[] = [{ playerId: "p1", card: C("clubs","K") }];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 3, takenCount: 0, myPass: null },
+      currentTrick: trick,
+      legalCards: hand,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("clubs","J"));
+  });
+
+  it("following forced over-cut: plays lowest in-suit when only above-high available", () => {
+    // Trick has ♣5 played. We hold only ♣J, ♣K — both above 5.
+    // Forced to over-cut; play lowest (♣J).
+    const hand: Card[] = [C("clubs","J"), C("clubs","K")];
+    const trick: HeartsTrickPlay[] = [{ playerId: "p1", card: C("clubs","5") }];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 2, takenCount: 0, myPass: null },
+      currentTrick: trick,
+      legalCards: hand,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("clubs","J"));
+  });
+
+  it("void in led suit: dumps ♠Q when held", () => {
+    const hand: Card[] = [C("spades","Q"), C("hearts","2"), C("diamonds","A")];
+    const trick: HeartsTrickPlay[] = [{ playerId: "p1", card: C("clubs","K") }];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 3, takenCount: 0, myPass: null },
+      currentTrick: trick,
+      legalCards: hand,
+      heartsBroken: true,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("spades","Q"));
+  });
+
+  it("void in led suit: no ♠Q → dumps highest ♥", () => {
+    const hand: Card[] = [C("hearts","2"), C("hearts","A"), C("diamonds","9")];
+    const trick: HeartsTrickPlay[] = [{ playerId: "p1", card: C("clubs","K") }];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 3, takenCount: 0, myPass: null },
+      currentTrick: trick,
+      legalCards: hand,
+      heartsBroken: true,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("hearts","A"));
+  });
+
+  it("void in led suit + no points: dumps highest off-suit", () => {
+    const hand: Card[] = [C("diamonds","2"), C("diamonds","K"), C("spades","5")];
+    const trick: HeartsTrickPlay[] = [{ playerId: "p1", card: C("clubs","Q") }];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 3, takenCount: 0, myPass: null },
+      currentTrick: trick,
+      legalCards: hand,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("diamonds","K"));
+  });
+
+  it("avoids leading ♠Q when other options exist", () => {
+    // legalCards has ♠Q + ♦5; lead should be ♦5 not ♠Q.
+    const hand: Card[] = [C("spades","Q"), C("diamonds","5")];
+    const v = heartsView({
+      self: { playerId: "p0", hand, cardCount: 2, takenCount: 0, myPass: null },
+      legalCards: hand,
+      heartsBroken: true,
+    });
+    const a = getHeartsBotAction(v);
+    if (a.type !== "hearts_play") throw new Error("expected hearts_play");
+    expect(a.card).toEqual(C("diamonds","5"));
   });
 });

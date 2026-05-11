@@ -11,12 +11,12 @@ import { createEngine, restoreEngine, ENGINE_VERSION } from "../game/GameEngineA
 import type { IGameEngine } from "../game/GameEngineAdapter";
 import {
   getBigTwoBotAction, getMahjongBotAction, getTexasBotAction,
-  getUnoBotAction, getYahtzeeBotAction,
+  getUnoBotAction, getYahtzeeBotAction, getHeartsBotAction,
 } from "../game/BotAI";
 import type {
   PlayerAction,
   PlayerId, GameType, GameStateView, MahjongStateView, PokerStateView,
-  UnoStateView, YahtzeeStateView,
+  UnoStateView, YahtzeeStateView, HeartsStateView,
   SettlementResult, SettlementQueueMessage,
 } from "../types/game";
 import { isGameType } from "../types/game";
@@ -585,6 +585,19 @@ export class GameRoomDO implements DurableObject {
       const v = this.engine.getView(botId) as YahtzeeStateView;
       if (v.currentTurn !== botId) return null;
       return getYahtzeeBotAction(v);
+    }
+    if (gt === "hearts") {
+      const v = this.engine.getView(botId) as HeartsStateView;
+      // Pass phase is parallel — bot acts when it personally still owes
+      // a pass. Play phase: only when it's actually this bot's turn.
+      if (v.phase === "passing") {
+        if (v.self.myPass !== null) return null;
+      } else if (v.phase === "playing") {
+        if (v.currentTurn !== botId) return null;
+      } else {
+        return null;  // between_hands / settled
+      }
+      return getHeartsBotAction(v);
     }
     // mahjong: bot may be the active discarder or one of the 3 reactors.
     const v = this.engine.getView(botId) as MahjongStateView;
