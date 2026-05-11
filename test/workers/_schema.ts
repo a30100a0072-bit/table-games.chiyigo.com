@@ -3,8 +3,10 @@
 // fresh in-memory D1 per run, so each spec's beforeAll() must create the
 // tables it touches. Keeping this in one place avoids drift between specs.
 //
-// Mirrors the relevant subset of src/db/schema.sql. We don't pull schema.sql
-// at test time because miniflare's worker bundle is sandboxed without fs.   // L3_架構含防禦觀測
+// Mirrors the relevant subset of migrations/0001_initial.sql. We don't pull
+// the .sql file at test time because miniflare's worker bundle is sandboxed
+// without fs. test/migrations.test.ts statically guards that the table set
+// below stays in sync with 0001_initial.                                    // L3_架構含防禦觀測
 
 import { env } from "cloudflare:test";
 

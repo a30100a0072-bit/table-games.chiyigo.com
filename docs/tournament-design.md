@@ -13,7 +13,7 @@ the original sketch in two ways:
 
 ## Code map
 
-- `src/db/schema.sql` — `tournaments` + `tournament_entries` tables.
+- `migrations/0001_initial.sql` — `tournaments` + `tournament_entries` tables (baseline; was `src/db/schema.sql` pre-2026-05-11).
 - `src/do/TournamentDO.ts` — orchestrator: register / start / round-result
   / payout. Hydrates from storage so DO eviction is safe.
 - `src/api/tournaments.ts` — `POST /api/tournaments`, `GET /api/tournaments`,

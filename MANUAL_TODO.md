@@ -2,6 +2,14 @@
 
 事項由系統 / Bot 都已自動驗證，但 UI 需要真人在瀏覽器跑過一輪才算驗收完成。
 
+## D1 migrations framework（2026-05-11 首次部署後驗證）
+
+- [ ] CI deploy 跑完後，`npm run db:migrate:list:prod` 顯示 `0001_initial.sql` 在已套用清單
+- [ ] 同指令第二次跑顯示 `No migrations to apply!`（tracker 正確記錄）
+- [ ] prod 任一 SELECT 抽查（例：`wrangler d1 execute big-two-db --remote --command "SELECT COUNT(*) FROM users"`）不報「no such table」
+
+> 首次套用是 data-side no-op（全 IF NOT EXISTS / INSERT OR IGNORE），主要驗證 `d1_migrations` tracker 已就位。後續欄位/索引變更全部走 `migrations/000N_*.sql`，禁用 `wrangler d1 execute --file ...` 路徑。
+
 ## How to run
 
 ```powershell

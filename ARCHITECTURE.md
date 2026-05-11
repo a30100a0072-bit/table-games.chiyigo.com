@@ -85,11 +85,15 @@ src/
 │   ├── gateway.ts                     ✅ HTTP Worker — 路由 / CORS / WS 升級入口 / POST /auth/token / GET /.well-known/jwks.json / GET /api/me/wallet / lazy-create user wallet
 │   └── settlementConsumer.ts          ✅ Queue Consumer — 冪等寫入 D1 + chip_ledger atomic update
 ├── db/
-│   └── schema.sql                     ✅ D1 建表 DDL（含 users 籌碼錢包 + chip_ledger 流水帳）
+│   └── schema.sql                     ⚠️ 2026-05-11 退場為 tombstone redirect；活的 DDL 在 `migrations/0001_initial.sql`
 └── index.ts                           ✅ Worker 主入口（路由綁定）
 
 scripts/
 └── gen-jwk.mjs                        ✅ 一鍵產 ES256 P-256 私鑰 JWK（含 kid / alg / use）
+
+migrations/                            ✅ D1 forward-only migrations（wrangler tracker；2026-05-11 取代 schema.sql）
+├── 0001_initial.sql                   ✅ baseline（與 prod 一致；全 IF NOT EXISTS / INSERT OR IGNORE 可重套）
+└── README.md                          ✅ workflow + 命名規約
 
 frontend/                              ✅ React 18 + Vite 5 + Tailwind 3 (PWA)
 ├── src/
@@ -136,7 +140,7 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 5 | `api/lobby.ts` | ✅ | 單一 LobbyDO 序列化、Long-poll、D1 失敗還原、MATCH_KV 防重複配對、3s Bot 補位、**ANTE 籌碼門檻（bigTwo/mahjong 100、texas 200，不足回 402）** |
 | 6 | `client/GameSocket.ts` | ✅ | 指數退避 + jitter、重連後自動 SYNC、`seq` 跨重連遞增、unsubscribe fn |
 | 7 | `workers/gateway.ts` | ✅ | HTTP 路由、CORS 標頭、`POST /auth/token` 發 ES256 JWT + lazy 建錢包（+1000）、`GET /.well-known/jwks.json` 發布公鑰、`GET /api/me/wallet` 回餘額 + 最近 20 筆 ledger、WS 升級轉發 |
-| 8 | `db/schema.sql` | ✅ | D1 DDL：GameRooms / games / player_settlements / **users（籌碼錢包）/ chip_ledger（append-only 流水，UNIQUE(player_id,game_id,reason) 冪等）** + index |
+| 8 | `migrations/0001_initial.sql` | ✅ | D1 DDL baseline（2026-05-11 起取代 `src/db/schema.sql`）：GameRooms / games / player_settlements / **users（籌碼錢包）/ chip_ledger（append-only 流水，UNIQUE(player_id,game_id,reason) 冪等）** + 全部社交/replay/admin/cron 表 + index。後續變更走 `migrations/000N_*.sql` |
 | 9 | `workers/settlementConsumer.ts` | ✅ | INSERT OR IGNORE 冪等寫入、batch 原子、message.retry()、**結算同 transaction 寫 chip_ledger 並從 SUM(delta) 重算 users.chip_balance（bot 跳過）** |
 | 10 | `src/index.ts` | ✅ | Worker 主入口、export DO、fetch + queue handler |
 | 11 | `wrangler.toml` | ✅ | DO migrations (`new_sqlite_classes`)、Queue、KV、D1、**JWT_PRIVATE_JWK** secret、`[env.production]` |
@@ -151,7 +155,7 @@ wrangler.toml                          ✅ CF 資源綁定宣告（含 [env.prod
 | 單元測試 (MJ) | `test/MahjongStateMachine.test.ts` | ✅ | 14 案例：`canWin` 6 案、初始化 3 案、動作分派 5 案；以 Mulberry32 種子 RNG 確定性 |
 | 單元測試 (TH) | `test/TexasHoldemStateMachine.test.ts` | ✅ | 16 案例：牌型階序、wheel straight、kicker、7 取 5、邊池三層 / 棄牌貢獻、盲注、加注合法性 |
 | 單元測試 (Bot) | `test/BotAI.test.ts` | ✅ | 15 案例：BigTwo 開 3♣/ 最小壓制/ PASS / 5 張同花順壓同花/ 葫蘆無解；Mahjong 自摸胡/ 食胡/ 不胡 PASS/ 棄孤字/ 不在 awaiting 防呆；Texas AA 加注/ 7-2o 棄/ free-check/ 三條加注/ 高牌大額棄 |
-| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發 → tsc(src+test) + vitest → **`wrangler d1 execute --file=src/db/schema.sql --remote`（idempotent schema migration）** → `wrangler deploy --env production` → frontend `npm ci` + tsc + `vite build` → `wrangler pages project create big-two-frontend` (idempotent) → `wrangler pages deploy` |
+| CI/CD | `.github/workflows/cloudflare-deploy.yml` | ✅ | push **master** 觸發 → tsc(src+test) + vitest → **`wrangler d1 migrations apply big-two-db --env production --remote`（2026-05-11 起取代舊 `--file=schema.sql` + ALTER backfill）** → `wrangler deploy --env production` → frontend `npm ci` + tsc + `vite build` → `wrangler pages project create big-two-frontend` (idempotent) → `wrangler pages deploy` |
 | 前端多遊戲 | `frontend/src/components/{GameSelect,GameScreen,Mahjong,TexasHoldem}*` | ✅ | 三遊戲 UI 完整：選單→大廳→對應遊戲畫面；frontend `tsc` + `vite build` 通過 |
 | GitHub Secrets | repo Settings → Secrets and variables → Actions | ✅ | `CLOUDFLARE_API_TOKEN`（含 Workers Scripts / D1 / Cloudflare Pages / Workers KV Storage / Queues 五項 Edit 權限）/ `CLOUDFLARE_ACCOUNT_ID` / `VITE_WORKER_URL` |
 
