@@ -157,9 +157,41 @@ silent refresh 撞 `invalid_grant` 才察覺。
 
 ---
 
+## Hearts（PR 3 — 2026-05-11）
+
+### Passing phase
+- [ ] 第 1 局（handIndex=0）進入 → 上方 chip 顯示「第 1 局 · ← 左家」
+- [ ] 點手牌 → 上推效果，超過 3 張不會再 select；click 已選的卡會 deselect
+- [ ] 選滿 3 張 → 「送出交換」按鈕亮起；送出後改顯示「已送出 · 等待 N/4」
+- [ ] 對手 hasPassed 後 seat 下方 ✓；全 4 人送出 → 自動進入 playing 階段
+- [ ] 第 4 局（handIndex=3）→ 直接 playing，跳過 passing；上方 chip 顯示「不交換」
+
+### Playing phase
+- [ ] 首磴 ♣2 持有者強制領出 ♣2，其餘手牌全 dimmed（legalCards 只回 ♣2）
+- [ ] 首磴期間 ♥ / ♠Q 強制 dim（除非全手牌都是 ♥）；chip 顯示「首磴禁分」
+- [ ] ♥ 未破時 lead 不能 ♥（dim）；有人在 follow 時打 ♥ → ♥ 破標誌切換成「💔 ♥ 已破」
+- [ ] 4 張 trick 收齊 → 中央暫顯示完整 trick → 收磴方下一磴 lead
+- [ ] cumulative score 側欄即時更新（本局結束時跨 hand 累積）
+
+### 結算 / 多局
+- [ ] 中間局結算（無人 ≥100）→ 跳 ResultScreen 顯示 matchProgress、scoreDelta 全 0，回 lobby 後 wallet 不變
+- [ ] 最終局（任一 ≥100）→ scoreDelta 第 1 名 +300、其餘 -100；wallet 動到
+- [ ] Shoot the Moon：某玩家收齊 26 分 → SettlementResult.heartsDetail.shotTheMoonBy 帶該 pid、該家本局 0、其餘 +26
+- [ ] forceSettle 連發兩次（disconnect 撞自然 matchOver）→ 第二次 throw HEARTS_ALREADY_SETTLED，DO 吞掉，wallet 不雙寫
+
+### Bot
+- [ ] BOT_FILL 三人 + alice → 200 場自跑各家勝率落 15–35%（已在 arena test 鎖定，UI 只需確認 bot 不會卡住）
+- [ ] Bot pass 階段觀察：♠Q 必丟、♠A/K 高機率丟、低 ♠ 留下做 duck
+
+### 觀戰 / Replay
+- [ ] Hearts 進行中 → spectator URL 進入 → 自己手牌隱藏、cumulative score 公開、currentTrick 公開
+- [ ] 結算後 ReplaysModal 看得到該局 → 點開步進，hearts_pass 顯示 3 張 chip、hearts_play 顯示單張 chip 加 ♠Q / ♥ 後綴
+
+---
+
 ## 跨遊戲整合
 
 - [x] WalletBadge 流水帳本顯示 settlement 條目，reason 標籤正確
-- [x] StatsModal 戰績含 Uno + Yahtzee
-- [x] FriendsModal 推薦能跨 5 款遊戲找共玩夥伴
-- [x] Tournament：Uno / Yahtzee 賽事建立 → 4 人 join → 三輪 → 派彩（已接，TournamentDO 含 it.each(["uno","yahtzee"]) 回歸測試；UI 在 TournamentModal 創建格已含兩款）
+- [x] StatsModal 戰績含 Uno + Yahtzee + Hearts
+- [x] FriendsModal 推薦能跨 6 款遊戲找共玩夥伴
+- [x] Tournament：Uno / Yahtzee / Hearts 賽事建立 → 4 人 join → 三輪 → 派彩（TournamentDO `it.each(["uno","yahtzee","hearts"])` 回歸測試鎖定；TournamentModal 創建格已含三款）

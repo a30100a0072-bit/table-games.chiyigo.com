@@ -1,15 +1,15 @@
-# 桌遊連線平台 — 架構與實作步驟（大老二 / 麻將 / 德州撲克）
+# 桌遊連線平台 — 架構與實作步驟（六款遊戲）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
-> 最後更新：2026-05-11 — 第十七批（進行中）：**Hearts（紅心大戰）第六款遊戲**，PR 2 已合（backend-only：types + SM + engine adapter + bot heuristic + 200 場 arena fairness 通過），ENGINE_VERSION **5→6**。**PR 3 尚未動**：`hearts` 還沒進 `GAME_TYPES`、無 `HeartsGameScreen.tsx`、ReplaysModal 是 stub、e2e 未覆蓋、SW cache 仍 v5、tournament regression 未擴。Post-review hardening 已 ship：`forceSettle` 第二次呼叫 throw `HEARTS_ALREADY_SETTLED`（防 disconnect 撞 13th-trick 自然 matchOver 雙寫 ledger）、`finalizeHand`/`forceSettle` 都填 `matchProgress` 給 ReplaysModal 多 hand bucket、`finalRanking` 同 cumulative tiebreak 改用「本局較低分」。**460 tests 全程綠 / tsc 0**。設計決策固化在 memory `project_hearts_pr2_2026-05-11.md`。
+> 最後更新：2026-05-11 — 第十七批 ship 完整 Hearts（紅心大戰）：**第六款遊戲全鏈路上線**。PR 2 backend（types + SM + engine adapter + bot heuristic + 200 場 arena fairness 通過 + post-review hardening：`forceSettle` 第二次呼叫 throw `HEARTS_ALREADY_SETTLED` 防 disconnect 撞 13th-trick 自然 matchOver 雙寫 ledger / `matchProgress` 鋪給 ReplaysModal / `finalRanking` 同分用本局較低分 tiebreak），ENGINE_VERSION **5→6** + SW cache **v5→v6**。PR 3 frontend：`hearts` 進 `GAME_TYPES`、GameSelectScreen 加 ♥️ 獨立 tile（不藏在 poker sub-picker，因 Hearts 非 betting 牌局）、`HeartsGameScreen.tsx` 含 passing-phase 3 張 picker / playing-phase trick 中央 / cumulative score 側欄 / ♥-broken + first-trick chip、ReplaysModal Hearts chips（3-card pass row + ♠Q/♥ tag 後綴）、tournament regression `it.each` 擴到 `["uno","yahtzee","hearts"]`、e2e smoke 覆蓋 lobby tap → pass prompt。**460+ tests 全程綠 / tsc 0**。設計決策固化在 memory `project_hearts_pr2_2026-05-11.md`。
 > 第十六批：實站真人驗收抓出 4 條 batch 13–15 的潛在洞。(1) **Prod WS handshake 500** — `src/utils/trace.ts` `withTrace` 把 status-101 的 Response 重包，丟掉 `webSocket` 欄位；fix：101 short-circuit 直接回原 res（仍寫 `request_complete`）。(2) **Bot dispatch 漏 uno+yahtzee** — `GameRoomDO.computeBotAction` / `checkBotTurn` 沒分支，bot 座位走進 mahjong fallback 視圖型別 mismatch；fix：補 5 款 explicit dispatch。(3) **Uno forfeit 跟其他 4 款不一致** — 原本 hand+50，改成固定 -200 / +200 / 0，與 BigTwo / Mahjong / Texas / Yahtzee 對齊；ENGINE_VERSION **4→5** + SW cache **v4→v5**。(4) **WS action allowlist 漏 uno_*+yz_*** — `src/utils/wsFrame.ts` 從 batch 13 起就沒同步，人類 action frame 在 parser 被擋下，看起來像「BOT_x 卡住」實際是 human 沒 actioned；defensive plumbing：`computeBotAction` throw 時 force-settle 不再靜默。**394 tests 全程綠 / tsc 0**。
 > 第十五批：UX 重塑七階段（**P1–P7 全 ship**）。商業棋牌感重塑：(P1) 大廳資訊架構 — 快速開始 CTA + 5 卡片 + 更多抽屜；(P2) 麻將 3×3 四方視角 + 牌面美化；(P3) 情境式動作按鈕（buildActions 依 priority 排序、反應期浮層 + 倒數進度條）；(P4) 配桌 4-slot 動畫 + ETA + 結算金幣 count-up + 分享回放；(P5) 角色 chips（稱號 / 連勝 / 場數）+ 對手危險徽章 + 勝者彩帶；(P6) safe-area-inset + `.tap44` 觸控底線 + screen.orientation.lock；(P7) i18n parity audit（ZH=441/EN=441）+ `Icons.tsx` 手刻 SVG（Lock/RefreshCw/Share2，不引 lucide-react）+ 刪未用的 GAME_LABEL 硬寫死 zh-TW。**383 tests 全程綠 / tsc 0**。
 > 第十四批：post-ship 健康度體檢 + 加固。SW cache v3→v4（配合 ENGINE_VERSION 4）、ReplaysModal + WalletBadge 全面 i18n、Uno timeout fallback 死支重寫、Yahtzee bonus deviation 標 deliberate、`/auth/oauth/refresh` 加 IP rate-limit、`ReplayEvent` 改 discriminated union、**traceId middleware**（X-Request-Id + request_complete log line + 500-on-throw 帶 traceId）。
 > 第十三批：Uno（4th）+ Yahtzee（5th）兩款新遊戲 ship 完成（含 BotAI / 200 場 arena / spectator / replay）；chiyigo OIDC SSO scaffold（PKCE S256 public client）；Tournament 接 Uno/Yahtzee（it.each 回歸測試）；ReplaysModal Uno/Yahtzee 專屬卡片描述。
 >
 > **核心架構**
->   - 五款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas / **uno** / **yahtzee** ✅
->   - 五款 BotAI ✅；BOT_FILL ✅；前端五遊戲 UI ✅
+>   - 六款遊戲後端整合 ✅；DO 透過 IGameEngine 適配層支援 bigTwo / mahjong / texas / uno / yahtzee / **hearts** ✅
+>   - 六款 BotAI ✅；BOT_FILL ✅；前端六遊戲 UI ✅
 >   - CI/CD 全鏈路（D1 migration + Workers integration tests + tail forwarder 先部署）✅
 >   - ES256 JWKS + 多 key 輪換；結構化 JSON log → tail forwarder（含 retry/backoff）→ 通用 webhook
 >
@@ -327,7 +327,7 @@ gateway.ts ──verifyJWT──► GameRoomDO
 
 **Tournament**
 - D1 schema：`tournaments` + `tournament_entries`
-- TournamentDO（一賽一實例）：init / 4 join 自動開賽 / round-result hook 累積分數 / 三輪後 settle 派彩；**gameType-agnostic — 五款遊戲全支援**，靠 `SettlementResult.players[].scoreDelta` 守恆契約累計
+- TournamentDO（一賽一實例）：init / 4 join 自動開賽 / round-result hook 累積分數 / 三輪後 settle 派彩；**gameType-agnostic — 六款遊戲全支援**，靠 `SettlementResult.players[].scoreDelta` 守恆契約累計
 - 五個端點：POST `/api/tournaments`、GET `/api/tournaments`、POST `/api/tournaments/:id/join`、GET `/api/tournaments/:id`、+ TournamentDO 內 `/round-result`
 - 前端 `TournamentModal`：列表 + 建立（gameType 5 選 1：bigTwo / mahjong / texas / uno / yahtzee + 預設 buy-in 200/500/1000）+ 詳情（entries + 分數）+ 自動 join room；`🏆` 按鈕掛在 GameSelect
 - 回歸測試：`test/tournamentDO.test.ts` it.each(["uno","yahtzee"]) 鎖三輪 round-result 累計 + 非 texas 不帶 blind 欄位
