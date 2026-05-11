@@ -54,15 +54,7 @@ function playOneMatch(seed: number, seats: readonly string[]): string | null {
       if (!actor) throw new Error("pending_reactions but no awaitees");
       const view = sm.viewFor(actor);
       const action = getMahjongBotAction(view);
-      let r = sm.process(actor, action as never);
-      // getMahjongBotAction may suggest a chow when the actor isn't the
-      // discarder's next-seat (the SM rejects with ONLY_NEXT_PLAYER_CAN_CHOW).
-      // Production papers over this via reactionDeadline → tickReactionDeadline
-      // collapse to mj_pass; we mirror that here so the arena measures
-      // *fairness*, not a known bot-AI mis-suggestion.                       // L2_實作
-      if (!r.ok && action.type === "chow") {
-        r = sm.process(actor, { type: "mj_pass" } as never);
-      }
+      const r = sm.process(actor, action as never);
       if (!r.ok) throw new Error(`react illegal @${i} (${actor}): ${r.error}`);
       if (r.settlement) {
         const isDraw = r.settlement.players.every(p => p.scoreDelta === 0);

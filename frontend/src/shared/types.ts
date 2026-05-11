@@ -88,6 +88,7 @@ export interface MahjongStateView {
   wall: { remaining: number };
   currentTurn: PlayerId;
   lastDiscard: MahjongLastDiscard | null;
+  seatOrder: PlayerId[];
   awaitingReactionsFrom: PlayerId[];
   reactionDeadlineMs: number;
   turnDeadlineMs: number;

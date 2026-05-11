@@ -491,6 +491,7 @@ export class MahjongStateMachine {
       lastDiscard: this.s.lastDiscard
         ? { playerId: this.s.players[this.s.lastDiscard.playerIdx]!.playerId, tile: this.s.lastDiscard.tile }
         : null,
+      seatOrder: this.s.players.map(p => p.playerId),
       awaitingReactionsFrom: this.s.pendingReactions
         .filter(r => !r.declared).map(r => r.playerId),
       reactionDeadlineMs: this.s.reactionDeadlineMs,

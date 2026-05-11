@@ -385,7 +385,12 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
         }
       }
 
-      if (ld.tile.suit !== "z") {
+      // 吃只有「放炮者下家」可以吃；非下家連嘗試都會被 SM 退回
+      // ONLY_NEXT_PLAYER_CAN_CHOW，需等 reactionDeadline 才會收掉成 pass。 // L3_邏輯安防
+      const discarderSeat = view.seatOrder.indexOf(ld.playerId);
+      const isNextSeat = discarderSeat >= 0
+        && view.seatOrder[(discarderSeat + 1) % view.seatOrder.length] === myId;
+      if (isNextSeat && ld.tile.suit !== "z") {
         const r = ld.tile.rank;
         const same = view.self.hand.filter(t => t.suit === ld.tile.suit);
         const at = (rk: number) => same.find(t => t.rank === rk);

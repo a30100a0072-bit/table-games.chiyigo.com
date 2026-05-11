@@ -245,6 +245,10 @@ export interface MahjongStateView {
   currentTurn: PlayerId;
   lastDiscard: MahjongLastDiscard | null;
 
+  /** 全體玩家依座位順序（逆時鐘）。Bot/UI 用來判斷「下家」這類座次關係，
+   *  例如吃只有放炮者下家可以吃。                                          // L2_隔離 */
+  seatOrder: PlayerId[];
+
   /** PENDING_REACTIONS 期間，列出仍待回應的玩家             // L3_架構 */
   awaitingReactionsFrom: PlayerId[];
   reactionDeadlineMs: number;          // Unix ms             // L2_鎖定

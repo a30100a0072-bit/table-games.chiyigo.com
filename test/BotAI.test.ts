@@ -260,6 +260,7 @@ function mahjongView(over: Partial<MahjongStateView> & {
     wall: { remaining: 50 },
     currentTurn: over.currentTurn ?? "BOT_1",
     lastDiscard: over.lastDiscard ?? null,
+    seatOrder: over.seatOrder ?? ["p4", "BOT_1", "p2", "p3"],   // p4→BOT_1 ⇒ BOT_1 是 p4 下家（吃合法） // L2_測試
     awaitingReactionsFrom: over.awaitingReactionsFrom ?? [],
     reactionDeadlineMs: over.reactionDeadlineMs ?? 0,
     turnDeadlineMs: over.turnDeadlineMs ?? Date.now() + 15_000,
