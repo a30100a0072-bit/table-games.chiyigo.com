@@ -538,7 +538,7 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
                 <>
                   {/* Filter row — gameType pills + wins-only toggle */}
                   <div className="mb-2 flex flex-wrap items-center gap-1 text-[10px]">
-                    {(["all", "bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const).map(g => (
+                    {(["all", "bigTwo", "mahjong", "texas", "uno", "yahtzee", "hearts"] as const).map(g => (
                       <button
                         key={g}
                         onClick={() => setFilterGameType(g)}

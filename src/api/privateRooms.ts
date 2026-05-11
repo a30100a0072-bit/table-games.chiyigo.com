@@ -76,6 +76,10 @@ export async function createPrivateRoom(request: Request, env: PrivateRoomsEnv):
     return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "capacity must be 2–4");
   if (gt === "mahjong" && capacity !== 4)
     return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "mahjong requires capacity=4");
+  // Hearts deals 52 cards across 4 seats — engine constructor throws on
+  // any other seat count, so reject up-front rather than at room creation.
+  if (gt === "hearts" && capacity !== 4)
+    return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "hearts requires capacity=4");
 
   const ttlMin =
     Number.isInteger(body.ttlMinutes)

@@ -625,6 +625,23 @@ export class GameRoomDO implements DurableObject {
       return;
     }
 
+    // Hearts has a parallel passing phase: `currentTurn()` returns the first
+    // seat that still owes a pass; computeBotAction itself guards on
+    // `myPass === null` so the bot only acts when it personally owes one.
+    // Without this branch the mahjong fallback below sees phase="passing"
+    // (not "pending_reactions"/"playing") and silently skips → bots stall.
+    if (gt === "hearts") {
+      const v = this.engine.getView(this.room.playerIds[0]!) as HeartsStateView;
+      if (v.phase !== "passing" && v.phase !== "playing") return;
+      const currentTurn = this.engine.currentTurn();
+      if (!isBot(currentTurn)) return;
+      this.alarms = this.alarms.filter(a => a.kind !== "turn");
+      await this.scheduleAlarm({
+        kind: "bot", playerId: currentTurn, deadline: Date.now() + BOT_THINK_MS,
+      });
+      return;
+    }
+
     // Mahjong: pending_reactions may have multiple bots owing; schedule one at a time. // L2_實作
     const view = this.engine.getView(this.room.playerIds[0]!) as MahjongStateView;
     if (view.phase === "pending_reactions") {
