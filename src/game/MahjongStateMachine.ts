@@ -494,6 +494,7 @@ export class MahjongStateMachine {
       seatOrder: this.s.players.map(p => p.playerId),
       awaitingReactionsFrom: this.s.pendingReactions
         .filter(r => !r.declared).map(r => r.playerId),
+      kongUpgradeInProgress: this.s.kongUpgradeContext !== null,
       reactionDeadlineMs: this.s.reactionDeadlineMs,
       turnDeadlineMs: this.s.turnDeadlineMs,
       match: {

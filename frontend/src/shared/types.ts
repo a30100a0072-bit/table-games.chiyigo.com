@@ -90,6 +90,7 @@ export interface MahjongStateView {
   lastDiscard: MahjongLastDiscard | null;
   seatOrder: PlayerId[];
   awaitingReactionsFrom: PlayerId[];
+  kongUpgradeInProgress: boolean;
   reactionDeadlineMs: number;
   turnDeadlineMs: number;
 }

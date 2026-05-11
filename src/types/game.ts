@@ -251,6 +251,9 @@ export interface MahjongStateView {
 
   /** PENDING_REACTIONS 期間，列出仍待回應的玩家             // L3_架構 */
   awaitingReactionsFrom: PlayerId[];
+  /** 搶槓視窗：上一手是加槓(added kong)觸發，反應視窗只開放 hu / pass，
+   *  pong/kong/chow 全部會被 SM 退回。Bot/UI 用來避免無效嘗試。             // L3_邏輯安防 */
+  kongUpgradeInProgress: boolean;
   reactionDeadlineMs: number;          // Unix ms             // L2_鎖定
   turnDeadlineMs: number;
   /** 多局賽事進度（單局時 handNumber=1, targetHands=1, bankerStreak=0）。  // L2_隔離 */

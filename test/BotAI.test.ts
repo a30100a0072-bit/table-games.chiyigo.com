@@ -262,6 +262,7 @@ function mahjongView(over: Partial<MahjongStateView> & {
     lastDiscard: over.lastDiscard ?? null,
     seatOrder: over.seatOrder ?? ["p4", "BOT_1", "p2", "p3"],   // p4→BOT_1 ⇒ BOT_1 是 p4 下家（吃合法） // L2_測試
     awaitingReactionsFrom: over.awaitingReactionsFrom ?? [],
+    kongUpgradeInProgress: over.kongUpgradeInProgress ?? false,
     reactionDeadlineMs: over.reactionDeadlineMs ?? 0,
     turnDeadlineMs: over.turnDeadlineMs ?? Date.now() + 15_000,
     match: over.match ?? { handNumber: 1, targetHands: 1, dealerIdx: 0, bankerStreak: 0 },
@@ -477,6 +478,47 @@ describe("Mahjong bot", () => {
       currentTurn: "p3",
       lastDiscard: { playerId: "p3", tile: m(9) },
       awaitingReactionsFrom: ["someoneElse"],          // bot not in waiting list
+    });
+    expect(getMahjongBotAction(v).type).toBe("mj_pass");
+  });
+
+  it("passes on a chow window when bot isn't the discarder's next seat", () => {
+    // BOT_1 holds s(4) s(5) which would normally chow s(6). With default
+    // seatOrder [p4, BOT_1, p2, p3] the next seat after p3 is p4 (not
+    // BOT_1), so a chow attempt would be rejected by ONLY_NEXT_PLAYER_CAN_CHOW.
+    // The bot must pass instead.                                          // L3_邏輯安防
+    const hand: MahjongTile[] = [
+      s(4), s(5),
+      m(1), m(2), m(3), m(4), m(5), m(6), m(7), m(8), m(9),
+      p(1), p(2), p(3), z(1), z(2),
+    ];
+    const v = mahjongView({
+      phase: "pending_reactions",
+      hand,
+      currentTurn: "p3",
+      lastDiscard: { playerId: "p3", tile: s(6) },     // p3 → next is p4, not BOT_1
+      awaitingReactionsFrom: ["BOT_1"],
+    });
+    expect(getMahjongBotAction(v).type).toBe("mj_pass");
+  });
+
+  it("passes during a chiang-kong window even when pong would otherwise reduce shanten", () => {
+    // Same setup as the pong-reduces-shanten test, but with
+    // kongUpgradeInProgress=true. SM only allows hu / pass in a chiang-kong
+    // window; everything else is rejected. Hu is not possible here so the
+    // bot must pass.                                                       // L3_邏輯安防
+    const hand: MahjongTile[] = [
+      m(5), m(5),
+      m(1), p(2), p(7), s(3), s(6), s(9),
+      z(1), z(2), z(3), z(4), z(5), z(6), z(7), p(4),
+    ];
+    const v = mahjongView({
+      phase: "pending_reactions",
+      hand,
+      currentTurn: "p2",
+      lastDiscard: { playerId: "p2", tile: m(5) },
+      awaitingReactionsFrom: ["BOT_1"],
+      kongUpgradeInProgress: true,
     });
     expect(getMahjongBotAction(v).type).toBe("mj_pass");
   });

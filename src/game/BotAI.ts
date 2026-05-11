@@ -348,6 +348,10 @@ export function getMahjongBotAction(view: MahjongStateView): PlayerAction {
         return { type: "hu", selfDrawn: false };
       }
 
+      // 搶槓視窗：SM 只允許 hu / pass，pong/kong/chow 全會被退回
+      // ONLY_HU_DURING_CHIANG_KONG。胡已在上面處理過，沒胡就只能 pass。      // L3_邏輯安防
+      if (view.kongUpgradeInProgress) return { type: "mj_pass" };
+
       const sameCount = view.self.hand.filter(t =>
         t.suit === ld.tile.suit && t.rank === ld.tile.rank).length;
 
