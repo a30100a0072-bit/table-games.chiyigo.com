@@ -151,6 +151,9 @@ export interface HeartsSnapshot {
   cumulativeScores: [PlayerId, number][];
   turnDeadlineMs:   number;
   winnerId:         PlayerId | null;
+  /** Per-hand cache from finalizeHand(); cleared by startNextHand (PR 2.4). */
+  lastHandScores?:  [PlayerId, number][] | null;
+  lastShooter?:     PlayerId | null;
 }
 
 // ─── Result type ────────────────────────────────────────────────── L2_模組
@@ -239,8 +242,7 @@ export class HeartsStateMachine {
     }
     if (action.type === "hearts_play") {
       if (s.phase !== "playing") return err("NOT_PLAYING_PHASE");
-      // Play phase processing lands in PR 2.3.
-      return err("HEARTS_PLAY_NOT_IMPLEMENTED");
+      return this.applyPlay(actorId, action);
     }
     return err("UNKNOWN_ACTION");
   }
@@ -349,6 +351,100 @@ export class HeartsStateMachine {
     s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
   }
 
+  // ── Playing phase ───────────────────────────────────────────────── L3_邏輯安防
+
+  private applyPlay(actorId: PlayerId, action: HeartsPlayAction): HeartsProcessOutcome {
+    const s = this.s;
+    const expected = s.playerIds[s.turnIndex]!;
+    if (actorId !== expected) return err("NOT_YOUR_TURN");
+
+    const card = action.card;
+    const hand = s.hands.get(actorId)!;
+    const cardIdx = hand.findIndex(c => sameCard(c, card));
+    if (cardIdx < 0) return err("CARD_NOT_IN_HAND");
+
+    const isFirst = isFirstTrick(s);
+    const legal = computeLegalPlays(hand, s.currentTrick, s.heartsBroken, isFirst);
+    if (!legal.some(c => sameCard(c, card))) return err("ILLEGAL_PLAY");
+
+    // Remove from hand and append to currentTrick.
+    hand.splice(cardIdx, 1);
+    s.currentTrick.push({ playerId: actorId, card });
+    if (card.suit === "hearts") s.heartsBroken = true;
+
+    // Trick still in progress?
+    if (s.currentTrick.length < PLAYER_COUNT) {
+      s.turnIndex = (s.turnIndex + 1) % PLAYER_COUNT;
+      s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+      return ok();
+    }
+
+    // Trick complete — determine winner and transfer take.
+    const winnerIdx = trickWinnerIdx(s.currentTrick, s.playerIds);
+    const winnerPid = s.playerIds[winnerIdx]!;
+    const taken = s.takenTricks.get(winnerPid)!;
+    for (const play of s.currentTrick) taken.push(play.card);
+    s.currentTrick = [];
+    s.turnIndex = winnerIdx;
+    s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+
+    // Hand complete?
+    const completedTricks = totalTaken(s) / PLAYER_COUNT;
+    if (completedTricks >= 13) this.finalizeHand();
+
+    return ok();
+  }
+
+  /** End-of-hand bookkeeping: compute per-hand points, detect Shoot the
+   *  Moon (one player takes all 26), apply to cumulativeScores, flip
+   *  phase to "between_hands". Match-over (≥100) detection + final
+   *  SettlementResult emission lands in PR 2.4.                             // L3_邏輯安防 */
+  private finalizeHand(): void {
+    const s = this.s;
+    const raw: Record<PlayerId, number> = {};
+    for (const pid of s.playerIds) {
+      const taken = s.takenTricks.get(pid) ?? [];
+      raw[pid] = taken.reduce((sum, c) => sum + heartsCardPoints(c), 0);
+    }
+
+    // Shoot the Moon: if any single player took 26 of 26 points, flip:
+    // that player scores 0, others get +26 each. Classic-only (no half-
+    // moon variants).                                                        // L2_實作
+    const shooter = s.playerIds.find(p => raw[p] === 26) ?? null;
+    const handScores: Record<PlayerId, number> = {};
+    if (shooter) {
+      for (const pid of s.playerIds) handScores[pid] = pid === shooter ? 0 : 26;
+    } else {
+      for (const pid of s.playerIds) handScores[pid] = raw[pid] ?? 0;
+    }
+
+    for (const pid of s.playerIds) {
+      const prev = s.cumulativeScores.get(pid) ?? 0;
+      s.cumulativeScores.set(pid, prev + (handScores[pid] ?? 0));
+    }
+
+    // Cache last-hand bookkeeping on the instance so engine adapter / tests
+    // can read it before PR 2.4 wires startNextHand.
+    this.lastHandScores = handScores;
+    this.lastShooter = shooter;
+
+    s.phase = "between_hands";
+    s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    // Match-over / final-settle check moved here in PR 2.4.
+  }
+
+  /** Per-hand bookkeeping cached after finalizeHand() for engine-adapter
+   *  consumption (heartsDetail payload). Cleared by PR 2.4 startNextHand.   // L2_隔離 */
+  private lastHandScores: Record<PlayerId, number> | null = null;
+  private lastShooter: PlayerId | null = null;
+
+  /** Most recent finalized hand's scores (null before any hand completes). */
+  getLastHandScores(): Record<PlayerId, number> | null {
+    return this.lastHandScores ? { ...this.lastHandScores } : null;
+  }
+  /** Shooter of the last hand (null if no Shoot the Moon). */
+  getLastShooter(): PlayerId | null { return this.lastShooter; }
+
   // ── Read accessors ──────────────────────────────────────────────── L2_隔離
 
   /** During passing phase: returns the first seat (in seat order) that
@@ -401,11 +497,10 @@ export class HeartsStateMachine {
     const cumulativeScores: Record<PlayerId, number> = {};
     for (const [pid, n] of s.cumulativeScores) cumulativeScores[pid] = n;
 
-    // legalCards: PR 2.3 will compute real follow-suit / first-trick /
-    // heartsBroken rules. For PR 2.2 stub: empty list when not in playing
-    // phase or not actor's turn; otherwise the actor's hand (no filter).
+    // legalCards: SM-side filter — follow-suit / first-trick no-points /
+    // heartsBroken gate all enforced. Frontend dim non-legal cards.        // L3_邏輯安防
     const legalCards: Card[] = phase === "playing" && s.playerIds[s.turnIndex] === playerId
-      ? [...myHand]
+      ? computeLegalPlays(myHand, s.currentTrick, s.heartsBroken, isFirstTrick(s))
       : [];
 
     return {
@@ -490,6 +585,8 @@ export class HeartsStateMachine {
       cumulativeScores: [...s.cumulativeScores.entries()],
       turnDeadlineMs:   s.turnDeadlineMs,
       winnerId:         s.winnerId,
+      lastHandScores:   this.lastHandScores ? Object.entries(this.lastHandScores) : null,
+      lastShooter:      this.lastShooter,
     };
   }
 
@@ -511,6 +608,9 @@ export class HeartsStateMachine {
       turnDeadlineMs:   snap.turnDeadlineMs,
       winnerId:         snap.winnerId,
     };
+    (m as unknown as { lastHandScores: Record<PlayerId, number> | null }).lastHandScores =
+      snap.lastHandScores ? Object.fromEntries(snap.lastHandScores) : null;
+    (m as unknown as { lastShooter: PlayerId | null }).lastShooter = snap.lastShooter ?? null;
     return m;
   }
 }
@@ -524,6 +624,90 @@ function indexOfClub2(playerIds: PlayerId[], hands: Map<PlayerId, Card[]>): numb
     if (hand.some(isClub2)) return i;
   }
   throw new Error("HEARTS_INTERNAL: ♣2 missing from all hands");
+}
+
+/** Standard rank ordering — Hearts uses 2 (low) … A (high). */
+const RANK_VALUE: Record<Rank, number> = {
+  "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
+  "J": 11, "Q": 12, "K": 13, "A": 14,
+};
+
+/** Total cards in all takenTricks (= completed tricks × 4). */
+function totalTaken(s: InternalState): number {
+  let n = 0;
+  for (const t of s.takenTricks.values()) n += t.length;
+  return n;
+}
+
+function isFirstTrick(s: InternalState): boolean {
+  return totalTaken(s) === 0;
+}
+
+/** Winner index within playerIds[] for a completed 4-card trick.
+ *  Highest card of the led suit takes the trick.                            // L3_邏輯安防 */
+function trickWinnerIdx(trick: HeartsTrickPlay[], playerIds: PlayerId[]): number {
+  const ledSuit = trick[0]!.card.suit;
+  let bestVal = -1;
+  let bestPid: PlayerId = trick[0]!.playerId;
+  for (const play of trick) {
+    if (play.card.suit !== ledSuit) continue;
+    const v = RANK_VALUE[play.card.rank];
+    if (v > bestVal) { bestVal = v; bestPid = play.playerId; }
+  }
+  return playerIds.indexOf(bestPid);
+}
+
+/** Legal plays for `actor` given the in-progress trick.
+ *  Rules:
+ *   - Leading (trick empty):
+ *       · First trick of hand: must play ♣2.
+ *       · Else if !heartsBroken AND hand has any non-♥: only non-♥.
+ *       · Otherwise (heartsBroken OR hand is all ♥): any card.
+ *   - Following (trick non-empty):
+ *       · If has any card of led suit: must follow suit.
+ *         AND first-trick-no-points rule: if any non-point card of led
+ *         suit exists, point cards of led suit are illegal too.
+ *       · If void in led suit:
+ *         - First trick: can't drop ♥ or ♠Q unless hand is all points.
+ *         - Else: any card.
+ *  Returns the filtered subset of `hand` (preserves order).                  // L3_邏輯安防 */
+export function computeLegalPlays(
+  hand: Card[],
+  trick: HeartsTrickPlay[],
+  heartsBroken: boolean,
+  firstTrick: boolean,
+): Card[] {
+  if (hand.length === 0) return [];
+
+  if (trick.length === 0) {
+    // Leading.
+    if (firstTrick) {
+      const c2 = hand.find(c => isClub2(c));
+      return c2 ? [c2] : [];
+    }
+    if (heartsBroken) return [...hand];
+    const nonHearts = hand.filter(c => c.suit !== "hearts");
+    return nonHearts.length > 0 ? nonHearts : [...hand];
+  }
+
+  // Following.
+  const ledSuit = trick[0]!.card.suit;
+  const followers = hand.filter(c => c.suit === ledSuit);
+
+  if (followers.length > 0) {
+    if (firstTrick) {
+      const safeFollowers = followers.filter(c => !isPointCard(c));
+      if (safeFollowers.length > 0) return safeFollowers;
+    }
+    return followers;
+  }
+
+  // Void in led suit.
+  if (firstTrick) {
+    const safe = hand.filter(c => !isPointCard(c));
+    if (safe.length > 0) return safe;
+  }
+  return [...hand];
 }
 
 function ok(): HeartsProcessResult { return { ok: true, settlement: null }; }

@@ -1,12 +1,16 @@
 // /test/HeartsStateMachine.test.ts
 // Hearts state-machine tests. PR 2.2 covers deal + pass phase +
-// snapshot/restore. Trick play, scoring, multi-hand, Shoot the Moon
-// land in PR 2.3 / 2.4.                                                  // L2_測試
+// snapshot/restore. PR 2.3 adds trick play / legality / per-hand settle
+// (incl. Shoot the Moon). Multi-hand cycle + final settle land in PR 2.4.
+//                                                                          // L2_測試
 
 import { describe, it, expect } from "vitest";
-import { HeartsStateMachine, passDirectionFor, heartsCardPoints, isPointCard } from "../src/game/HeartsStateMachine";
+import {
+  HeartsStateMachine, passDirectionFor, heartsCardPoints, isPointCard,
+  computeLegalPlays,
+} from "../src/game/HeartsStateMachine";
 import type { HeartsSnapshot } from "../src/game/HeartsStateMachine";
-import type { Card } from "../src/types/game";
+import type { Card, PlayerId } from "../src/types/game";
 
 const PIDS = ["p0", "p1", "p2", "p3"];
 
@@ -342,3 +346,294 @@ describe("Hearts snapshot / restore", () => {
     expect(m2.viewFor("p3").currentTurn).toBe("p1");
   });
 });
+
+// ── Trick play / legality ────────────────────────────────────────────── L2_測試
+
+describe("Hearts computeLegalPlays", () => {
+  const C = (suit: Card["suit"], rank: Card["rank"]): Card => ({ suit, rank });
+
+  it("leading the first trick: only ♣2 is legal", () => {
+    const hand: Card[] = [C("clubs","2"), C("clubs","5"), C("hearts","A")];
+    const legal = computeLegalPlays(hand, [], false, true);
+    expect(legal).toEqual([C("clubs","2")]);
+  });
+
+  it("leading later trick with !heartsBroken: ♥ is dimmed when alternatives exist", () => {
+    const hand: Card[] = [C("clubs","5"), C("hearts","A"), C("diamonds","Q")];
+    const legal = computeLegalPlays(hand, [], false, false);
+    expect(legal).toEqual([C("clubs","5"), C("diamonds","Q")]);
+  });
+
+  it("leading: heartsBroken allows ♥", () => {
+    const hand: Card[] = [C("clubs","5"), C("hearts","A")];
+    const legal = computeLegalPlays(hand, [], true, false);
+    expect(legal).toEqual(hand);
+  });
+
+  it("leading: all-♥ hand can lead ♥ even before broken", () => {
+    const hand: Card[] = [C("hearts","2"), C("hearts","K")];
+    const legal = computeLegalPlays(hand, [], false, false);
+    expect(legal).toEqual(hand);
+  });
+
+  it("following: must follow suit if able", () => {
+    const trick = [{ playerId: "p1", card: C("clubs","2") }];
+    const hand: Card[] = [C("clubs","7"), C("hearts","A"), C("spades","Q")];
+    const legal = computeLegalPlays(hand, trick, false, true);
+    expect(legal).toEqual([C("clubs","7")]);
+  });
+
+  it("first trick following: cannot drop ♥ or ♠Q on a void", () => {
+    const trick = [{ playerId: "p1", card: C("clubs","2") }];
+    const hand: Card[] = [
+      C("diamonds","9"), C("hearts","A"), C("spades","Q"),
+    ];
+    const legal = computeLegalPlays(hand, trick, false, true);
+    // Must dump a non-point card.
+    expect(legal).toEqual([C("diamonds","9")]);
+  });
+
+  it("first trick void with all-points hand: forced to play a point", () => {
+    const trick = [{ playerId: "p1", card: C("clubs","2") }];
+    const hand: Card[] = [C("hearts","A"), C("spades","Q"), C("hearts","9")];
+    const legal = computeLegalPlays(hand, trick, false, true);
+    // No non-point card available — any becomes legal.
+    expect(legal).toEqual(hand);
+  });
+
+  it("first trick following the led suit cannot drop ♠Q if alternatives in suit exist", () => {
+    // Edge case: led=spades on first trick (impossible in real play since
+    // ♣2 leads, but the rule is symmetric across led suits). If we have
+    // ♠Q + ♠K, only ♠K is legal.
+    const trick = [{ playerId: "p1", card: C("spades","2") }];
+    const hand: Card[] = [C("spades","Q"), C("spades","K")];
+    const legal = computeLegalPlays(hand, trick, false, true);
+    expect(legal).toEqual([C("spades","K")]);
+  });
+});
+
+describe("Hearts trick play", () => {
+  /** Build a playing-phase fixture with handcrafted 13-card hands so the
+   *  trick winner / rule paths are deterministic. ♣2 is in p0 → p0 leads. */
+  function playFixture(opts: {
+    hands: [PlayerId, Card[]][];
+    heartsBroken?: boolean;
+    handIndex?: number;
+    takenTricks?: [PlayerId, Card[]][];
+    turnIndex?: number;
+    cumulativeScores?: [PlayerId, number][];
+  }): HeartsStateMachine {
+    return HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      hands: opts.hands,
+      pendingPasses: [],
+      heartsBroken: opts.heartsBroken ?? false,
+      handIndex: opts.handIndex ?? 0,
+      takenTricks: opts.takenTricks ?? PIDS.map(p => [p, []]),
+      turnIndex: opts.turnIndex ?? 0,
+      cumulativeScores: opts.cumulativeScores ?? PIDS.map(p => [p, 0]),
+    }));
+  }
+
+  it("rejects leading anything other than ♣2 on first trick", () => {
+    const m = playFixture({
+      hands: [
+        ["p0", [{ suit: "clubs", rank: "2" }, { suit: "clubs", rank: "5" }]],
+        ["p1", [{ suit: "clubs", rank: "3" }]],
+        ["p2", [{ suit: "clubs", rank: "4" }]],
+        ["p3", [{ suit: "diamonds", rank: "2" }]],
+      ],
+    });
+    const r = m.process("p0", { type: "hearts_play", card: { suit: "clubs", rank: "5" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/ILLEGAL_PLAY/);
+  });
+
+  it("rejects play out of turn", () => {
+    const m = playFixture({
+      hands: [
+        ["p0", [{ suit: "clubs", rank: "2" }]],
+        ["p1", [{ suit: "clubs", rank: "3" }]],
+        ["p2", [{ suit: "clubs", rank: "4" }]],
+        ["p3", [{ suit: "diamonds", rank: "2" }]],
+      ],
+    });
+    const r = m.process("p1", { type: "hearts_play", card: { suit: "clubs", rank: "3" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/NOT_YOUR_TURN/);
+  });
+
+  it("rejects play of card not in hand", () => {
+    const m = playFixture({
+      hands: [
+        ["p0", [{ suit: "clubs", rank: "2" }]],
+        ["p1", [{ suit: "clubs", rank: "3" }]],
+        ["p2", [{ suit: "clubs", rank: "4" }]],
+        ["p3", [{ suit: "diamonds", rank: "2" }]],
+      ],
+    });
+    const r = m.process("p0", { type: "hearts_play", card: { suit: "diamonds", rank: "A" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/CARD_NOT_IN_HAND/);
+  });
+
+  it("completes a trick: highest of led suit takes, winner leads next", () => {
+    const m = playFixture({
+      hands: [
+        ["p0", [{ suit: "clubs", rank: "2" }, { suit: "diamonds", rank: "A" }]],
+        ["p1", [{ suit: "clubs", rank: "K" }, { suit: "diamonds", rank: "2" }]],
+        ["p2", [{ suit: "clubs", rank: "5" }, { suit: "diamonds", rank: "3" }]],
+        ["p3", [{ suit: "clubs", rank: "10" }, { suit: "diamonds", rank: "4" }]],
+      ],
+    });
+    expect(m.process("p0", { type: "hearts_play", card: { suit: "clubs", rank: "2" } }).ok).toBe(true);
+    expect(m.process("p1", { type: "hearts_play", card: { suit: "clubs", rank: "K" } }).ok).toBe(true);
+    expect(m.process("p2", { type: "hearts_play", card: { suit: "clubs", rank: "5" } }).ok).toBe(true);
+    expect(m.process("p3", { type: "hearts_play", card: { suit: "clubs", rank: "10" } }).ok).toBe(true);
+
+    const v = m.viewFor("p0");
+    expect(v.currentTrick.length).toBe(0);
+    expect(v.currentTurn).toBe("p1");  // p1 played ♣K, highest of clubs
+    // p1's takenCount is 4
+    const p1Opp = v.opponents.find(o => o.playerId === "p1")!;
+    expect(p1Opp.takenCount).toBe(4);
+  });
+
+  it("playing ♥ sets heartsBroken", () => {
+    // Set up where p0 voids on clubs trick and plays a ♥.
+    const m = playFixture({
+      hands: [
+        ["p0", [{ suit: "clubs", rank: "2" }, { suit: "hearts", rank: "5" }]],
+        ["p1", [{ suit: "clubs", rank: "3" }, { suit: "diamonds", rank: "2" }]],
+        ["p2", [{ suit: "clubs", rank: "4" }, { suit: "diamonds", rank: "3" }]],
+        ["p3", [{ suit: "clubs", rank: "5" }, { suit: "diamonds", rank: "4" }]],
+      ],
+    });
+    // Trick 1: clubs run, p3 wins (♣5 highest among 2/3/4/5).
+    m.process("p0", { type: "hearts_play", card: { suit: "clubs", rank: "2" } });
+    m.process("p1", { type: "hearts_play", card: { suit: "clubs", rank: "3" } });
+    m.process("p2", { type: "hearts_play", card: { suit: "clubs", rank: "4" } });
+    m.process("p3", { type: "hearts_play", card: { suit: "clubs", rank: "5" } });
+
+    expect(m.viewFor("p0").heartsBroken).toBe(false);
+
+    // Trick 2: p3 leads diamonds; p0 voids and plays ♥5 (legal since
+    // not first trick + void).
+    m.process("p3", { type: "hearts_play", card: { suit: "diamonds", rank: "4" } });
+    m.process("p0", { type: "hearts_play", card: { suit: "hearts", rank: "5" } });
+    expect(m.viewFor("p0").heartsBroken).toBe(true);
+  });
+});
+
+describe("Hearts hand finalize + Shoot the Moon", () => {
+  /** Drive a fully scripted 13-trick hand from `restore`. Used by the
+   *  Moon and per-hand scoring tests. Each test specifies the plays in
+   *  order; this helper just runs them.                                     */
+  function runScript(
+    m: HeartsStateMachine,
+    plays: { pid: PlayerId; card: Card }[],
+  ): void {
+    for (const { pid, card } of plays) {
+      const r = m.process(pid, { type: "hearts_play", card });
+      if (!r.ok) throw new Error(`unexpected reject: ${r.error} at ${pid} ${card.suit}/${card.rank}`);
+    }
+  }
+
+  /** A scripted hand where p0 takes every trick. ♣2 is in p0's hand; p0
+   *  leads. Hands: p0 = clubs 2-A, p1 = diamonds 2-A, p2 = spades 2-A,
+   *  p3 = hearts 2-A. Each trick p0 leads a club; everyone else dumps
+   *  their lowest. p0 wins every trick → all 26 points → Shoot the Moon. */
+  it("Shoot the Moon: shooter scores 0, others +26", () => {
+    const m = HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      hands: [
+        ["p0", suitRun("clubs")],
+        ["p1", suitRun("diamonds")],
+        ["p2", suitRun("spades")],
+        ["p3", suitRun("hearts")],
+      ],
+    }));
+
+    // Build script: 13 tricks; p0 always leads ♣rank; followers void on clubs
+    // so they play their lowest of own suit (which is the only suit they
+    // have). Trick 1 first-trick-no-points rule allows non-point cards;
+    // p3 has only ♥ so forced to play ♥ on trick 1.
+    const ranks: Card["rank"][] = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+    const plays: { pid: PlayerId; card: Card }[] = [];
+    for (let i = 0; i < 13; i++) {
+      plays.push({ pid: "p0", card: { suit: "clubs",    rank: ranks[i]! } });
+      plays.push({ pid: "p1", card: { suit: "diamonds", rank: ranks[i]! } });
+      plays.push({ pid: "p2", card: { suit: "spades",   rank: ranks[i]! } });
+      plays.push({ pid: "p3", card: { suit: "hearts",   rank: ranks[i]! } });
+    }
+    runScript(m, plays);
+
+    expect(m.viewFor("p0").phase).toBe("between_hands");
+    const hs = m.getLastHandScores();
+    expect(hs).not.toBeNull();
+    expect(hs!.p0).toBe(0);
+    expect(hs!.p1).toBe(26);
+    expect(hs!.p2).toBe(26);
+    expect(hs!.p3).toBe(26);
+    expect(m.getLastShooter()).toBe("p0");
+
+    // Cumulative scores reflect the moon flip.
+    expect(m.cumulativeScoresMap()).toEqual({ p0: 0, p1: 26, p2: 26, p3: 26 });
+  });
+
+  it("split-hand scoring: per-hand points sum to 26 (no moon)", () => {
+    // Configure final state by restore at "almost end of hand": 12 tricks
+    // taken with a known distribution, and the 13th trick set up so it
+    // completes the hand cleanly.
+    const taken: [PlayerId, Card[]][] = [
+      ["p0", [{ suit: "hearts", rank: "2" }, { suit: "hearts", rank: "3" }]],   // 2 pts
+      ["p1", [{ suit: "hearts", rank: "4" }, { suit: "hearts", rank: "5" },
+              { suit: "hearts", rank: "6" }, { suit: "hearts", rank: "7" }]],   // 4 pts
+      ["p2", [{ suit: "spades", rank: "Q" }, { suit: "hearts", rank: "8" },
+              { suit: "hearts", rank: "9" }, { suit: "hearts", rank: "10" }]],  // 13+3 = 16 pts
+      ["p3", [{ suit: "hearts", rank: "J" }, { suit: "hearts", rank: "Q" },
+              { suit: "hearts", rank: "K" }, { suit: "hearts", rank: "A" }]],   // 4 pts
+    ];
+    // The 12 tricks above used 14 cards across 4 piles (2+4+4+4 = 14).
+    // Pad each pile with non-point filler so total = 12*4 = 48 cards.
+    const filler: Card = { suit: "diamonds", rank: "2" }; // placeholder; not scoring
+    const fillerCards = (n: number): Card[] => Array.from({ length: n }, () => ({ ...filler }));
+    taken[0]![1].push(...fillerCards(10));  // 2 → 12
+    taken[1]![1].push(...fillerCards(8));   // 4 → 12
+    taken[2]![1].push(...fillerCards(8));   // 4 → 12
+    taken[3]![1].push(...fillerCards(8));   // 4 → 12
+    // Total now 48. Last trick (4 cards) will be played; set up plain
+    // diamonds run so it doesn't change point totals. p0 currently leads
+    // (turnIndex=0).
+    const m = HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      hands: [
+        ["p0", [{ suit: "diamonds", rank: "A" }]],
+        ["p1", [{ suit: "diamonds", rank: "K" }]],
+        ["p2", [{ suit: "diamonds", rank: "Q" }]],
+        ["p3", [{ suit: "diamonds", rank: "J" }]],
+      ],
+      takenTricks: taken,
+      heartsBroken: true,
+      turnIndex: 0,
+    }));
+
+    // Last trick — p0 leads ♦A, sweeps.
+    m.process("p0", { type: "hearts_play", card: { suit: "diamonds", rank: "A" } });
+    m.process("p1", { type: "hearts_play", card: { suit: "diamonds", rank: "K" } });
+    m.process("p2", { type: "hearts_play", card: { suit: "diamonds", rank: "Q" } });
+    m.process("p3", { type: "hearts_play", card: { suit: "diamonds", rank: "J" } });
+
+    expect(m.viewFor("p0").phase).toBe("between_hands");
+    const hs = m.getLastHandScores()!;
+    const total = hs.p0! + hs.p1! + hs.p2! + hs.p3!;
+    expect(total).toBe(26);  // no moon → raw distribution preserved
+    expect(hs).toEqual({ p0: 2, p1: 4, p2: 16, p3: 4 });
+    expect(m.getLastShooter()).toBeNull();
+  });
+});
+
+// Help TypeScript: confirm PlayerId import is used (suppress unused warn).
+const _pid: PlayerId = "x"; void _pid;
