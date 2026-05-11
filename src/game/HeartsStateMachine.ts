@@ -26,9 +26,20 @@ import type {
   PlayerId, Card, Suit, Rank,
   HeartsPhase, HeartsPassAction, HeartsPlayAction,
   HeartsStateView, HeartsSelfView, HeartsOpponentView,
-  HeartsTrickPlay, HeartsPassDirection,
-  SettlementResult, SettlementReason,
+  HeartsTrickPlay, HeartsPassDirection, HeartsSettlementDetail,
+  SettlementResult, SettlementReason, PlayerSettlement,
 } from "../types/game";
+
+// ─── Chip distribution constants ─────────────────────────────────── L2_鎖定
+// Final match settle (>=100 cumulative): rank-1 +300, ranks 2-4 each -100.
+// Mirrors Yahtzee's fixed-pot model — keeps wallet ledger predictable
+// across games. ANTE = 100 per seat, so the pot equals 4 antes minus
+// rank-1's own ante (winner net +300 vs entry +400 - 100 ante).
+const FINAL_WINNER_GAIN = 300;
+const FINAL_LOSER_LOSS  = 100;
+// Forfeit (timeout / disconnect): -200 / +200 fixed pot. Same contract as
+// Uno post-ship harmonisation (commit 2e7dab5, ENGINE_VERSION 4→5).      // L2_鎖定
+const FORFEIT_PENALTY = 200;
 
 const RANKS: readonly Rank[] = [
   "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A",
@@ -390,16 +401,19 @@ export class HeartsStateMachine {
 
     // Hand complete?
     const completedTricks = totalTaken(s) / PLAYER_COUNT;
-    if (completedTricks >= 13) this.finalizeHand();
+    if (completedTricks >= 13) {
+      const settlement = this.finalizeHand();
+      return { ok: true, settlement };
+    }
 
     return ok();
   }
 
   /** End-of-hand bookkeeping: compute per-hand points, detect Shoot the
-   *  Moon (one player takes all 26), apply to cumulativeScores, flip
-   *  phase to "between_hands". Match-over (≥100) detection + final
-   *  SettlementResult emission lands in PR 2.4.                             // L3_邏輯安防 */
-  private finalizeHand(): void {
+   *  Moon, apply to cumulativeScores, then emit a SettlementResult.
+   *  Intermediate hands return matchOver=false with scoreDelta=0; the
+   *  match-final hand (any cumulative ≥100) carries the chip pot.        // L3_邏輯安防 */
+  private finalizeHand(): SettlementResult {
     const s = this.s;
     const raw: Record<PlayerId, number> = {};
     for (const pid of s.playerIds) {
@@ -423,14 +437,106 @@ export class HeartsStateMachine {
       s.cumulativeScores.set(pid, prev + (handScores[pid] ?? 0));
     }
 
-    // Cache last-hand bookkeeping on the instance so engine adapter / tests
-    // can read it before PR 2.4 wires startNextHand.
+    // Cache last-hand bookkeeping (also surface via snapshot for restore).
     this.lastHandScores = handScores;
     this.lastShooter = shooter;
 
-    s.phase = "between_hands";
+    // Match-over: anyone hit ≥100 cumulative after this hand. Final
+    // ranking is by cumulative ASC (low = good in Hearts).
+    const cumulative: Record<PlayerId, number> = {};
+    for (const [pid, n] of s.cumulativeScores) cumulative[pid] = n;
+    const matchOver = s.playerIds.some(p => (cumulative[p] ?? 0) >= 100);
+    const finalRanking = matchOver
+      ? [...s.playerIds].sort((a, b) => (cumulative[a] ?? 0) - (cumulative[b] ?? 0))
+      : null;
+
+    s.phase = matchOver ? "settled" : "between_hands";
     s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
-    // Match-over / final-settle check moved here in PR 2.4.
+    if (matchOver) s.winnerId = finalRanking![0]!;
+
+    // scoreDelta: intermediate hands all 0 (chip movement saved for the
+    // final hand). Match-final hand: rank 1 +300, ranks 2-4 each -100.
+    const deltas: Record<PlayerId, number> = {};
+    for (const pid of s.playerIds) deltas[pid] = 0;
+    if (matchOver) {
+      const winnerId = finalRanking![0]!;
+      deltas[winnerId] = FINAL_WINNER_GAIN;
+      for (const pid of s.playerIds) {
+        if (pid !== winnerId) deltas[pid] = -FINAL_LOSER_LOSS;
+      }
+    }
+
+    // players[] — ordered by per-hand rank (low score first) for natural
+    // display. finalRank is 1-based.
+    const ordered = [...s.playerIds].sort((a, b) => (handScores[a] ?? 0) - (handScores[b] ?? 0));
+    const players: PlayerSettlement[] = ordered.map((pid, i) => ({
+      playerId:       pid,
+      finalRank:      i + 1,
+      remainingCards: [],     // Card[] type; per-hand scores carried via heartsDetail
+      scoreDelta:     deltas[pid] ?? 0,
+    }));
+
+    const heartsDetail: HeartsSettlementDetail = {
+      handScores: { ...handScores },
+      cumulativeScores: { ...cumulative },
+      shotTheMoonBy: shooter,
+      finalRanking,
+    };
+
+    const winnerId = matchOver ? finalRanking![0]! : ordered[0]!;
+
+    return {
+      gameId:     s.gameId,
+      roundId:    s.roundId,
+      finishedAt: Date.now(),
+      reason:     "lastCardPlayed",
+      players,
+      winnerId,
+      heartsDetail,
+      matchOver,
+    };
+  }
+
+  // ── Multi-hand cycle ────────────────────────────────────────────── L3_邏輯安防
+
+  /** Advance to the next hand. Valid only when phase === "between_hands"
+   *  (i.e. the previous hand finalized but the match is not over). Reshuffles
+   *  + redeals, resets per-hand flags, enters passing (or playing if the
+   *  new handIndex skips passing).                                           // L3_邏輯安防 */
+  startNextHand(nextRoundId?: string): void {
+    const s = this.s;
+    if (s.phase !== "between_hands") {
+      throw new Error("HEARTS_INVALID_STATE: startNextHand requires phase=between_hands");
+    }
+
+    s.handIndex += 1;
+    if (nextRoundId) s.roundId = nextRoundId;
+
+    const deck = secureShuffle(buildDeck());
+    s.hands = new Map();
+    for (let i = 0; i < s.playerIds.length; i++) {
+      s.hands.set(s.playerIds[i]!, deck.slice(i * HAND_SIZE, (i + 1) * HAND_SIZE));
+    }
+
+    const dir = passDirectionFor(s.handIndex);
+    if (dir === "none") {
+      s.phase = "playing";
+      s.pendingPasses = new Map();
+      s.turnIndex = indexOfClub2(s.playerIds, s.hands);
+    } else {
+      s.phase = "passing";
+      s.pendingPasses = new Map();
+      for (const pid of s.playerIds) s.pendingPasses.set(pid, null);
+      s.turnIndex = 0;
+    }
+
+    s.currentTrick = [];
+    s.heartsBroken = false;
+    s.takenTricks = new Map();
+    for (const pid of s.playerIds) s.takenTricks.set(pid, []);
+    s.turnDeadlineMs = Date.now() + TURN_TIMEOUT_MS;
+    this.lastHandScores = null;
+    this.lastShooter = null;
   }
 
   /** Per-hand bookkeeping cached after finalizeHand() for engine-adapter
@@ -557,12 +663,73 @@ export class HeartsStateMachine {
     };
   }
 
-  // ── Force-settle (PR 2.4) ───────────────────────────────────────── L3_架構含防禦觀測
+  // ── Force-settle ────────────────────────────────────────────────── L3_架構含防禦觀測
 
-  /** Force-settle stub — full implementation in PR 2.4. Throws so DO does
-   *  not silently produce malformed SettlementResults.                       // L3_架構含防禦觀測 */
-  forceSettle(_reason: SettlementReason, _forfeitPlayerId?: PlayerId): SettlementResult {
-    throw new Error("HEARTS_FORCE_SETTLE_NOT_IMPLEMENTED");
+  /** Forfeit / timeout / disconnect settlement. Fixed -200 to the forfeit
+   *  player, +200 to the winner (lowest cumulative among non-forfeiters),
+   *  others 0. If no forfeitPlayerId provided, lowest cumulative wins; if
+   *  tied, the first such seat in seat order. Always carries heartsDetail
+   *  with the latest cumulative + null finalRanking (the match did not
+   *  reach a natural conclusion).                                            // L3_邏輯安防 */
+  forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
+    const s = this.s;
+
+    const cumulative: Record<PlayerId, number> = {};
+    for (const [pid, n] of s.cumulativeScores) cumulative[pid] = n;
+
+    let winnerId: PlayerId;
+    if (forfeitPlayerId && s.playerIds.includes(forfeitPlayerId)) {
+      const candidates = s.playerIds.filter(p => p !== forfeitPlayerId);
+      candidates.sort((a, b) => (cumulative[a] ?? 0) - (cumulative[b] ?? 0));
+      winnerId = candidates[0]!;
+    } else {
+      const sorted = [...s.playerIds].sort((a, b) => (cumulative[a] ?? 0) - (cumulative[b] ?? 0));
+      winnerId = sorted[0]!;
+    }
+
+    const deltas: Record<PlayerId, number> = {};
+    for (const pid of s.playerIds) deltas[pid] = 0;
+    if (forfeitPlayerId && s.playerIds.includes(forfeitPlayerId)) {
+      deltas[forfeitPlayerId] = -FORFEIT_PENALTY;
+      deltas[winnerId] = FORFEIT_PENALTY;
+    }
+    // No forfeit (rare path: e.g. clean shutdown without a forfeiter) →
+    // all deltas remain 0; players[] still surfaces winner by rank.
+
+    // Order players: winner first, then by cumulative ASC.
+    const ordered = [
+      winnerId,
+      ...s.playerIds
+        .filter(p => p !== winnerId)
+        .sort((a, b) => (cumulative[a] ?? 0) - (cumulative[b] ?? 0)),
+    ];
+    const players: PlayerSettlement[] = ordered.map((pid, i) => ({
+      playerId:       pid,
+      finalRank:      i + 1,
+      remainingCards: [],
+      scoreDelta:     deltas[pid] ?? 0,
+    }));
+
+    const heartsDetail: HeartsSettlementDetail = {
+      handScores: this.lastHandScores ? { ...this.lastHandScores } : {},
+      cumulativeScores: { ...cumulative },
+      shotTheMoonBy: this.lastShooter,
+      finalRanking: null,
+    };
+
+    s.phase = "settled";
+    s.winnerId = winnerId;
+
+    return {
+      gameId:     s.gameId,
+      roundId:    s.roundId,
+      finishedAt: Date.now(),
+      reason,
+      players,
+      winnerId,
+      heartsDetail,
+      matchOver:  true,
+    };
   }
 
   // ── Snapshot / restore ──────────────────────────────────────────── L3_架構含防禦觀測

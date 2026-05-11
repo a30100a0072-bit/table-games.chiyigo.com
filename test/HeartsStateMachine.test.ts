@@ -635,5 +635,206 @@ describe("Hearts hand finalize + Shoot the Moon", () => {
   });
 });
 
+// ── Multi-hand cycle + final settle + forceSettle ────────────────────── L2_測試
+
+describe("Hearts multi-hand + final settle", () => {
+  /** Helper: run the same 13-trick Shoot-the-Moon script p0 used in PR 2.3.
+   *  Returns the SettlementResult produced by the 13th-trick action.        */
+  function runMoonHand(m: HeartsStateMachine, shooter: PlayerId = "p0") {
+    // ♣2 is currently in the shooter's hand (suitRun("clubs") is dealt to
+    // playerIds[0]); for shooter !== p0 the caller must rotate hands.
+    const ranks: Card["rank"][] = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+    let lastResult: ReturnType<HeartsStateMachine["process"]> | null = null;
+    for (let i = 0; i < 13; i++) {
+      lastResult = m.process(shooter, { type: "hearts_play", card: { suit: "clubs",    rank: ranks[i]! } });
+      m.process("p1", { type: "hearts_play", card: { suit: "diamonds", rank: ranks[i]! } });
+      m.process("p2", { type: "hearts_play", card: { suit: "spades",   rank: ranks[i]! } });
+      lastResult = m.process("p3", { type: "hearts_play", card: { suit: "hearts", rank: ranks[i]! } });
+    }
+    return lastResult!;
+  }
+
+  function moonFixture(handIndex = 0, cumulative: [PlayerId, number][] = PIDS.map(p => [p, 0])): HeartsStateMachine {
+    return HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      handIndex,
+      cumulativeScores: cumulative,
+      hands: [
+        ["p0", suitRun("clubs")],
+        ["p1", suitRun("diamonds")],
+        ["p2", suitRun("spades")],
+        ["p3", suitRun("hearts")],
+      ],
+    }));
+  }
+
+  it("intermediate hand: settlement emitted with matchOver=false, deltas all 0", () => {
+    const m = moonFixture();
+    const r = runMoonHand(m);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const set = r.settlement!;
+    expect(set).not.toBeNull();
+    expect(set.matchOver).toBe(false);
+    for (const ps of set.players) expect(ps.scoreDelta).toBe(0);
+    expect(set.heartsDetail!.shotTheMoonBy).toBe("p0");
+    expect(set.heartsDetail!.finalRanking).toBeNull();
+    expect(set.heartsDetail!.cumulativeScores).toEqual({ p0: 0, p1: 26, p2: 26, p3: 26 });
+    // p0 still ranks #1 (handScore=0)
+    expect(set.players[0]!.playerId).toBe("p0");
+  });
+
+  it("final hand: any player ≥100 → matchOver=true, +300/-100 chips, finalRanking populated", () => {
+    // Seed p1 at 80 cumulative so the upcoming moon-against-p0 pushes p1
+    // past 100 (or actually moon shooter scores 0 so others go +26 →
+    // p1: 80+26=106 ≥100).
+    const m = moonFixture(0, [["p0", 0], ["p1", 80], ["p2", 50], ["p3", 30]]);
+    const r = runMoonHand(m);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const set = r.settlement!;
+    expect(set.matchOver).toBe(true);
+
+    // Cumulative after: p0=0, p1=106, p2=76, p3=56. Lowest = p0 wins.
+    expect(set.heartsDetail!.cumulativeScores).toEqual({ p0: 0, p1: 106, p2: 76, p3: 56 });
+    expect(set.heartsDetail!.finalRanking).toEqual(["p0", "p3", "p2", "p1"]);
+    expect(set.winnerId).toBe("p0");
+
+    const byPid: Record<string, number> = {};
+    for (const ps of set.players) byPid[ps.playerId] = ps.scoreDelta;
+    expect(byPid).toEqual({ p0: 300, p1: -100, p2: -100, p3: -100 });
+    // Zero-sum.
+    const sum = set.players.reduce((s, p) => s + p.scoreDelta, 0);
+    expect(sum).toBe(0);
+
+    // SM is now in "settled" phase.
+    expect(m.viewFor("p0").phase).toBe("settled");
+  });
+});
+
+describe("Hearts startNextHand", () => {
+  function between(handIndex: number, cumulative: [PlayerId, number][] = PIDS.map(p => [p, 0])): HeartsStateMachine {
+    return HeartsStateMachine.restore(blankSnap({
+      phase: "between_hands",
+      pendingPasses: [],
+      handIndex,
+      cumulativeScores: cumulative,
+      hands: PIDS.map(p => [p, []]),
+      takenTricks: PIDS.map(p => [p, []]),
+      heartsBroken: true,
+    }));
+  }
+
+  it("throws when called outside between_hands", () => {
+    const m = new HeartsStateMachine("g", "r", PIDS);
+    expect(() => m.startNextHand()).toThrow(/INVALID_STATE/);
+  });
+
+  it("increments handIndex, redeals 13 each, enters passing for normal hand", () => {
+    const m = between(0);
+    m.startNextHand();
+    const v = m.viewFor("p0");
+    expect(v.handIndex).toBe(1);
+    expect(v.phase).toBe("passing");
+    expect(v.passDirection).toBe("right");
+    for (const pid of PIDS) expect(m.viewFor(pid).self.hand.length).toBe(13);
+    expect(v.heartsBroken).toBe(false);
+  });
+
+  it("skips passing when next hand is idx%4===3", () => {
+    const m = between(2);
+    m.startNextHand();
+    const v = m.viewFor("p0");
+    expect(v.handIndex).toBe(3);
+    expect(v.phase).toBe("playing");
+    expect(v.passDirection).toBe("none");
+    // ♣2 holder leads — ensure currentTurn is whoever has it.
+    for (const pid of PIDS) {
+      const hand = m.viewFor(pid).self.hand;
+      const hasClub2 = hand.some(c => c.suit === "clubs" && c.rank === "2");
+      if (hasClub2) {
+        expect(v.currentTurn).toBe(pid);
+        break;
+      }
+    }
+  });
+
+  it("clears lastHandScores / lastShooter from previous hand", () => {
+    // Reach between_hands via a real finalize so caches are populated.
+    const m = HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      hands: [
+        ["p0", suitRun("clubs")],
+        ["p1", suitRun("diamonds")],
+        ["p2", suitRun("spades")],
+        ["p3", suitRun("hearts")],
+      ],
+    }));
+    const ranks: Card["rank"][] = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+    for (let i = 0; i < 13; i++) {
+      m.process("p0", { type: "hearts_play", card: { suit: "clubs",    rank: ranks[i]! } });
+      m.process("p1", { type: "hearts_play", card: { suit: "diamonds", rank: ranks[i]! } });
+      m.process("p2", { type: "hearts_play", card: { suit: "spades",   rank: ranks[i]! } });
+      m.process("p3", { type: "hearts_play", card: { suit: "hearts",   rank: ranks[i]! } });
+    }
+    expect(m.getLastShooter()).toBe("p0");
+
+    m.startNextHand();
+    expect(m.getLastHandScores()).toBeNull();
+    expect(m.getLastShooter()).toBeNull();
+  });
+
+  it("preserves cumulativeScores across hands", () => {
+    const m = between(0, [["p0", 10], ["p1", 20], ["p2", 30], ["p3", 40]]);
+    m.startNextHand();
+    expect(m.cumulativeScoresMap()).toEqual({ p0: 10, p1: 20, p2: 30, p3: 40 });
+  });
+});
+
+describe("Hearts forceSettle", () => {
+  function midGame(cumulative: [PlayerId, number][]): HeartsStateMachine {
+    return HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      cumulativeScores: cumulative,
+      hands: PIDS.map(p => [p, []]),
+    }));
+  }
+
+  it("forfeit: -200 / +200 fixed pot, others 0, winner = lowest cumulative among non-forfeiters", () => {
+    const m = midGame([["p0", 50], ["p1", 10], ["p2", 30], ["p3", 20]]);
+    const set = m.forceSettle("disconnect", "p0");
+    expect(set.matchOver).toBe(true);
+    expect(set.reason).toBe("disconnect");
+    // p0 forfeited, lowest among {p1=10, p2=30, p3=20} is p1.
+    expect(set.winnerId).toBe("p1");
+    const byPid: Record<string, number> = {};
+    for (const ps of set.players) byPid[ps.playerId] = ps.scoreDelta;
+    expect(byPid).toEqual({ p0: -200, p1: 200, p2: 0, p3: 0 });
+    const sum = set.players.reduce((s, p) => s + p.scoreDelta, 0);
+    expect(sum).toBe(0);
+    expect(set.heartsDetail!.finalRanking).toBeNull();
+    expect(m.viewFor("p0").phase).toBe("settled");
+  });
+
+  it("timeout without forfeit: all deltas 0, winner = lowest cumulative (seat-order tiebreak)", () => {
+    const m = midGame([["p0", 30], ["p1", 30], ["p2", 30], ["p3", 30]]);
+    const set = m.forceSettle("timeout");
+    expect(set.matchOver).toBe(true);
+    expect(set.winnerId).toBe("p0");  // first in seat order on tie
+    for (const ps of set.players) expect(ps.scoreDelta).toBe(0);
+  });
+
+  it("rejects further hearts actions after forceSettle", () => {
+    const m = midGame([["p0", 0], ["p1", 0], ["p2", 0], ["p3", 0]]);
+    m.forceSettle("disconnect", "p0");
+    const r = m.process("p1", { type: "hearts_play", card: { suit: "clubs", rank: "3" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/ROUND_SETTLED/);
+  });
+});
+
 // Help TypeScript: confirm PlayerId import is used (suppress unused warn).
 const _pid: PlayerId = "x"; void _pid;
