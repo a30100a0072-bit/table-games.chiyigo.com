@@ -20,27 +20,30 @@ const ICON: Record<GameType, string> = {
   texas:   "♠️",
   uno:     "🎴",
   yahtzee: "🎲",
+  hearts:  "♥️",
 };
 
 type LabelKey =
   | "select.bigTwo" | "select.mahjong" | "select.texas"
-  | "select.uno"    | "select.yahtzee";
+  | "select.uno"    | "select.yahtzee" | "select.hearts";
 const LABEL_KEY: Record<GameType, LabelKey> = {
   bigTwo:  "select.bigTwo",
   mahjong: "select.mahjong",
   texas:   "select.texas",
   uno:     "select.uno",
   yahtzee: "select.yahtzee",
+  hearts:  "select.hearts",
 };
 type TagKey =
   | "select.tag.bigTwo" | "select.tag.mahjong" | "select.tag.texas"
-  | "select.tag.uno"    | "select.tag.yahtzee";
+  | "select.tag.uno"    | "select.tag.yahtzee" | "select.tag.hearts";
 const TAG_KEY: Record<GameType, TagKey> = {
   bigTwo:  "select.tag.bigTwo",
   mahjong: "select.tag.mahjong",
   texas:   "select.tag.texas",
   uno:     "select.tag.uno",
   yahtzee: "select.tag.yahtzee",
+  hearts:  "select.tag.hearts",
 };
 
 const ANTE: Record<GameType, number> = {
@@ -49,6 +52,7 @@ const ANTE: Record<GameType, number> = {
   texas:   200,
   uno:     100,
   yahtzee: 100,
+  hearts:  100,
 };
 
 const POKER_GAMES: GameType[] = ["bigTwo", "texas", "uno"];

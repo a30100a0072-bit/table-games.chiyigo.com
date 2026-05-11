@@ -35,6 +35,7 @@ export const ANTE_BY_GAME: Record<GameType, number> = {
   texas:   200,
   uno:     100,
   yahtzee: 100,
+  hearts:  100,
 };
 
 // ── Bot ID prefix ─────────────────────────────────────────────────────── L2_隔離

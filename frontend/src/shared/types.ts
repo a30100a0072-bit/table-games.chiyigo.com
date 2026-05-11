@@ -5,7 +5,9 @@
  *  read-only UI when a payload arrives with self.playerId === this. */
 export const SPECTATOR_PLAYER_ID = "__SPECTATOR__";
 
-export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee";
+// hearts 已在 union 中佔位（PR 1 infra），尚未實作；GAME_TYPES 仍只列出
+// 已實作的五款，UI 不會列出 hearts。
+export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee" | "hearts";
 
 export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const;
 // Game-name labels are translated via the i18n dictionary

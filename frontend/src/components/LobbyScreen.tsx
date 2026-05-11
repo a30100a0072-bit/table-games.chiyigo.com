@@ -5,13 +5,13 @@ import type { GameType } from "../shared/types";
 import WalletBadge from "./WalletBadge";
 import { useT } from "../i18n/useT";
 
-const GAME_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas" | "select.uno" | "select.yahtzee"> = {
+const GAME_KEY: Record<GameType, "select.bigTwo" | "select.mahjong" | "select.texas" | "select.uno" | "select.yahtzee" | "select.hearts"> = {
   bigTwo: "select.bigTwo", mahjong: "select.mahjong", texas: "select.texas",
-  uno: "select.uno", yahtzee: "select.yahtzee",
+  uno: "select.uno", yahtzee: "select.yahtzee", hearts: "select.hearts",
 };
 
 const GAME_ICON: Record<GameType, string> = {
-  bigTwo: "🃏", mahjong: "🀄", texas: "♠️", uno: "🎴", yahtzee: "🎲",
+  bigTwo: "🃏", mahjong: "🀄", texas: "♠️", uno: "🎴", yahtzee: "🎲", hearts: "♥️",
 };
 
 const ROOM_SIZE = 4;

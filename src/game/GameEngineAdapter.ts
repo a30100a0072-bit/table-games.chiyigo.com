@@ -462,6 +462,10 @@ export function createEngine(opts: CreateEngineOptions): IGameEngine {
       return new UnoEngine(new UnoStateMachine(opts.gameId, opts.roundId, opts.playerIds));
     case "yahtzee":
       return new YahtzeeEngine(new YahtzeeStateMachine(opts.gameId, opts.roundId, opts.playerIds));
+    // hearts 已在 GameType union 中佔位（PR 1 infra），尚未實作引擎；
+    // GAME_TYPES 不會暴露這款給 UI，因此正常路徑不會走到這裡。              // L2_隔離
+    case "hearts":
+      throw new Error(`Engine not implemented yet for gameType: ${opts.gameType}`);
   }
 }
 
@@ -477,5 +481,7 @@ export function restoreEngine(gameType: GameType, snap: unknown): IGameEngine {
       return new UnoEngine(UnoStateMachine.restore(snap as UnoSnapshot));
     case "yahtzee":
       return new YahtzeeEngine(YahtzeeStateMachine.restore(snap as YahtzeeSnapshot));
+    case "hearts":
+      throw new Error(`restoreEngine not implemented yet for gameType: ${gameType}`);
   }
 }

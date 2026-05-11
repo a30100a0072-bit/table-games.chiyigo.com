@@ -31,6 +31,9 @@ export default function GameScreen({ gameType, ...rest }: Props) {
     case "bigTwo":  inner = <BigTwoGameScreen      {...rest} />; break;
     case "uno":     inner = <UnoGameScreen         {...rest} />; break;
     case "yahtzee": inner = <YahtzeeGameScreen     {...rest} />; break;
+    // hearts 已在 GameType union 中佔位（PR 1 infra），尚未實作；GAME_TYPES
+    // 不會暴露給 UI，因此正常路徑不會走到這裡。
+    case "hearts":  inner = <BigTwoGameScreen      {...rest} />; break;
   }
   return (
     <Suspense fallback={
