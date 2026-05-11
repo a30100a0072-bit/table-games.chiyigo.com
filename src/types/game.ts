@@ -49,7 +49,7 @@ export interface PassAction {
   type: "pass";           // 無牌可出或選擇 Pass           // L2_實作
 }
 
-/** 玩家送往 Worker 的動作意圖聯合型別（Big Two + Mahjong + Texas Hold'em + Uno）*/
+/** 玩家送往 Worker 的動作意圖聯合型別（Big Two + Mahjong + Texas Hold'em + Uno + Yahtzee + Hearts）*/
 export type PlayerAction =
   | PlayAction
   | PassAction
@@ -67,7 +67,9 @@ export type PlayerAction =
   | UnoDrawAction
   | UnoPassAction
   | YahtzeeRollAction
-  | YahtzeeScoreAction;
+  | YahtzeeScoreAction
+  | HeartsPassAction
+  | HeartsPlayAction;
 
 // ──────────────────────────────────────────────
 //  1c. Texas Hold'em Action (L2_實作)
@@ -463,6 +465,87 @@ export interface YahtzeeSettlementDetail {
 }
 
 // ──────────────────────────────────────────────
+//  2f. Hearts (L2_實作)
+// ──────────────────────────────────────────────
+
+/** 紅心大戰 phase。
+ *  - "passing": 開局收 3 張交換中（handIndex % 4 === 3 直接跳過此 phase）
+ *  - "playing": 跟磴中
+ *  - "between_hands": 本局結束已記分，等待 startNextHand
+ *  - "settled": 任一玩家累積 ≥100，整場結束                                 // L2_隔離 */
+export type HeartsPhase = "passing" | "playing" | "between_hands" | "settled";
+
+/** Pass 方向；handIndex % 4: 0=left, 1=right, 2=across, 3=none。           // L2_隔離 */
+export type HeartsPassDirection = "left" | "right" | "across" | "none";
+
+export interface HeartsPassAction {
+  type: "hearts_pass";
+  cards: [Card, Card, Card];        // 必須是手中真實存在的 3 張           // L3_邏輯安防
+}
+
+export interface HeartsPlayAction {
+  type: "hearts_play";
+  card: Card;                       // 必須是手中真實存在的牌             // L3_邏輯安防
+}
+
+export interface HeartsSelfView {
+  playerId: PlayerId;
+  hand: Card[];                     // 本人完整手牌                        // L2_隔離
+  cardCount: number;
+  /** 本局已收的牌（含分牌資訊，公開）                                       // L2_隔離 */
+  takenCount: number;
+  /** 「我選好要 pass 的 3 張」— 已 submit 才有值；尚未 submit 為 null。
+   *  passing phase 結束後一律為 null。                                      // L2_隔離 */
+  myPass: [Card, Card, Card] | null;
+}
+
+export interface HeartsOpponentView {
+  playerId: PlayerId;
+  cardCount: number;                // 隱藏牌面，僅張數                    // L2_隔離
+  takenCount: number;                // 已收張數公開（不洩內容）            // L2_隔離
+  /** 是否已 submit pass（passing phase 期間有意義）                         // L2_隔離 */
+  hasPassed: boolean;
+}
+
+export interface HeartsTrickPlay {
+  playerId: PlayerId;
+  card: Card;
+}
+
+export interface HeartsStateView {
+  gameId: string;
+  roundId: string;
+  phase: HeartsPhase;
+  self: HeartsSelfView;
+  opponents: HeartsOpponentView[];
+  /** 0..n；用來計算 pass direction 和顯示「第 N 局」。                     // L2_隔離 */
+  handIndex: number;
+  passDirection: HeartsPassDirection;
+  /** ♥ 是否已被破。未破前不能領 ♥（除非手上只剩 ♥）。                     // L3_邏輯安防 */
+  heartsBroken: boolean;
+  /** 當前正在進行的磴；空陣列 = 等首打。playing phase 才有意義。           // L2_隔離 */
+  currentTrick: HeartsTrickPlay[];
+  /** 累積分（跨 hand），≥100 觸發最終結算。                                  // L2_隔離 */
+  cumulativeScores: Record<PlayerId, number>;
+  /** 我本回合可合法打出的牌；前端用來高亮 / dim。SM 已過濾 follow-suit /
+   *  first-trick / heartsBroken 三條規則。playing phase 才有意義。           // L3_邏輯安防 */
+  legalCards: Card[];
+  currentTurn: PlayerId;
+  turnDeadlineMs: number;
+}
+
+/** Hearts 結算附加資訊：本局每家分 + 累積分 + Shoot the Moon 玩家 + 最終排名 */
+export interface HeartsSettlementDetail {
+  /** 本局各家得分（贏家=0、Shoot the Moon 則該家 0、其他 +26）              // L2_隔離 */
+  handScores: Record<PlayerId, number>;
+  cumulativeScores: Record<PlayerId, number>;
+  /** 本局 Shoot the Moon 的玩家 id；無則 null                                // L2_隔離 */
+  shotTheMoonBy: PlayerId | null;
+  /** 整場結束（matchOver=true）時帶入；中間局為 null                          // L2_隔離 */
+  finalRanking: PlayerId[] | null;
+}
+
+// ──────────────────────────────────────────────
 //  3. SettlementResult  (L2_鎖定)
 // ──────────────────────────────────────────────
 
@@ -492,6 +575,8 @@ export interface SettlementResult {
   unoDetail?: UnoSettlementDetail;
   // Yahtzee 獨有：每家總分 + bonus 明細。其他遊戲為 undefined。              // L2_實作
   yahtzeeDetail?: YahtzeeSettlementDetail;
+  // Hearts 獨有：本局得分 + 累積 + Shoot the Moon + 最終排名。其他為 undefined。 // L2_實作
+  heartsDetail?: HeartsSettlementDetail;
   /** 多局賽事中間局結算為 false；單局或末局為 true（預設）。DO 收到
    *  matchOver=false 時 ledger 仍照記但不 cleanup，等待下一局。           // L2_鎖定 */
   matchOver?: boolean;

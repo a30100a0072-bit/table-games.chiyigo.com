@@ -251,6 +251,51 @@ export interface YahtzeeSettlementDetail {
   yahtzeeBonusByPlayer: Record<PlayerId, number>;
 }
 
+// ─── Hearts ──────────────────────────────────────────────────────────────────
+export type HeartsPhase = "passing" | "playing" | "between_hands" | "settled";
+export type HeartsPassDirection = "left" | "right" | "across" | "none";
+
+export interface HeartsPassAction { type: "hearts_pass"; cards: [Card, Card, Card]; }
+export interface HeartsPlayAction { type: "hearts_play"; card: Card; }
+
+export interface HeartsSelfView {
+  playerId: PlayerId;
+  hand: Card[];
+  cardCount: number;
+  takenCount: number;
+  myPass: [Card, Card, Card] | null;
+}
+export interface HeartsOpponentView {
+  playerId: PlayerId;
+  cardCount: number;
+  takenCount: number;
+  hasPassed: boolean;
+}
+export interface HeartsTrickPlay { playerId: PlayerId; card: Card; }
+
+export interface HeartsStateView {
+  gameId: string;
+  roundId: string;
+  phase: HeartsPhase;
+  self: HeartsSelfView;
+  opponents: HeartsOpponentView[];
+  handIndex: number;
+  passDirection: HeartsPassDirection;
+  heartsBroken: boolean;
+  currentTrick: HeartsTrickPlay[];
+  cumulativeScores: Record<PlayerId, number>;
+  legalCards: Card[];
+  currentTurn: PlayerId;
+  turnDeadlineMs: number;
+}
+
+export interface HeartsSettlementDetail {
+  handScores: Record<PlayerId, number>;
+  cumulativeScores: Record<PlayerId, number>;
+  shotTheMoonBy: PlayerId | null;
+  finalRanking: PlayerId[] | null;
+}
+
 // ─── Unified PlayerAction (matches backend) ──────────────────────────────────
 export type PlayerAction =
   | PlayAction | PassAction
@@ -258,7 +303,8 @@ export type PlayerAction =
   | MahjongKongAction | MahjongHuAction | MahjongPassAction
   | PokerFoldAction | PokerCheckAction | PokerCallAction | PokerRaiseAction
   | UnoPlayAction | UnoDrawAction | UnoPassAction
-  | YahtzeeRollAction | YahtzeeScoreAction;
+  | YahtzeeRollAction | YahtzeeScoreAction
+  | HeartsPassAction | HeartsPlayAction;
 
 // ─── Settlement (shared) ─────────────────────────────────────────────────────
 export type SettlementReason = "lastCardPlayed" | "timeout" | "disconnect";
@@ -278,6 +324,7 @@ export interface SettlementResult {
   fanDetail?:  { fan: number; base: number; detail: string[] };
   unoDetail?:  UnoSettlementDetail;
   yahtzeeDetail?: YahtzeeSettlementDetail;
+  heartsDetail?: HeartsSettlementDetail;
   matchOver?:  boolean;
   matchProgress?: {
     handNumber:        number;
@@ -289,4 +336,4 @@ export interface SettlementResult {
 }
 
 // ─── Discriminated union for any state-view payload ──────────────────────────
-export type AnyStateView = GameStateView | MahjongStateView | PokerStateView | UnoStateView | YahtzeeStateView;
+export type AnyStateView = GameStateView | MahjongStateView | PokerStateView | UnoStateView | YahtzeeStateView | HeartsStateView;

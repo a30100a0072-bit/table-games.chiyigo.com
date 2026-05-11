@@ -281,6 +281,14 @@ function EventCard({ ev, idx, t }: { ev: ReplayEvent; idx: number; t: TFunction 
       );
       break;
     }
+    // Hearts 已在 PlayerAction union 中佔位（PR 2.1 infra），ReplaysModal 的
+    // Hearts 卡片渲染（顏色 chip + 中文牌身）留待 PR 3 補上。                  // L2_隔離
+    case "hearts_pass":
+    case "hearts_play": {
+      badge = (a as { type: string }).type;
+      body  = <span>{badge}</span>;
+      break;
+    }
     default: {
       // Exhaustiveness check — TypeScript flags any newly-added action type
       // that this switch forgets to handle.
@@ -772,6 +780,9 @@ function fmtEventOneLine(e: ReplayEvent, t: TFunction): string {
         : `${who} ${t("rep.yz.rollAll")}`;
     }
     case "yz_score": return `${who} ${t("rep.yz.fill", { slot: yzSlotLabel(t, a.slot) })}`;
+    case "hearts_pass":
+    case "hearts_play":
+      return `${who} ${a.type}`;
     default: {
       const _exhaustive: never = a;
       void _exhaustive;
