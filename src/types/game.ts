@@ -15,11 +15,10 @@ export interface Card {
 export type PlayerId = string; // Durable Object id or CF session id
 
 // 統一遊戲識別碼，用於 Lobby 路由 / DO 初始化 / 客戶端旗標。               // L2_模組
-// hearts 已在 union 中佔位以利後續 PR 接線；GAME_TYPES 仍只暴露已實作的
-// 五款，避免 UI 列出尚未實作的遊戲。                                       // L2_隔離
+// hearts: PR 2 (2026-05-11) 接線完成，PR 3 暴露至 UI。                       // L2_隔離
 export type GameType = "bigTwo" | "mahjong" | "texas" | "uno" | "yahtzee" | "hearts";
 
-export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as const;
+export const GAME_TYPES: readonly GameType[] = ["bigTwo", "mahjong", "texas", "uno", "yahtzee", "hearts"] as const;
 export function isGameType(x: unknown): x is GameType {
   return typeof x === "string" && (GAME_TYPES as readonly string[]).includes(x);
 }

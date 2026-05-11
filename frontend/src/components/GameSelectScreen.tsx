@@ -62,7 +62,7 @@ const LAST_PICK_KEY = "ux.lastPickedGame";
 function readLastPick(): GameType | null {
   try {
     const v = localStorage.getItem(LAST_PICK_KEY);
-    if (v === "bigTwo" || v === "mahjong" || v === "texas" || v === "uno" || v === "yahtzee") {
+    if (v === "bigTwo" || v === "mahjong" || v === "texas" || v === "uno" || v === "yahtzee" || v === "hearts") {
       return v;
     }
   } catch { /* localStorage may be blocked */ }
@@ -299,6 +299,20 @@ export default function GameSelectScreen({
             </span>
           </button>
 
+          {/* Hearts — trick-taking; standalone tile so it isn't hidden under
+              the poker sub-picker (Hearts is not a betting card game). */}
+          <button
+            onClick={() => pick("hearts")}
+            className="flex flex-col items-start gap-1 rounded-2xl bg-green-800/80 p-4 text-left shadow-lg ring-1 ring-green-700/60 transition hover:bg-green-700 active:scale-[0.98]"
+          >
+            <span className="text-3xl">♥️</span>
+            <span className="text-base font-bold text-yellow-200">{t("select.hearts")}</span>
+            <span className="text-[11px] text-green-300">{t("select.tag.hearts")}</span>
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-yellow-900/40 px-2 py-0.5 text-[10px] font-bold text-yellow-300 ring-1 ring-yellow-600/40">
+              💰 {t("select.minAnte", { n: ANTE.hearts })}
+            </span>
+          </button>
+
           {/* Private room */}
           {onPrivateEnter && (
             <button
@@ -492,7 +506,7 @@ export default function GameSelectScreen({
                 onChange={e => setSpecType(e.target.value as GameType)}
                 className="rounded-lg bg-green-800 px-3 py-2 text-sm text-yellow-100"
               >
-                {(["bigTwo", "mahjong", "texas", "uno", "yahtzee"] as GameType[]).map(g => (
+                {(["bigTwo", "mahjong", "texas", "uno", "yahtzee", "hearts"] as GameType[]).map(g => (
                   <option key={g} value={g}>{ICON[g]} {t(LABEL_KEY[g])}</option>
                 ))}
               </select>
