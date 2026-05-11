@@ -353,3 +353,74 @@ test("Yahtzee: lobby tap → GameScreen with 5 dice + roll button", async ({ pag
   await expect(page.locator("text=YAHTZEE").first()).toBeVisible();
   await expect(page.locator("text=/Chance/").first()).toBeVisible();
 });
+
+test("Hearts: lobby tap → GameScreen with pass-3-cards prompt", async ({ page }) => {
+  await stubBoot(page);
+  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      matched: true, roomId: "e2e-room-hearts", gameType: "hearts",
+      players: ["alice", "BOT_2", "BOT_3", "BOT_4"],
+    }),
+  }));
+
+  await page.routeWebSocket(/ws:\/\/localhost:9999\/rooms\/.*\/join/, ws => {
+    // Hand 0 → pass left. alice still owes a 3-card pass.
+    ws.send(JSON.stringify({
+      type: "state",
+      payload: {
+        gameId: "e2e-room-hearts", roundId: "r1", phase: "passing",
+        self: {
+          playerId: "alice",
+          hand: [
+            { suit: "spades",   rank: "Q" },
+            { suit: "spades",   rank: "A" },
+            { suit: "hearts",   rank: "K" },
+            { suit: "hearts",   rank: "10" },
+            { suit: "clubs",    rank: "2" },
+            { suit: "clubs",    rank: "3" },
+            { suit: "diamonds", rank: "7" },
+            { suit: "diamonds", rank: "J" },
+            { suit: "diamonds", rank: "4" },
+            { suit: "spades",   rank: "5" },
+            { suit: "clubs",    rank: "8" },
+            { suit: "hearts",   rank: "3" },
+            { suit: "diamonds", rank: "9" },
+          ],
+          cardCount: 13,
+          takenCount: 0,
+          myPass: null,
+        },
+        opponents: [
+          { playerId: "BOT_2", cardCount: 13, takenCount: 0, hasPassed: false },
+          { playerId: "BOT_3", cardCount: 13, takenCount: 0, hasPassed: true  },
+          { playerId: "BOT_4", cardCount: 13, takenCount: 0, hasPassed: false },
+        ],
+        handIndex: 0,
+        passDirection: "left",
+        heartsBroken: false,
+        currentTrick: [],
+        cumulativeScores: { alice: 0, BOT_2: 0, BOT_3: 0, BOT_4: 0 },
+        legalCards: [],
+        currentTurn: "alice",
+        turnDeadlineMs: Date.now() + 30_000,
+      },
+    }));
+  });
+
+  await page.goto("/");
+  await page.locator("input[maxlength='16']").fill("alice");
+  await page.locator("button[type='submit']").click();
+
+  await expect(page.locator("text=♥️").first()).toBeVisible();
+  await page.locator("button:has-text('♥️')").first().click();
+
+  // Pass prompt visible in either locale; submit button starts disabled
+  // because zero cards are picked.
+  await expect(
+    page.locator("text=/pick 3 cards|選 3 張/i").first()
+  ).toBeVisible({ timeout: 8_000 });
+  await expect(
+    page.locator("button").filter({ hasText: /submit pass|送出交換/i }).first()
+  ).toBeDisabled();
+});
