@@ -9,7 +9,11 @@
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "deploy": "wrangler deploy --env production",
-    "gen:jwk": "node scripts/gen-jwk.mjs"
+    "gen:jwk": "node scripts/gen-jwk.mjs",
+    "db:migrate:local":      "wrangler d1 migrations apply big-two-db --local",
+    "db:migrate:prod":       "wrangler d1 migrations apply big-two-db --env production --remote",
+    "db:migrate:list:local": "wrangler d1 migrations list  big-two-db --local",
+    "db:migrate:list:prod":  "wrangler d1 migrations list  big-two-db --env production --remote"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.15.2",

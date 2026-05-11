@@ -52,9 +52,10 @@ id      = "f39f8ece59464ec782a3c7ddc4be8488"
 
 # ── D1 Database ───────────────────────────────────────────────────────── # L3_架構含防禦觀測
 [[d1_databases]]
-binding       = "DB"
-database_name = "big-two-db"
-database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+binding         = "DB"
+database_name   = "big-two-db"
+database_id     = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+migrations_dir  = "migrations"                                          # see migrations/README.md
 
 # ── Production environment ────────────────────────────────────────────── # L2_隔離
 # Bindings must be repeated under [env.production] — wrangler does not
@@ -93,9 +94,10 @@ binding = "MATCH_KV"
 id      = "f39f8ece59464ec782a3c7ddc4be8488"
 
 [[env.production.d1_databases]]
-binding       = "DB"
-database_name = "big-two-db"
-database_id   = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+binding         = "DB"
+database_name   = "big-two-db"
+database_id     = "f064af01-8e5e-4d49-9dcc-bc56c2b7d55c"
+migrations_dir  = "migrations"                                          # see migrations/README.md
 
 # ── Secrets ───────────────────────────────────────────────────────────── # L2_隔離
 # JWT_PRIVATE_JWK is a JSON-serialised EC P-256 private JWK with a `kid`.

@@ -61,31 +61,21 @@ jobs:
       - name: Run Workers integration tests
         run: npm run test:workers
 
-      # ── 6a-pre. Backfill ALTER for existing tables (must run BEFORE schema.sql)
-      # SQLite has no `ADD COLUMN IF NOT EXISTS`; the ALTER errors once the
-      # column exists. We run each as best-effort and treat duplicate-column
-      # failures as success. This MUST run before `schema.sql` because the
-      # schema includes `CREATE UNIQUE INDEX idx_users_oidc_sub ON users
-      # (oidc_sub)` — if the column doesn't exist on a pre-OIDC users table
-      # yet, the index creation hard-fails and aborts the whole deploy.   // L3_架構含防禦觀測
-      - name: Backfill ALTER columns (best effort)
-        run: |
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN last_bailout_at INTEGER NOT NULL DEFAULT 0" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN last_login_at INTEGER NOT NULL DEFAULT 0" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN frozen_at INTEGER NOT NULL DEFAULT 0" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN frozen_reason TEXT" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE users ADD COLUMN oidc_sub TEXT" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE replay_shares ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE replay_shares ADD COLUMN last_viewed_at INTEGER" --env production --remote || true
-          npx wrangler d1 execute big-two-db --command="ALTER TABLE cron_runs ADD COLUMN replay_featured_purged INTEGER NOT NULL DEFAULT 0" --env production --remote || true
-
-      # ── 6a. Apply D1 schema (idempotent) ────────────────────────────
-      # All DDL uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF
-      # NOT EXISTS`, so re-running on every deploy is a no-op when nothing
-      # changed and only applies the new tables/columns when something did.
-      # Runs BEFORE the Worker deploy so new code never hits a stale schema. # L3_架構含防禦觀測
-      - name: Apply D1 schema migration
-        run: npx wrangler d1 execute big-two-db --file=src/db/schema.sql --env production --remote
+      # ── 6a. Apply D1 migrations (wrangler-tracked, forward-only) ────
+      # Replaces the legacy `wrangler d1 execute --file=src/db/schema.sql`
+      # one-shot. Wrangler reads `migrations/*.sql`, applies any not yet
+      # in the `d1_migrations` tracking table, and records each as applied.
+      # First run on the existing prod DB re-applies 0001_initial.sql which
+      # is fully idempotent (CREATE TABLE IF NOT EXISTS / INSERT OR IGNORE),
+      # so it's a no-op on the data side while bootstrapping the tracker. // L3_架構含防禦觀測
+      #
+      # The legacy ALTER backfill block (last_bailout_at / oidc_sub /
+      # view_count / replay_featured_purged etc.) was removed here — those
+      # columns are present in prod since the 2026-05-04 → 05-08 batch and
+      # are now captured in the 0001 baseline. Future column additions go
+      # in their own migration files; do NOT re-introduce a CI backfill.
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply big-two-db --env production --remote
 
       # ── 6b-pre. Deploy tail-forwarder worker ─────────────────────────
       # The main worker's wrangler.toml references `big-two-log-forwarder`
