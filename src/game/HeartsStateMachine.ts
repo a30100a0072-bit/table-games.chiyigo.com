@@ -442,12 +442,15 @@ export class HeartsStateMachine {
     this.lastShooter = shooter;
 
     // Match-over: anyone hit ≥100 cumulative after this hand. Final
-    // ranking is by cumulative ASC (low = good in Hearts).
+    // ranking is by cumulative ASC (low = good in Hearts). Tiebreak
+    // chain: cumulative → last-hand score (lower wins) → seat order
+    // via stable sort. Real Hearts tournaments use "fewest points the
+    // last hand" for ties; seat order is a defensive last fallback.    // L2_實作
     const cumulative: Record<PlayerId, number> = {};
     for (const [pid, n] of s.cumulativeScores) cumulative[pid] = n;
     const matchOver = s.playerIds.some(p => (cumulative[p] ?? 0) >= 100);
     const finalRanking = matchOver
-      ? [...s.playerIds].sort((a, b) => (cumulative[a] ?? 0) - (cumulative[b] ?? 0))
+      ? rankPlayers(s.playerIds, cumulative, handScores)
       : null;
 
     s.phase = matchOver ? "settled" : "between_hands";
@@ -494,6 +497,19 @@ export class HeartsStateMachine {
       winnerId,
       heartsDetail,
       matchOver,
+      // Replay continuity: ReplaysModal uses matchProgress.handNumber to
+      // bucket events across hand boundaries (cf. mahjong's multi-hand
+      // replay viewer). Hearts has unbounded targetHands (match ends on
+      // cumulative >=100, not a fixed N) — encode 0 to flag that to the
+      // viewer. dealerIdx / bankerStreak are mahjong-specific and reused
+      // here as innocuous zeros.                                              // L2_隔離
+      matchProgress: {
+        handNumber:       s.handIndex + 1,
+        targetHands:      0,
+        dealerIdx:        0,
+        bankerStreak:     0,
+        cumulativeScores: { ...cumulative },
+      },
     };
   }
 
@@ -674,6 +690,15 @@ export class HeartsStateMachine {
   forceSettle(reason: SettlementReason, forfeitPlayerId?: PlayerId): SettlementResult {
     const s = this.s;
 
+    // Idempotency guard. A natural matchOver settlement at the 13th trick
+    // sets phase="settled" already; if the DO then races a disconnect/
+    // timeout into forceSettle, we'd otherwise emit a *second* settlement
+    // and double-write the wallet ledger. Reject explicitly so the DO
+    // can detect and ignore.                                                  // L3_邏輯安防
+    if (s.phase === "settled") {
+      throw new Error("HEARTS_ALREADY_SETTLED");
+    }
+
     const cumulative: Record<PlayerId, number> = {};
     for (const [pid, n] of s.cumulativeScores) cumulative[pid] = n;
 
@@ -729,6 +754,13 @@ export class HeartsStateMachine {
       winnerId,
       heartsDetail,
       matchOver:  true,
+      matchProgress: {
+        handNumber:       s.handIndex + 1,
+        targetHands:      0,
+        dealerIdx:        0,
+        bankerStreak:     0,
+        cumulativeScores: { ...cumulative },
+      },
     };
   }
 
@@ -879,3 +911,22 @@ export function computeLegalPlays(
 
 function ok(): HeartsProcessResult { return { ok: true, settlement: null }; }
 function err(error: string): HeartsProcessError { return { ok: false, error }; }
+
+/** Final ranking by cumulative ASC, with last-hand score as the
+ *  secondary key and seat order as the implicit third (stable sort). */
+function rankPlayers(
+  playerIds: PlayerId[],
+  cumulative: Record<PlayerId, number>,
+  handScores: Record<PlayerId, number>,
+): PlayerId[] {
+  // Stamp seat order so the comparator is fully deterministic.
+  const tagged = playerIds.map((pid, idx) => ({ pid, idx }));
+  tagged.sort((a, b) => {
+    const dc = (cumulative[a.pid] ?? 0) - (cumulative[b.pid] ?? 0);
+    if (dc !== 0) return dc;
+    const dh = (handScores[a.pid] ?? 0) - (handScores[b.pid] ?? 0);
+    if (dh !== 0) return dh;
+    return a.idx - b.idx;
+  });
+  return tagged.map(t => t.pid);
+}

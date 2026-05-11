@@ -685,6 +685,130 @@ describe("Hearts multi-hand + final settle", () => {
     expect(set.players[0]!.playerId).toBe("p0");
   });
 
+  it("intermediate hand settlement carries matchProgress.handNumber + cumulativeScores for replay continuity", () => {
+    const m = moonFixture(2, [["p0", 0], ["p1", 30], ["p2", 20], ["p3", 10]]);
+    const r = runMoonHand(m);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const set = r.settlement!;
+    expect(set.matchOver).toBe(false);
+    expect(set.matchProgress).toBeDefined();
+    expect(set.matchProgress!.handNumber).toBe(3);   // handIndex=2 → handNumber=3
+    expect(set.matchProgress!.targetHands).toBe(0);  // unbounded
+    expect(set.matchProgress!.cumulativeScores).toEqual({ p0: 0, p1: 56, p2: 46, p3: 36 });
+  });
+
+  it("finalRanking tiebreak: equal cumulative → lower last-hand score wins", () => {
+    // Seed: p0=85, p1=85, p2=50, p3=20. Trigger a hand where after
+    // finalize, cumulative becomes p0=100 (took 15), p1=100 (took 15),
+    // p2 (took some), p3 (took rest). p0 and p1 tied at 100; if p0
+    // scored less THIS HAND than p1, p0 must rank ahead of p1.
+    //
+    // Hard to script a precise mid-hand state with the public API.
+    // Instead drive via restore: set takenTricks so the last trick
+    // completes with the desired hand scores.
+    //
+    // Plan: hand-craft a state where 12 tricks are already taken and
+    // the 13th will assign the remaining points to make handScores
+    // p0=15, p1=15, p2=10, p3=−14 doesn't fit (must sum to 26 with no
+    // moon). Simpler: 12 tricks taken with point distribution
+    // p0=15, p1=15, p2=0, p3=0; last trick has 0 points and goes
+    // to whoever leads (set turnIndex=0).
+    const taken: [PlayerId, Card[]][] = [
+      // p0 takes 15 hearts pts (♥A,K,Q + lower fillers)
+      ["p0", [{ suit: "hearts", rank: "A" }, { suit: "hearts", rank: "K" },
+              { suit: "hearts", rank: "Q" }]],   // 3 hearts = 3 pts; need 15
+      // p1 takes ♠Q + ♥2 + ♥3 = 13+2 = 15 pts
+      ["p1", [{ suit: "spades", rank: "Q" }, { suit: "hearts", rank: "2" }, { suit: "hearts", rank: "3" }]],
+      ["p2", [{ suit: "hearts", rank: "4" }, { suit: "hearts", rank: "5" },
+              { suit: "hearts", rank: "6" }, { suit: "hearts", rank: "7" }]],  // 4 pts
+      ["p3", [{ suit: "hearts", rank: "8" }, { suit: "hearts", rank: "9" },
+              { suit: "hearts", rank: "10" }, { suit: "hearts", rank: "J" }]], // 4 pts
+    ];
+    // Actually p0 currently has only 3 cards. Fix: make p0's hearts
+    // = 3 cards summing 3 pts; need 15 total → impossible with hearts
+    // alone (max 13 hearts cards). Use ♠Q + 2 hearts for 15 pts.
+    // Redo: p0 = ♠Q + ♥A + ♥K = 13+1+1 = 15; p1 = ♥Q + ♥J + 13 more
+    // hearts for 15 pts is too many cards. Simpler: give one of them
+    // ♠Q and the other 15 hearts cards which is impossible.
+    //
+    // Truth: equal cumulative tied by exact point sums requires
+    // careful arithmetic. Use mismatched pre-hand cumulative + last
+    // hand score so the cumulative collides:
+    //   pre: p0=85, p1=70.   handScores: p0=20 (♠Q+♥7+0 fillers), p1=35? no max=26.
+    //
+    // Easiest verification: bypass natural finalize, call rankPlayers
+    // logic via a forceSettle-style snapshot crafted to test sort.
+    // Test rankPlayers behaviour through forceSettle (which goes
+    // through same tiebreak code path via the cumulative-ascending sort
+    // in forceSettle — wait, forceSettle uses a separate sort).
+    //
+    // Test directly via finalizeHand: craft last-trick state where
+    // 12 tricks taken split symmetrically and 13th trick adds 0 pts.
+    // p0 pre-cum = 85; takes 15 this hand → 100. p1 pre-cum = 95;
+    // takes 5 this hand → 100. p0 and p1 tie at 100; p1 had lower
+    // hand score → p1 should rank ahead of p0.
+
+    const taken2: [PlayerId, Card[]][] = [
+      ["p0", [
+        { suit: "spades", rank: "Q" },           // 13
+        { suit: "hearts", rank: "2" },           // 1
+        { suit: "hearts", rank: "3" },           // 1
+        // 9 non-point fillers to reach 12 cards.
+        ...Array.from({ length: 9 }, () => ({ suit: "diamonds" as const, rank: "2" as const })),
+      ]],
+      ["p1", [
+        { suit: "hearts", rank: "4" }, { suit: "hearts", rank: "5" },
+        { suit: "hearts", rank: "6" }, { suit: "hearts", rank: "7" },
+        { suit: "hearts", rank: "8" },           // 5 hearts = 5 pts
+        ...Array.from({ length: 7 }, () => ({ suit: "diamonds" as const, rank: "3" as const })),
+      ]],
+      ["p2", [
+        { suit: "hearts", rank: "9" }, { suit: "hearts", rank: "10" },
+        { suit: "hearts", rank: "J" }, { suit: "hearts", rank: "Q" },  // 4 = 4 pts
+        ...Array.from({ length: 8 }, () => ({ suit: "diamonds" as const, rank: "4" as const })),
+      ]],
+      ["p3", [
+        { suit: "hearts", rank: "K" }, { suit: "hearts", rank: "A" },  // 2 = 2 pts
+        ...Array.from({ length: 10 }, () => ({ suit: "diamonds" as const, rank: "5" as const })),
+      ]],
+    ];
+    void taken;  // suppress unused for now
+
+    const m = HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      cumulativeScores: [["p0", 85], ["p1", 95], ["p2", 50], ["p3", 30]],
+      hands: [
+        ["p0", [{ suit: "diamonds", rank: "A" }]],
+        ["p1", [{ suit: "diamonds", rank: "K" }]],
+        ["p2", [{ suit: "diamonds", rank: "Q" }]],
+        ["p3", [{ suit: "diamonds", rank: "J" }]],
+      ],
+      takenTricks: taken2,
+      heartsBroken: true,
+      turnIndex: 0,
+    }));
+    // Last trick — 0 pts swept by p0 (♦A high). handScores: p0=15
+    // (13+1+1), p1=5, p2=4, p3=2 → sum 26 ✓.
+    m.process("p0", { type: "hearts_play", card: { suit: "diamonds", rank: "A" } });
+    m.process("p1", { type: "hearts_play", card: { suit: "diamonds", rank: "K" } });
+    m.process("p2", { type: "hearts_play", card: { suit: "diamonds", rank: "Q" } });
+    const r = m.process("p3", { type: "hearts_play", card: { suit: "diamonds", rank: "J" } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const set = r.settlement!;
+    expect(set.matchOver).toBe(true);
+
+    // Cumulative: p0=85+15=100, p1=95+5=100, p2=50+4=54, p3=30+2=32.
+    // p0 and p1 tied at 100. By last-hand tiebreak, p1 (5 pts) < p0 (15
+    // pts), so p1 ranks AHEAD of p0. Full ranking: p3 (32), p2 (54),
+    // p1 (100), p0 (100).
+    expect(set.heartsDetail!.cumulativeScores).toEqual({ p0: 100, p1: 100, p2: 54, p3: 32 });
+    expect(set.heartsDetail!.finalRanking).toEqual(["p3", "p2", "p1", "p0"]);
+    expect(set.winnerId).toBe("p3");  // lowest cumulative overall
+  });
+
   it("final hand: any player ≥100 → matchOver=true, +300/-100 chips, finalRanking populated", () => {
     // Seed p1 at 80 cumulative so the upcoming moon-against-p0 pushes p1
     // past 100 (or actually moon shooter scores 0 so others go +26 →
@@ -817,6 +941,9 @@ describe("Hearts forceSettle", () => {
     expect(sum).toBe(0);
     expect(set.heartsDetail!.finalRanking).toBeNull();
     expect(m.viewFor("p0").phase).toBe("settled");
+    // matchProgress populated for replay continuity (forceSettle path too).
+    expect(set.matchProgress).toBeDefined();
+    expect(set.matchProgress!.cumulativeScores).toEqual({ p0: 50, p1: 10, p2: 30, p3: 20 });
   });
 
   it("timeout without forfeit: all deltas 0, winner = lowest cumulative (seat-order tiebreak)", () => {
@@ -833,6 +960,38 @@ describe("Hearts forceSettle", () => {
     const r = m.process("p1", { type: "hearts_play", card: { suit: "clubs", rank: "3" } });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/ROUND_SETTLED/);
+  });
+
+  it("forceSettle is idempotent: second call after settled throws ALREADY_SETTLED", () => {
+    const m = midGame([["p0", 0], ["p1", 0], ["p2", 0], ["p3", 0]]);
+    m.forceSettle("disconnect", "p0");
+    expect(() => m.forceSettle("disconnect", "p0")).toThrow(/ALREADY_SETTLED/);
+  });
+
+  it("forceSettle throws if natural matchOver already settled the game", () => {
+    // Trigger natural matchOver: shoot the moon while one player is at 80
+    // pre-hand → that player ends at 106 ≥ 100 → matchOver=true, phase=settled.
+    const m = HeartsStateMachine.restore(blankSnap({
+      phase: "playing",
+      pendingPasses: [],
+      cumulativeScores: [["p0", 0], ["p1", 80], ["p2", 50], ["p3", 30]],
+      hands: [
+        ["p0", suitRun("clubs")],
+        ["p1", suitRun("diamonds")],
+        ["p2", suitRun("spades")],
+        ["p3", suitRun("hearts")],
+      ],
+    }));
+    const ranks: Card["rank"][] = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+    for (let i = 0; i < 13; i++) {
+      m.process("p0", { type: "hearts_play", card: { suit: "clubs",    rank: ranks[i]! } });
+      m.process("p1", { type: "hearts_play", card: { suit: "diamonds", rank: ranks[i]! } });
+      m.process("p2", { type: "hearts_play", card: { suit: "spades",   rank: ranks[i]! } });
+      m.process("p3", { type: "hearts_play", card: { suit: "hearts",   rank: ranks[i]! } });
+    }
+    expect(m.viewFor("p0").phase).toBe("settled");
+    // Racy disconnect-then-natural-end is the exact double-emit scenario.
+    expect(() => m.forceSettle("disconnect", "p1")).toThrow(/ALREADY_SETTLED/);
   });
 });
 
