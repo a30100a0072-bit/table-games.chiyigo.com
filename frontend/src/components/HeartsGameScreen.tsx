@@ -323,7 +323,7 @@ export default function HeartsGameScreen({ playerId, token, roomId, wsUrl, spect
                 </>
               ) : (
                 <div className="rounded-xl bg-green-900/70 px-4 py-3 text-center text-sm text-yellow-200 ring-1 ring-green-700/40">
-                  <div>{t("hearts.passWait")}</div>
+                  <div>{watching ? t("hearts.thinking") : t("hearts.passWait")}</div>
                   <div className="mt-1 text-[11px] text-green-300">
                     {t("hearts.passWaitCount", { n: passedCount })}
                   </div>
