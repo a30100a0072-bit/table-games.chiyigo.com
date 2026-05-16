@@ -52,7 +52,7 @@ export async function getToken(playerId: string): Promise<TokenResponse> {
 }
 
 export async function findMatch(token: string, gameType: GameType, mahjongHands?: number): Promise<MatchResponse> {
-  const res = await fetch(`${BASE}/api/match`, {
+  const res = await fetch(`${BASE}/api/v1/match`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -77,8 +77,8 @@ export async function findMatch(token: string, gameType: GameType, mahjongHands?
 
 export async function getWallet(token: string, ledgerCursor?: number): Promise<WalletResponse> {
   const url = ledgerCursor !== undefined
-    ? `${BASE}/api/me/wallet?ledgerCursor=${ledgerCursor}`
-    : `${BASE}/api/me/wallet`;
+    ? `${BASE}/api/v1/me/wallet?ledgerCursor=${ledgerCursor}`
+    : `${BASE}/api/v1/me/wallet`;
   const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${token}` },
   });
@@ -114,7 +114,7 @@ export interface HistoryEntry {
   score_delta: number;
 }
 export async function getHistory(token: string): Promise<{ playerId: string; games: HistoryEntry[] }> {
-  const res = await fetch(`${BASE}/api/me/history`, {
+  const res = await fetch(`${BASE}/api/v1/me/history`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -127,7 +127,7 @@ export interface LeaderboardRow {
   chip_balance: number;
 }
 export async function getLeaderboard(): Promise<{ updatedAt: number; rows: LeaderboardRow[] }> {
-  const res = await fetch(`${BASE}/api/leaderboard`);
+  const res = await fetch(`${BASE}/api/v1/leaderboard`);
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
@@ -186,7 +186,7 @@ export interface MyTournamentRow {
 }
 
 export async function listMyTournamentsApi(token: string): Promise<{ rows: MyTournamentRow[] }> {
-  const res = await fetch(`${BASE}/api/me/tournaments`, {
+  const res = await fetch(`${BASE}/api/v1/me/tournaments`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -194,20 +194,20 @@ export async function listMyTournamentsApi(token: string): Promise<{ rows: MyTou
 }
 
 export async function listTournaments(): Promise<{ rows: TournamentRow[]; required: number }> {
-  const res = await fetch(`${BASE}/api/tournaments`);
+  const res = await fetch(`${BASE}/api/v1/tournaments`);
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function getTournament(id: string): Promise<TournamentDetail> {
-  const res = await fetch(`${BASE}/api/tournaments/${id}`);
+  const res = await fetch(`${BASE}/api/v1/tournaments/${id}`);
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function createTournament(token: string, gameType: GameType, buyIn: number)
   : Promise<{ tournamentId: string; prizePool: number; required: number }> {
-  const res = await fetch(`${BASE}/api/tournaments`, {
+  const res = await fetch(`${BASE}/api/v1/tournaments`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ gameType, buyIn }),
@@ -218,7 +218,7 @@ export async function createTournament(token: string, gameType: GameType, buyIn:
 }
 
 export async function joinTournamentApi(token: string, id: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/tournaments/${id}/join`, {
+  const res = await fetch(`${BASE}/api/v1/tournaments/${id}/join`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -234,7 +234,7 @@ export interface FriendsResponse {
 }
 
 export async function listFriendsApi(token: string): Promise<FriendsResponse> {
-  const res = await fetch(`${BASE}/api/friends`, {
+  const res = await fetch(`${BASE}/api/v1/friends`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -243,7 +243,7 @@ export async function listFriendsApi(token: string): Promise<FriendsResponse> {
 
 export async function requestFriendApi(token: string, targetPlayerId: string)
   : Promise<{ status: "pending" | "accepted" }> {
-  const res = await fetch(`${BASE}/api/friends/request`, {
+  const res = await fetch(`${BASE}/api/v1/friends/request`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ targetPlayerId }),
@@ -260,7 +260,7 @@ export async function requestFriendApi(token: string, targetPlayerId: string)
 export async function respondFriendApi(
   token: string, other: string, action: "accept" | "decline",
 ): Promise<void> {
-  const res = await fetch(`${BASE}/api/friends/${encodeURIComponent(other)}/${action}`, {
+  const res = await fetch(`${BASE}/api/v1/friends/${encodeURIComponent(other)}/${action}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -268,7 +268,7 @@ export async function respondFriendApi(
 }
 
 export async function unfriendApi(token: string, other: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/friends/${encodeURIComponent(other)}`, {
+  const res = await fetch(`${BASE}/api/v1/friends/${encodeURIComponent(other)}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -287,7 +287,7 @@ export interface PrivateRoomCreated {
 export async function createPrivateRoomApi(
   token: string, gameType: GameType, ttlMinutes?: number,
 ): Promise<PrivateRoomCreated> {
-  const res = await fetch(`${BASE}/api/rooms/private`, {
+  const res = await fetch(`${BASE}/api/v1/rooms/private`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ gameType, ...(ttlMinutes ? { ttlMinutes } : {}) }),
@@ -299,7 +299,7 @@ export async function createPrivateRoomApi(
 export async function resolvePrivateRoomApi(
   token: string, joinToken: string,
 ): Promise<{ roomId: string; gameType: GameType; capacity: number; expiresAt: number }> {
-  const res = await fetch(`${BASE}/api/rooms/by-token/${encodeURIComponent(joinToken)}`, {
+  const res = await fetch(`${BASE}/api/v1/rooms/by-token/${encodeURIComponent(joinToken)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 404) throw new Error("token not found");
@@ -321,7 +321,7 @@ export interface RoomInvite {
 export async function inviteFriendToRoomApi(
   token: string, friendPlayerId: string, joinToken: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/api/rooms/invite`, {
+  const res = await fetch(`${BASE}/api/v1/rooms/invite`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ friendPlayerId, joinToken }),
@@ -333,7 +333,7 @@ export async function inviteFriendToRoomApi(
 }
 
 export async function listInvitesApi(token: string): Promise<{ invites: RoomInvite[] }> {
-  const res = await fetch(`${BASE}/api/rooms/invites`, {
+  const res = await fetch(`${BASE}/api/v1/rooms/invites`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -341,7 +341,7 @@ export async function listInvitesApi(token: string): Promise<{ invites: RoomInvi
 }
 
 export async function declineInviteApi(token: string, id: number): Promise<void> {
-  const res = await fetch(`${BASE}/api/rooms/invites/${id}/decline`, {
+  const res = await fetch(`${BASE}/api/v1/rooms/invites/${id}/decline`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -393,7 +393,7 @@ export interface ReplayDetail extends ReplaySummary {
 
 export async function listMyReplaysApi(token: string)
   : Promise<{ engineVersion: number; replays: ReplaySummary[] }> {
-  const res = await fetch(`${BASE}/api/me/replays`, {
+  const res = await fetch(`${BASE}/api/v1/me/replays`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -402,7 +402,7 @@ export async function listMyReplaysApi(token: string)
 
 export async function shareReplayApi(token: string, gameId: string, ttlMs?: number)
   : Promise<{ token: string; expiresAt: number }> {
-  const res = await fetch(`${BASE}/api/replays/${encodeURIComponent(gameId)}/share`, {
+  const res = await fetch(`${BASE}/api/v1/replays/${encodeURIComponent(gameId)}/share`, {
     method:  "POST",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body:    JSON.stringify(ttlMs !== undefined ? { ttlMs } : {}),
@@ -418,13 +418,13 @@ export interface MyShareEntry {
   lastViewedAt: number | null;
 }
 export async function listMySharesApi(token: string): Promise<{ shares: MyShareEntry[] }> {
-  const res = await fetch(`${BASE}/api/me/shares`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${BASE}/api/v1/me/shares`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function revokeShareApi(token: string, shareToken: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/replays/share/${encodeURIComponent(shareToken)}`, {
+  const res = await fetch(`${BASE}/api/v1/replays/share/${encodeURIComponent(shareToken)}`, {
     method:  "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -449,7 +449,7 @@ export async function listFeaturedReplaysApi(before?: number, limit?: number)
   const qs = new URLSearchParams();
   if (before !== undefined) qs.set("before", String(before));
   if (limit  !== undefined) qs.set("limit",  String(limit));
-  const url = `${BASE}/api/replays/featured${qs.toString() ? "?" + qs : ""}`;
+  const url = `${BASE}/api/v1/replays/featured${qs.toString() ? "?" + qs : ""}`;
   const res = await fetch(url);
   if (!res.ok) throw await readApiError(res);
   return res.json();
@@ -457,7 +457,7 @@ export async function listFeaturedReplaysApi(before?: number, limit?: number)
 
 export async function adminFeatureReplayApi(secret: string, gameId: string, note?: string, ttlDays?: number)
   : Promise<{ gameId: string; shareToken: string; expiresAt: number }> {
-  const res = await fetch(`${BASE}/api/admin/replays/feature`, {
+  const res = await fetch(`${BASE}/api/v1/admin/replays/feature`, {
     method: "POST",
     headers: { "X-Admin-Secret": secret, "Content-Type": "application/json" },
     body: JSON.stringify({ gameId, ...(note ? { note } : {}), ...(ttlDays ? { ttlDays } : {}) }),
@@ -467,7 +467,7 @@ export async function adminFeatureReplayApi(secret: string, gameId: string, note
 }
 
 export async function adminUnfeatureReplayApi(secret: string, gameId: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/admin/replays/feature/${encodeURIComponent(gameId)}`, {
+  const res = await fetch(`${BASE}/api/v1/admin/replays/feature/${encodeURIComponent(gameId)}`, {
     method: "DELETE",
     headers: { "X-Admin-Secret": secret },
   });
@@ -476,7 +476,7 @@ export async function adminUnfeatureReplayApi(secret: string, gameId: string): P
 
 export interface FriendRecommendation { playerId: string; together: number; lastPlayed: number; }
 export async function getFriendRecommendationsApi(token: string): Promise<{ recommendations: FriendRecommendation[] }> {
-  const res = await fetch(`${BASE}/api/friends/recommendations`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${BASE}/api/v1/friends/recommendations`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
@@ -485,13 +485,13 @@ export async function getFriendRecommendationsApi(token: string): Promise<{ reco
 export interface BlockEntry { playerId: string; createdAt: number; }
 
 export async function listMyBlocksApi(token: string): Promise<{ blocks: BlockEntry[] }> {
-  const res = await fetch(`${BASE}/api/blocks`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${BASE}/api/v1/blocks`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw await readApiError(res);
   return res.json();
 }
 
 export async function blockPlayerApi(token: string, targetPlayerId: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/blocks`, {
+  const res = await fetch(`${BASE}/api/v1/blocks`, {
     method:  "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body:    JSON.stringify({ targetPlayerId }),
@@ -500,7 +500,7 @@ export async function blockPlayerApi(token: string, targetPlayerId: string): Pro
 }
 
 export async function unblockPlayerApi(token: string, targetPlayerId: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/blocks/${encodeURIComponent(targetPlayerId)}`, {
+  const res = await fetch(`${BASE}/api/v1/blocks/${encodeURIComponent(targetPlayerId)}`, {
     method:  "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -531,7 +531,7 @@ export interface AdminHealth {
 }
 
 export async function getAdminHealthApi(secret: string): Promise<AdminHealth> {
-  const res = await fetch(`${BASE}/api/admin/health`, {
+  const res = await fetch(`${BASE}/api/v1/admin/health`, {
     headers: { "X-Admin-Secret": secret },
   });
   if (res.status === 401) throw new Error("invalid admin secret");
@@ -541,7 +541,7 @@ export async function getAdminHealthApi(secret: string): Promise<AdminHealth> {
 }
 
 export async function getSharedReplayApi(token: string): Promise<ReplayDetail & { sharedBy: string }> {
-  const res = await fetch(`${BASE}/api/replays/by-token/${encodeURIComponent(token)}`);
+  const res = await fetch(`${BASE}/api/v1/replays/by-token/${encodeURIComponent(token)}`);
   if (res.status === 404) throw new Error("share link not found");
   if (res.status === 410) throw new Error("share link expired");
   if (!res.ok) throw await readApiError(res);
@@ -549,7 +549,7 @@ export async function getSharedReplayApi(token: string): Promise<ReplayDetail & 
 }
 
 export async function getReplayApi(token: string, gameId: string): Promise<ReplayDetail> {
-  const res = await fetch(`${BASE}/api/replays/${encodeURIComponent(gameId)}`, {
+  const res = await fetch(`${BASE}/api/v1/replays/${encodeURIComponent(gameId)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 404) throw new Error("replay not found");
@@ -568,7 +568,7 @@ export interface DmMessage {
 }
 
 export async function sendDmApi(token: string, to: string, body: string): Promise<{ id: number; createdAt: number }> {
-  const res = await fetch(`${BASE}/api/dm/send`, {
+  const res = await fetch(`${BASE}/api/v1/dm/send`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ to, body }),
@@ -578,7 +578,7 @@ export async function sendDmApi(token: string, to: string, body: string): Promis
 }
 
 export async function listDmConversationApi(token: string, peer: string): Promise<{ messages: DmMessage[] }> {
-  const res = await fetch(`${BASE}/api/dm/inbox?with=${encodeURIComponent(peer)}`, {
+  const res = await fetch(`${BASE}/api/v1/dm/inbox?with=${encodeURIComponent(peer)}`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   if (!res.ok) return { messages: [] };
@@ -586,7 +586,7 @@ export async function listDmConversationApi(token: string, peer: string): Promis
 }
 
 export async function unreadDmCountApi(token: string): Promise<{ unread: number }> {
-  const res = await fetch(`${BASE}/api/dm/unread`, {
+  const res = await fetch(`${BASE}/api/v1/dm/unread`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   if (!res.ok) return { unread: 0 };
@@ -602,7 +602,7 @@ export interface LiveRoom {
 }
 
 export async function listLiveRoomsApi(): Promise<{ rooms: LiveRoom[] }> {
-  const res = await fetch(`${BASE}/api/rooms/live`);
+  const res = await fetch(`${BASE}/api/v1/rooms/live`);
   if (!res.ok) return { rooms: [] };
   return res.json();
 }
@@ -610,7 +610,7 @@ export async function listLiveRoomsApi(): Promise<{ rooms: LiveRoom[] }> {
 /** Triggers a browser download of the user's full data export.
  *  Resolves once the file is offered (no ack from the user). */
 export async function exportAccountApi(token: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/me/export`, {
+  const res = await fetch(`${BASE}/api/v1/me/export`, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   if (!res.ok) throw await readApiError(res);
@@ -630,7 +630,7 @@ export async function exportAccountApi(token: string): Promise<void> {
 }
 
 export async function deleteAccountApi(token: string): Promise<{ tombstone: string }> {
-  const res = await fetch(`${BASE}/api/me`, {
+  const res = await fetch(`${BASE}/api/v1/me`, {
     method: "DELETE",
     headers: {
       "Authorization":     `Bearer ${token}`,
@@ -642,7 +642,7 @@ export async function deleteAccountApi(token: string): Promise<{ tombstone: stri
 }
 
 export async function claimBailout(token: string): Promise<BailoutResponse> {
-  const res = await fetch(`${BASE}/api/me/bailout`, {
+  const res = await fetch(`${BASE}/api/v1/me/bailout`, {
     method:  "POST",
     headers: { "Authorization": `Bearer ${token}` },
   });

@@ -467,5 +467,34 @@ describe("gateway routes", () => {
     expect(r.headers.get("Access-Control-Allow-Origin")).toBeNull();
     expect(r.headers.get("Vary")).toBe("Origin");
   });
+
+  it("/api/v1/* alias serves the same body as /api/*", async () => {
+    const legacy = await handleRequest(req("GET", "/api/leaderboard"), env);
+    const v1     = await handleRequest(req("GET", "/api/v1/leaderboard"), env);
+    expect(legacy.status).toBe(200);
+    expect(v1.status).toBe(200);
+    const legacyBody = await legacy.json() as { rows: unknown[] };
+    const v1Body     = await v1.json() as { rows: unknown[] };
+    expect(v1Body.rows.length).toBe(legacyBody.rows.length);
+  });
+
+  it("legacy /api/* stamps Deprecation + Sunset; /api/v1/* does not", async () => {
+    const legacy = await handleRequest(req("GET", "/api/leaderboard"), env);
+    expect(legacy.headers.get("Deprecation")).toBe("true");
+    expect(legacy.headers.get("Sunset")).toBeTruthy();
+    expect(legacy.headers.get("Link")).toMatch(/rel="deprecation"/);
+
+    const v1 = await handleRequest(req("GET", "/api/v1/leaderboard"), env);
+    expect(v1.headers.get("Deprecation")).toBeNull();
+    expect(v1.headers.get("Sunset")).toBeNull();
+  });
+
+  it("/auth/* paths are NOT deprecated (protocol surface, not REST API)", async () => {
+    const r = await handleRequest(req("POST", "/auth/token", {
+      body: { playerId: "alice" },
+    }), env);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Deprecation")).toBeNull();
+  });
 });
 

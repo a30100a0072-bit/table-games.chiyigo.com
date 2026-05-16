@@ -67,10 +67,25 @@ export interface GatewayEnv extends LobbyEnv {
 export async function handleRequest(request: Request, env: GatewayEnv): Promise<Response> {
   const url = new URL(request.url);
 
+  // ── API versioning (/api/v1/* alias to /api/*) ───────────────────────
+  // New clients should target /api/v1/*; legacy /api/* keeps working
+  // until SUNSET_DATE. The router below dispatches on /api/*, so we
+  // rewrite v1 paths down and remember whether this was a legacy hit
+  // so we can stamp Deprecation + Sunset headers on the way out.       // L3_架構含防禦觀測
+  const isLegacyApi = url.pathname.startsWith("/api/")
+                   && !url.pathname.startsWith("/api/v1/");
+  if (url.pathname.startsWith("/api/v1/")) {
+    url.pathname = "/api" + url.pathname.slice("/api/v1".length);
+  }
+
   // Per-request CORS origin pick. Closure shadows the module-level
-  // `applyCors` so every `cors(res)` call site below is unchanged.       // L3_架構含防禦觀測
+  // `applyCors` so every `cors(res)` call site below is unchanged.
+  // Also injects Deprecation/Sunset headers on legacy /api/* hits.       // L3_架構含防禦觀測
   const allowedOrigin = pickCorsOrigin(request, env);
-  const cors = (res: Response) => applyCors(res, allowedOrigin);
+  const cors = (res: Response): Response => {
+    const withCors = applyCors(res, allowedOrigin);
+    return isLegacyApi ? withDeprecation(withCors) : withCors;
+  };
 
   // CORS pre-flight (Cloudflare Pages frontend on a different origin)
   if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
@@ -366,6 +381,24 @@ function pickCorsOrigin(request: Request, env: GatewayEnv): string | null {
   return DEV_FALLBACK_ORIGINS.includes(reqOrigin) ? reqOrigin : null;
 }
 
+// ── API deprecation headers (RFC 9745 + RFC 8594) ────────────────────
+// Legacy /api/* (non-v1) is being retired. Frontend should be on /api/v1/*
+// well before SUNSET_DATE. After that date, the router will start returning
+// 410 Gone for legacy paths — bump the date here when you genuinely extend
+// the window (telemetry says clients still on legacy), not just because
+// you forgot to migrate something.                                       // L3_架構含防禦觀測
+const SUNSET_DATE     = new Date("2026-08-14T00:00:00Z");
+const SUNSET_HEADER   = SUNSET_DATE.toUTCString();
+const DEPRECATION_DOC = "https://github.com/a30100a0072-bit/table-games.chiyigo.com#api-versioning";
+
+function withDeprecation(res: Response): Response {
+  const h = new Headers(res.headers);
+  h.set("Deprecation", "true");
+  h.set("Sunset",      SUNSET_HEADER);
+  h.set("Link",        `<${DEPRECATION_DOC}>; rel="deprecation"; type="text/html"`);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
 function applyCors(res: Response, allowedOrigin: string | null): Response {
   const h = new Headers(res.headers);
   // Vary: Origin ALWAYS — otherwise a cached 200 from one origin could
@@ -375,6 +408,9 @@ function applyCors(res: Response, allowedOrigin: string | null): Response {
     h.set("Access-Control-Allow-Origin",  allowedOrigin);
     h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret, X-Confirm-Delete");
     h.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    // Expose deprecation signals + X-Request-Id (from withTrace) so the
+    // SPA can see them via fetch().headers.                              // L3_架構含防禦觀測
+    h.set("Access-Control-Expose-Headers", "Deprecation, Sunset, Link, X-Request-Id");
   }
   return new Response(res.body, { status: res.status, headers: h });
 }

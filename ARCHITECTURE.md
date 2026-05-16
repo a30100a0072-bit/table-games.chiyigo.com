@@ -11,6 +11,7 @@
 > 5. **`/metrics`**：admin-gated（X-Admin-Secret）；不再對外。
 > 6. **經濟常數**：`src/domain/economy.ts` 唯一源（SIGNUP_GRANT / DAILY_BONUS_* / BAILOUT_*）。
 > 7. **Migration rollback**：每個 `000N_*.sql`（N >= 2）必須有對應 `.down.sql`；smoke test enforce。Rollback playbook 在 `migrations/README.md`。
+> 8. **API versioning**：所有 `/api/*` 同時走 `/api/v1/*`；legacy `/api/*` 回 `Deprecation: true` + `Sunset: Thu, 14 Aug 2026 00:00:00 GMT` + `Link: rel="deprecation"`；雙寫期 90 天。前端 `http.ts` 已切到 `/api/v1/*`。`/auth/oauth/*` 與 `/auth/token` 不版本化（protocol surface，非 REST 資源）。Sunset 後 legacy 改回 410 Gone。
 >
 > 最後更新：2026-05-11 — 第十七批 ship 完整 Hearts（紅心大戰）：**第六款遊戲全鏈路上線**。PR 2 backend（types + SM + engine adapter + bot heuristic + 200 場 arena fairness 通過 + post-review hardening：`forceSettle` 第二次呼叫 throw `HEARTS_ALREADY_SETTLED` 防 disconnect 撞 13th-trick 自然 matchOver 雙寫 ledger / `matchProgress` 鋪給 ReplaysModal / `finalRanking` 同分用本局較低分 tiebreak），ENGINE_VERSION **5→6** + SW cache **v5→v6**。PR 3 frontend：`hearts` 進 `GAME_TYPES`、GameSelectScreen 加 ♥️ 獨立 tile（不藏在 poker sub-picker，因 Hearts 非 betting 牌局）、`HeartsGameScreen.tsx` 含 passing-phase 3 張 picker / playing-phase trick 中央 / cumulative score 側欄 / ♥-broken + first-trick chip、ReplaysModal Hearts chips（3-card pass row + ♠Q/♥ tag 後綴）、tournament regression `it.each` 擴到 `["uno","yahtzee","hearts"]`、e2e smoke 覆蓋 lobby tap → pass prompt。**460+ tests 全程綠 / tsc 0**。設計決策固化在 memory `project_hearts_pr2_2026-05-11.md`。
 >
