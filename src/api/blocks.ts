@@ -5,7 +5,7 @@
 // detected by probing. Used at the API layer by friends / dms /
 // roomInvites — see isBlockedEitherWay() below.                          // L3_架構含防禦觀測
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
@@ -13,19 +13,6 @@ import { log }                                      from "../utils/log";
 export interface BlocksEnv {
   DB:              D1Database;
   JWT_PRIVATE_JWK: string;
-}
-
-async function authPlayer(request: Request, env: BlocksEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
 }
 
 /** Returns true iff a blocks b OR b blocks a — i.e. any communication
@@ -50,7 +37,7 @@ export async function isBlockedEitherWay(
 // Idempotent: re-blocking is a no-op (INSERT OR IGNORE). Self-block
 // is rejected by the schema CHECK and surfaced as VALIDATION_FAILED.
 export async function blockPlayer(request: Request, env: BlocksEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
 
@@ -84,7 +71,7 @@ export async function blockPlayer(request: Request, env: BlocksEnv): Promise<Res
 // Idempotent: unblocking a non-blocked player returns 200 with
 // removed=false so the UI can fire-and-forget.
 export async function unblockPlayer(request: Request, env: BlocksEnv, target: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
 
@@ -102,7 +89,7 @@ export async function unblockPlayer(request: Request, env: BlocksEnv, target: st
 // has NO read endpoint — the whole point of a unilateral block is
 // that the blockee can't tell.
 export async function listMyBlocks(request: Request, env: BlocksEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const rows = await env.DB

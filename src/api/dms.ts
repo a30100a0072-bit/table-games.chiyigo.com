@@ -8,7 +8,7 @@
 //   • 30 msg/min/sender rate limit (utils/rateLimit.ts "dm" bucket);
 //   • no live WS push in v1 — recipients poll /inbox.                       // L2_實作
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { isBlockedEitherWay }                       from "./blocks";
@@ -22,19 +22,6 @@ export interface DmEnv {
 const RETENTION_DAYS = 7;
 const RETENTION_MS   = RETENTION_DAYS * 86_400_000;
 const BODY_MAX       = 500;
-
-async function authPlayer(request: Request, env: DmEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
-}
 
 function canon(x: string, y: string): { a: string; b: string } {
   return x < y ? { a: x, b: y } : { a: y, b: x };
@@ -53,7 +40,7 @@ async function areFriends(env: DmEnv, me: string, other: string): Promise<boolea
 // Recipient must be an accepted friend; body trimmed and ≤ 500 chars.
 // Empty body after trim is rejected so accidental keystrokes don't spam.
 export async function sendDm(request: Request, env: DmEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`dm:${me}`, "dm")) return rateLimited();
 
@@ -90,7 +77,7 @@ export async function sendDm(request: Request, env: DmEnv): Promise<Response> {
 // Optional `with` filters to a single conversation. Optional `since` lets a
 // client pull only deltas without re-reading history.
 export async function listInbox(request: Request, env: DmEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const url   = new URL(request.url);
@@ -145,7 +132,7 @@ export async function listInbox(request: Request, env: DmEnv): Promise<Response>
 // ── GET /api/dm/unread ───────────────────────────────────────────────────
 // Lightweight badge feeder — count of unread inbound DMs within retention.
 export async function unreadDmCount(request: Request, env: DmEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   const cutoff = Date.now() - RETENTION_MS;
   const row = await env.DB

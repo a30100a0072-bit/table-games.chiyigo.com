@@ -7,7 +7,7 @@
 // client not to attempt to restoreEngine + step through the events,
 // since the state machine has shifted underneath them.                   // L3_架構
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { ENGINE_VERSION }                          from "../game/GameEngineAdapter";
@@ -15,19 +15,6 @@ import { ENGINE_VERSION }                          from "../game/GameEngineAdapt
 export interface ReplaysEnv {
   DB:              D1Database;
   JWT_PRIVATE_JWK: string;
-}
-
-async function authPlayer(request: Request, env: ReplaysEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
 }
 
 interface ReplayMetaRow {
@@ -41,7 +28,7 @@ interface ReplayMetaRow {
 // Recent finished games where the caller was a player. Cheap listing —
 // snapshot/events blobs are NOT included to keep the response small.
 export async function listMyReplays(request: Request, env: ReplaysEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   // Indexed lookup via replay_participants. Without it this would be a
@@ -80,7 +67,7 @@ export async function listMyReplays(request: Request, env: ReplaysEnv): Promise<
 // don't query this endpoint, and arbitrary users shouldn't be able to
 // browse other people's hands.
 export async function getReplay(request: Request, env: ReplaysEnv, gameId: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const row = await env.DB
@@ -125,7 +112,7 @@ const SHARE_TTL_MIN_MS     = 60 * 60_000;
 const SHARE_TTL_MAX_MS     = 30 * 86_400_000;
 
 export async function shareReplay(request: Request, env: ReplaysEnv, gameId: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   // Mint creates a public capability — tighter limit than the default friend
   // bucket so a compromised token can't spew share URLs into the wild.
@@ -172,7 +159,7 @@ export async function shareReplay(request: Request, env: ReplaysEnv, gameId: str
 // frontend revoke UI so the user can see what's currently public before
 // deciding whether to retract a link.
 export async function listMyShares(request: Request, env: ReplaysEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const rows = await env.DB
@@ -206,7 +193,7 @@ export async function listMyShares(request: Request, env: ReplaysEnv): Promise<R
 // caller; 404 otherwise (intentionally identical for "doesn't exist" and
 // "exists but not yours" — don't leak token validity to non-owners).
 export async function revokeShare(request: Request, env: ReplaysEnv, token: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const r = await env.DB

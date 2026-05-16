@@ -7,7 +7,7 @@
 // "Accepting" is not a backend operation — joining via the token IS
 // the accept. We only track pending → declined to keep the list clean.
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { isBlockedEitherWay }                       from "./blocks";
@@ -16,19 +16,6 @@ import { log }                                      from "../utils/log";
 export interface RoomInvitesEnv {
   DB:              D1Database;
   JWT_PRIVATE_JWK: string;
-}
-
-async function authPlayer(request: Request, env: RoomInvitesEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
 }
 
 function canon(x: string, y: string): { a: string; b: string } {
@@ -48,7 +35,7 @@ async function isFriend(env: RoomInvitesEnv, x: string, y: string): Promise<bool
 // Inserts a pending invite. The invitee MUST already be an accepted
 // friend, and the token MUST exist & be unexpired.
 export async function inviteToRoom(request: Request, env: RoomInvitesEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`invite:${me}`, "invite")) return rateLimited();
 
@@ -97,7 +84,7 @@ export async function inviteToRoom(request: Request, env: RoomInvitesEnv): Promi
 // Pending invites where I'm the invitee. Stale rows (expired) are filtered
 // at read time so we don't have to maintain a sweeper.
 export async function listInvites(request: Request, env: RoomInvitesEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const now = Date.now();
@@ -131,7 +118,7 @@ export async function listInvites(request: Request, env: RoomInvitesEnv): Promis
 // Idempotent: declining a non-pending row is a 200 no-op so the UI can
 // fire-and-forget.
 export async function declineInvite(request: Request, env: RoomInvitesEnv, id: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`invite:${me}`, "invite")) return rateLimited();
 

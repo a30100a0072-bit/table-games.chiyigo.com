@@ -291,9 +291,15 @@ describe("gateway routes", () => {
     expect(body.ledger.map(l => l.reason).sort()).toEqual(["daily", "signup"]);
   });
 
-  it("GET /metrics exposes counters", async () => {
+  it("GET /metrics requires admin secret and exposes counters", async () => {
     await handleRequest(req("POST", "/auth/token", { body: { playerId: "alice" } }), env);
-    const r = await handleRequest(req("GET", "/metrics"), env);
+    // unauth → 401
+    const noauth = await handleRequest(req("GET", "/metrics"), env);
+    expect(noauth.status).toBe(401);
+    // with admin secret → counters
+    const r = await handleRequest(req("GET", "/metrics", {
+      headers: { "X-Admin-Secret": "test-admin-secret" },
+    }), env);
     const body = await r.json() as Record<string, number>;
     expect(body.tokens_issued).toBeGreaterThanOrEqual(1);
     expect(typeof body.isolate_uptime_ms).toBe("number");
@@ -404,10 +410,22 @@ describe("gateway routes", () => {
     expect(r.status).toBe(404);
   });
 
-  it("OPTIONS preflight returns 204 with CORS headers", async () => {
-    const r = await handleRequest(req("OPTIONS", "/api/match"), env);
-    expect(r.status).toBe(204);
-    expect(r.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  it("OPTIONS preflight echoes Origin from the allowlist", async () => {
+    // Unlisted origin → no Allow-Origin header (browser blocks the call).
+    const blocked = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "https://evil.example" },
+    }), env);
+    expect(blocked.status).toBe(204);
+    expect(blocked.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    // Allowed origin → echoed + Vary: Origin.
+    env.ALLOWED_ORIGINS = "https://big-two-frontend.pages.dev";
+    const ok = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "https://big-two-frontend.pages.dev" },
+    }), env);
+    expect(ok.status).toBe(204);
+    expect(ok.headers.get("Access-Control-Allow-Origin")).toBe("https://big-two-frontend.pages.dev");
+    expect(ok.headers.get("Vary")).toBe("Origin");
   });
 });
 

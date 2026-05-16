@@ -21,7 +21,7 @@
 // real playerId (creation rejects the `DELETED_` prefix at /auth/token's
 // validator) — but we double-belt with a length+prefix check there too.   // L3_架構含防禦觀測
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
 
@@ -40,25 +40,12 @@ function makeTombstone(): string {
   return `${TOMBSTONE_PREFIX}${hex}`;
 }
 
-async function authPlayer(request: Request, env: AccountEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
-}
-
 // ── DELETE /api/me ───────────────────────────────────────────────────────
 // Confirmation header `X-Confirm-Delete: yes` is required so a stolen-token
 // holder can't wipe an account with a single replay of an arbitrary GET.
 // Frontend must set this header explicitly.                               // L2_隔離
 export async function deleteAccount(request: Request, env: AccountEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   if (request.headers.get("X-Confirm-Delete") !== "yes")
@@ -110,7 +97,7 @@ export async function deleteAccount(request: Request, env: AccountEnv): Promise<
 // payload is meant to be downloaded as a file by the browser; we set
 // content-disposition so a fetch + click flow lands on disk cleanly.
 export async function exportAccount(request: Request, env: AccountEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   // Run reads in parallel — they're independent and the smallest tables

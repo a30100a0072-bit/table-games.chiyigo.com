@@ -3,7 +3,7 @@
 // Buy-in deduction lives at this layer so it shares a transaction with
 // the tournament_entries write — keeping chip economy auditable.        // L3_架構含防禦觀測
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
@@ -21,24 +21,11 @@ const MAX_BUY_IN  = 5000;
 const REQUIRED    = 4;
 const RAKE_PCT    = 5;
 
-async function authPlayer(request: Request, env: TournamentEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
-}
-
 // ── POST /api/tournaments ────────────────────────────────────────────
 // Body: { gameType, buyIn }. Creator is auto-registered (and pays buy-in).
 
 export async function createTournament(request: Request, env: TournamentEnv): Promise<Response> {
-  const playerId = await authPlayer(request, env);
+  const playerId = await requireAuth(request, env);
   if (playerId instanceof Response) return playerId;
   if (!takeToken(`match:${playerId}`, "match")) return rateLimited();
 
@@ -123,7 +110,7 @@ export async function createTournament(request: Request, env: TournamentEnv): Pr
 // ── POST /api/tournaments/:id/join ───────────────────────────────────
 
 export async function joinTournament(request: Request, env: TournamentEnv, tournamentId: string): Promise<Response> {
-  const playerId = await authPlayer(request, env);
+  const playerId = await requireAuth(request, env);
   if (playerId instanceof Response) return playerId;
   if (!takeToken(`match:${playerId}`, "match")) return rateLimited();
 
@@ -246,16 +233,9 @@ export async function getTournament(_request: Request, env: TournamentEnv, tourn
 // Used by the App-level poller to surface "round about to start" toasts
 // even when the tournament modal is closed.
 export async function listMyTournaments(request: Request, env: TournamentEnv): Promise<Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  let me: string;
-  try { me = await verifyJWT(tok, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK)); }
-  catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
+  const meOr = await requireAuth(request, env);
+  if (meOr instanceof Response) return meOr;
+  const me = meOr;
 
   // 30-row cap is generous — a player won't realistically be in more
   // than a handful of in-flight tournaments.

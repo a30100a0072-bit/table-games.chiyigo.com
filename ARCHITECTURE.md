@@ -1,6 +1,15 @@
 # 桌遊連線平台 — 架構與實作步驟（六款遊戲）
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
+>
+> ## ⚠️ 紅燈規範（2026-05-16 加固，Production Engineering review）
+>
+> 1. **`src/workers/gateway.ts` 凍結**：不再新增 route handler 進來。新 endpoint 一律走 `src/routes/<area>.ts`（HTTP handler 殼）+ `src/domain/<area>.ts`（純商業邏輯，無 framework 依賴）。gateway.ts 只能加一行 dispatch（`cors(await foo(request, env))`）。
+> 2. **Controller 不直連 D1**：新 handler 不可在 route 檔案直接 `env.DB.prepare(...)`。把 SQL 集中到 `domain/` 或既有的 `api/` 模組。
+> 3. **Auth 入口唯一**：必 `requireAuth` / `withAuth`（`src/utils/authMw.ts`）；禁止再重新刻 `verifyJWT` boilerplate。
+> 4. **CORS**：`env.ALLOWED_ORIGINS`（逗號分隔）控制；無 origin 在白名單則回不帶 `Access-Control-Allow-Origin`。生產設定要把 Pages domain 寫上去。
+> 5. **`/metrics`**：admin-gated（X-Admin-Secret）；不再對外。
+>
 > 最後更新：2026-05-11 — 第十七批 ship 完整 Hearts（紅心大戰）：**第六款遊戲全鏈路上線**。PR 2 backend（types + SM + engine adapter + bot heuristic + 200 場 arena fairness 通過 + post-review hardening：`forceSettle` 第二次呼叫 throw `HEARTS_ALREADY_SETTLED` 防 disconnect 撞 13th-trick 自然 matchOver 雙寫 ledger / `matchProgress` 鋪給 ReplaysModal / `finalRanking` 同分用本局較低分 tiebreak），ENGINE_VERSION **5→6** + SW cache **v5→v6**。PR 3 frontend：`hearts` 進 `GAME_TYPES`、GameSelectScreen 加 ♥️ 獨立 tile（不藏在 poker sub-picker，因 Hearts 非 betting 牌局）、`HeartsGameScreen.tsx` 含 passing-phase 3 張 picker / playing-phase trick 中央 / cumulative score 側欄 / ♥-broken + first-trick chip、ReplaysModal Hearts chips（3-card pass row + ♠Q/♥ tag 後綴）、tournament regression `it.each` 擴到 `["uno","yahtzee","hearts"]`、e2e smoke 覆蓋 lobby tap → pass prompt。**460+ tests 全程綠 / tsc 0**。設計決策固化在 memory `project_hearts_pr2_2026-05-11.md`。
 >
 > 第十八批（2026-05-11 同日 post-ship）：補齊 6 款遊戲 bot 公平性 arena 對齊 — 新增 `test/mahjongArena.test.ts`（N=120，鼓動 dealer 座位輪替 + 跳過流局，10–40% 區間）+ `test/texasArena.test.ts`（N=240，輪 `dealerIdx` 讓 BTN/SB/BB/UTG 均衡，15–35% 區間），完成 BigTwo/Hearts/Uno/Yahtzee/**Mahjong/Texas** 全 6 款 self-play coverage。順手抓 2 條 mahjong bot reaction-phase 合法性漏洞：(1) `getMahjongBotAction` 沒檢查吃只有下家可吃，會被 SM 退 `ONLY_NEXT_PLAYER_CAN_CHOW`；(2) 搶槓視窗下 bot 仍可能 suggest pong/kong/chow，被 SM 退 `ONLY_HU_DURING_CHIANG_KONG`。Fix 補了 `MahjongStateView.seatOrder` + `kongUpgradeInProgress` 兩個 view 欄位，bot 用來 gate 吃/在搶槓視窗只 pass；新增 2 條 BotAI 單元測試覆蓋。**474 tests 全程綠 / tsc 0**；無 ENGINE_VERSION bump（純 view 層加欄位 + bot 行為修正，不改 SM 演算法）。Commits `d611a94` + `f42e268` + `37dc66c`。

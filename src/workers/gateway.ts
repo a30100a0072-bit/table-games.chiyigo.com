@@ -1,5 +1,17 @@
 // /src/workers/gateway.ts
+//
+// ⚠️  FROZEN FOR NEW ROUTES (2026-05-16) ⚠️
+// This file mixes routing, auth, business logic and direct D1 access —
+// see Production Engineering review. NEW endpoints must:
+//   1. Live in src/routes/<area>.ts (handler) + src/domain/<area>.ts (logic)
+//   2. Be mounted here via a single `cors(await foo(request, env))` line
+//   3. Never touch env.DB.prepare(...) inside this file
+// Existing inline handlers (wallet / bailout / history / admin / leaderboard
+// / token / room) stay until the gateway-split work item lands. Do not
+// extend them — extract first, then change.
+//                                                                        // L3_架構含防禦觀測
 import { verifyJWT, signJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                                      from "../utils/authMw";
 import { takeToken, rateLimited, clientIp }                 from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                          from "../utils/errors";
 import { log, errStr }                                       from "../utils/log";
@@ -27,6 +39,13 @@ export interface GatewayEnv extends LobbyEnv {
   TOURNAMENT_DO:    DurableObjectNamespace;
   SETTLEMENT_QUEUE: Queue<SettlementQueueMessage>;
   ADMIN_SECRET?:    string;          // optional; admin endpoints fail closed if unset
+  // Comma-separated list of allowed CORS origins. Replaces the legacy
+  // `Access-Control-Allow-Origin: *` which, combined with our Bearer-
+  // token model, let any origin proxy authenticated calls via fetch
+  // (browsers block credentialed * but Authorization headers go through).
+  // Unset → only same-origin works (curl / native apps unaffected — CORS
+  // is a browser concern).                                              // L3_架構含防禦觀測
+  ALLOWED_ORIGINS?:    string;
   // OIDC client config (chiyigo.com SSO). Optional — endpoints return
   // 503 if unset so a misconfigured deploy fails closed instead of
   // silently routing users into a broken flow.                          // L2_隔離
@@ -39,6 +58,14 @@ export interface GatewayEnv extends LobbyEnv {
 
 export async function handleRequest(request: Request, env: GatewayEnv): Promise<Response> {
   const url = new URL(request.url);
+
+  // Per-request CORS origin pick: echo back the request's Origin header
+  // iff it's on the configured allowlist; otherwise omit Allow-Origin
+  // entirely (browser blocks the response, native clients unaffected).
+  // Closure shadows the module-level `applyCors` so every existing
+  // `cors(res)` call site is unchanged.                                 // L3_架構含防禦觀測
+  const allowedOrigin = pickCorsOrigin(request, env);
+  const cors = (res: Response) => applyCors(res, allowedOrigin);
 
   // CORS pre-flight (Cloudflare Pages frontend on a different origin)
   if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
@@ -121,8 +148,13 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
   if (request.method === "GET" && url.pathname === "/api/leaderboard")
     return cors(await getLeaderboard(env));
 
-  if (request.method === "GET" && url.pathname === "/metrics")
+  if (request.method === "GET" && url.pathname === "/metrics") {
+    // Ops snapshot — admin-only to avoid leaking traffic shape / counters
+    // to scrapers. Same gate as /api/admin/*.                            // L3_架構含防禦觀測
+    const gate = checkAdmin(request, env);
+    if (gate) return cors(gate);
     return cors(Response.json(snapshotMetrics()));
+  }
 
   if (request.method === "POST" && url.pathname === "/api/admin/adjust")
     return cors(await adjustChips(request, env));
@@ -362,18 +394,9 @@ const SIGNUP_GRANT = 1000;
 // entries (newest first). Used by the frontend to render wallet UI.    // L2_實作
 
 async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-
-  let playerId: string;
-  try {
-    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
+  const pidOr = await requireAuth(request, env);
+  if (pidOr instanceof Response) return pidOr;
+  const playerId = pidOr;
 
   if (!takeToken(`wallet:${playerId}`, "wallet")) return rateLimited();
 
@@ -432,18 +455,9 @@ const BAILOUT_AMOUNT    = 500;
 const BAILOUT_COOLDOWN  = 24 * 60 * 60 * 1000;
 
 async function claimBailout(request: Request, env: GatewayEnv): Promise<Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-
-  let playerId: string;
-  try {
-    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
+  const pidOr = await requireAuth(request, env);
+  if (pidOr instanceof Response) return pidOr;
+  const playerId = pidOr;
 
   if (!takeToken(`bailout:${playerId}`, "bailout")) return rateLimited();
 
@@ -516,18 +530,9 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
 // game Y at time Z" without N+1 round-trips.
 
 async function getHistory(request: Request, env: GatewayEnv): Promise<Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-
-  let playerId: string;
-  try {
-    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
+  const pidOr = await requireAuth(request, env);
+  if (pidOr instanceof Response) return pidOr;
+  const playerId = pidOr;
 
   if (!takeToken(`wallet:${playerId}`, "wallet")) {
     bump("rate_limited");
@@ -924,11 +929,34 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
 }
 
 // ── CORS helper ─────────────────────────��─────────────────────────────────
+// Allowlist-driven. We echo the request's Origin only when it appears
+// in env.ALLOWED_ORIGINS; unknown origins get no Allow-Origin header
+// (browser blocks; same-origin / native clients unaffected). Defaults
+// include localhost dev so missing config doesn't break local work.   // L3_架構含防禦觀測
 
-function cors(res: Response): Response {
+const DEV_FALLBACK_ORIGINS = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:9999",
+  "http://127.0.0.1:9999",
+];
+
+export function pickCorsOrigin(request: Request, env: GatewayEnv): string | null {
+  const reqOrigin = request.headers.get("Origin");
+  if (!reqOrigin) return null;
+  const configured = (env.ALLOWED_ORIGINS ?? "")
+    .split(",").map(s => s.trim()).filter(Boolean);
+  const allowed = configured.length > 0 ? configured : DEV_FALLBACK_ORIGINS;
+  return allowed.includes(reqOrigin) ? reqOrigin : null;
+}
+
+function applyCors(res: Response, allowedOrigin: string | null): Response {
   const h = new Headers(res.headers);
-  h.set("Access-Control-Allow-Origin",  "*");
-  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret, X-Confirm-Delete");
-  h.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  if (allowedOrigin) {
+    h.set("Access-Control-Allow-Origin",  allowedOrigin);
+    h.set("Vary",                          "Origin");
+    h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret, X-Confirm-Delete");
+    h.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  }
   return new Response(res.body, { status: res.status, headers: h });
 }

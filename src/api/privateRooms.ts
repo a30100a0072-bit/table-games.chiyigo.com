@@ -9,7 +9,7 @@
 // route through Lobby/handleMatch, so the per-match floor doesn't fire.
 // Settlement chips still flow normally on game outcome.
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
@@ -25,19 +25,6 @@ export interface PrivateRoomsEnv {
 const DEFAULT_TTL_MIN = 24 * 60;        // 24 h
 const MAX_TTL_MIN     = 7  * 24 * 60;   // 7 days hard cap
 const MIN_TTL_MIN     = 5;
-
-async function authPlayer(request: Request, env: PrivateRoomsEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
-}
 
 /** 16 random bytes → base64url, ~22 chars, 128-bit entropy. */
 function newToken(): string {
@@ -56,7 +43,7 @@ function defaultCapacity(gt: GameType): number {
 // Body: { gameType, capacity?, ttlMinutes? }
 // Returns: { roomId, gameType, capacity, joinToken, expiresAt }
 export async function createPrivateRoom(request: Request, env: PrivateRoomsEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   // Reuse the match bucket — creating rooms is roughly the same blast
   // radius as queueing for matchmaking, and stops a creation flood from
@@ -125,7 +112,7 @@ export async function createPrivateRoom(request: Request, env: PrivateRoomsEnv):
 export async function resolvePrivateRoom(
   request: Request, env: PrivateRoomsEnv, token: string,
 ): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`match:${me}`, "match")) return rateLimited();
 

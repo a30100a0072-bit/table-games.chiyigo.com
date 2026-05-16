@@ -4,7 +4,7 @@
 // `requester` distinguishes incoming vs outgoing pending state without a
 // second row. See docs/social-spec.md (memory).                          // L3_架構含防禦觀測
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { isBlockedEitherWay }                       from "./blocks";
@@ -20,19 +20,6 @@ interface FriendshipRow {
   status: "pending" | "accepted";
   created_at: number;
   responded_at: number | null;
-}
-
-async function authPlayer(request: Request, env: FriendsEnv): Promise<string | Response> {
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  try {
-    return await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
 }
 
 /** Canonicalise an unordered pair into (a, b) with a < b. */
@@ -58,7 +45,7 @@ async function userExists(env: FriendsEnv, playerId: string): Promise<boolean> {
 // - existing pending from the other side → auto-accept (mutual desire)
 
 export async function requestFriend(request: Request, env: FriendsEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
 
@@ -117,7 +104,7 @@ export async function requestFriend(request: Request, env: FriendsEnv): Promise<
 // Only the request's recipient (i.e. NOT the original requester) can accept.
 
 export async function acceptFriend(request: Request, env: FriendsEnv, other: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
   if (other === me) return errorResponse(ErrorCode.VALIDATION_FAILED, 400, "cannot accept yourself");
@@ -148,7 +135,7 @@ export async function acceptFriend(request: Request, env: FriendsEnv, other: str
 // is success.
 
 export async function declineFriend(request: Request, env: FriendsEnv, other: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
 
@@ -169,7 +156,7 @@ export async function declineFriend(request: Request, env: FriendsEnv, other: st
 // One DELETE handles both since the row uniquely identifies the pair.
 
 export async function unfriend(request: Request, env: FriendsEnv, other: string): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
   if (!takeToken(`friend:${me}`, "friend")) return rateLimited();
 
@@ -193,7 +180,7 @@ export async function unfriend(request: Request, env: FriendsEnv, other: string)
 // requests I've sent that the other side hasn't answered yet.
 
 export async function listFriends(request: Request, env: FriendsEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const rows = await env.DB
@@ -238,7 +225,7 @@ export async function listFriends(request: Request, env: FriendsEnv): Promise<Re
 // Driven entirely by the replay_participants index — one self-join,
 // O(N) in the caller's recent games.                                       // L3_架構含防禦觀測
 export async function recommendFriends(request: Request, env: FriendsEnv): Promise<Response> {
-  const me = await authPlayer(request, env);
+  const me = await requireAuth(request, env);
   if (me instanceof Response) return me;
 
   const rows = await env.DB

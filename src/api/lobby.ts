@@ -4,7 +4,7 @@
 // 每個遊戲類型擁有自己的 LobbyDO（idFromName(gameType)），互不干擾。            // L2_隔離
 // 機器人補位（BOT_FILL）對 bigTwo / mahjong / texas 三款遊戲皆啟用。            // L2_實作
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv } from "../utils/auth";
+import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
@@ -340,18 +340,9 @@ export async function handleMatch(
   env: LobbyEnv,
 ): Promise<Response> {
 
-  const auth  = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-
-  let playerId: string;
-  try {
-    playerId = await verifyJWT(token, jwksFromPrivateEnv(env.JWT_PRIVATE_JWK));
-  } catch (err) {
-    return errorResponse(
-      ErrorCode.UNAUTHORIZED, 401,
-      err instanceof JWTError ? err.message : undefined,
-    );
-  }
+  const pidOr = await requireAuth(request, env);
+  if (pidOr instanceof Response) return pidOr;
+  const playerId = pidOr;
 
   if (!takeToken(`match:${playerId}`, "match")) {
     bump("rate_limited");

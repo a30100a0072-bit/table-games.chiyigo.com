@@ -67,6 +67,9 @@ name = "big-two-game-production"
 OIDC_ISSUER       = "https://chiyigo.com"
 OIDC_CLIENT_ID    = "playing-games"                                             # registered via chiyigo admin POST /api/admin/oauth-clients
 OIDC_REDIRECT_URI = "https://big-two-frontend.pages.dev/auth/callback"          # adjust if you point a custom domain at Pages
+# CORS allowlist (comma-separated). Replaces the legacy `*`. Add custom
+# domains here when Pages routes are switched off the *.pages.dev host. # L3_架構含防禦觀測
+ALLOWED_ORIGINS   = "https://big-two-frontend.pages.dev"
 
 [[env.production.durable_objects.bindings]]
 name       = "GAME_ROOM"
