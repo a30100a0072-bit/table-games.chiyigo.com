@@ -52,7 +52,7 @@ describe("Worker (miniflare): GET /api/me/export", () => {
       "g-other", "carol",    2000,
     ).run();
 
-    const r = await SELF.fetch("https://t.local/api/me/export", {
+    const r = await SELF.fetch("https://t.local/api/v1/me/export", {
       headers: { Authorization: `Bearer ${tok}` },
     });
     expect(r.status).toBe(200);
@@ -76,7 +76,7 @@ describe("Worker (miniflare): GET /api/me/export", () => {
   });
 
   it("rejects without a JWT", async () => {
-    const r = await SELF.fetch("https://t.local/api/me/export");
+    const r = await SELF.fetch("https://t.local/api/v1/me/export");
     expect(r.status).toBe(401);
   });
 });

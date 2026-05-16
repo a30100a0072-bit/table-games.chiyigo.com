@@ -12,7 +12,7 @@ beforeAll(applyTestSchema);
 
 describe("Worker (miniflare): GET /api/admin/health", () => {
   it("rejects without admin secret (401)", async () => {
-    const r = await SELF.fetch("https://t.local/api/admin/health");
+    const r = await SELF.fetch("https://t.local/api/v1/admin/health");
     expect(r.status).toBe(401);
   });
 
@@ -36,7 +36,7 @@ describe("Worker (miniflare): GET /api/admin/health", () => {
       " VALUES (?, ?, ?, ?, ?, ?)",
     ).bind(now - 500, 0, 0, 0, 0, JSON.stringify(["dmsPurged: boom"])).run();
 
-    const r = await SELF.fetch("https://t.local/api/admin/health", {
+    const r = await SELF.fetch("https://t.local/api/v1/admin/health", {
       headers: { "X-Admin-Secret": "test-admin" },
     });
     expect(r.status).toBe(200);

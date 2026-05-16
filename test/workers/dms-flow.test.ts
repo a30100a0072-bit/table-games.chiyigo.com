@@ -35,7 +35,7 @@ describe("Worker (miniflare): DM happy path", () => {
     const bobTok   = await tokFor("dm-bob");
 
     // Send
-    const send = await SELF.fetch("https://t.local/api/dm/send", {
+    const send = await SELF.fetch("https://t.local/api/v1/dm/send", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({ to: "dm-bob", body: "hello bob" }),
@@ -43,13 +43,13 @@ describe("Worker (miniflare): DM happy path", () => {
     expect(send.status).toBe(201);
 
     // Bob unread = 1
-    const unread1 = await SELF.fetch("https://t.local/api/dm/unread", {
+    const unread1 = await SELF.fetch("https://t.local/api/v1/dm/unread", {
       headers: { "Authorization": `Bearer ${bobTok}` },
     });
     expect((await unread1.json() as { unread: number }).unread).toBe(1);
 
     // Bob inbox surfaces the message AND the SELECT/UPDATE pair marks it read.
-    const inbox = await SELF.fetch("https://t.local/api/dm/inbox", {
+    const inbox = await SELF.fetch("https://t.local/api/v1/dm/inbox", {
       headers: { "Authorization": `Bearer ${bobTok}` },
     });
     expect(inbox.status).toBe(200);
@@ -57,7 +57,7 @@ describe("Worker (miniflare): DM happy path", () => {
     expect(ib.messages.some(m => m.sender === "dm-alice" && m.body === "hello bob")).toBe(true);
 
     // Bob unread = 0 after the inbox read
-    const unread2 = await SELF.fetch("https://t.local/api/dm/unread", {
+    const unread2 = await SELF.fetch("https://t.local/api/v1/dm/unread", {
       headers: { "Authorization": `Bearer ${bobTok}` },
     });
     expect((await unread2.json() as { unread: number }).unread).toBe(0);
@@ -65,7 +65,7 @@ describe("Worker (miniflare): DM happy path", () => {
 
   it("rejects DM to a non-friend (403)", async () => {
     const aliceTok = await tokFor("dm-alice");
-    const r = await SELF.fetch("https://t.local/api/dm/send", {
+    const r = await SELF.fetch("https://t.local/api/v1/dm/send", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({ to: "stranger", body: "hi" }),
@@ -75,14 +75,14 @@ describe("Worker (miniflare): DM happy path", () => {
 
   it("rejects empty body (400) and oversize body (413)", async () => {
     const aliceTok = await tokFor("dm-alice");
-    const empty = await SELF.fetch("https://t.local/api/dm/send", {
+    const empty = await SELF.fetch("https://t.local/api/v1/dm/send", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({ to: "dm-bob", body: "   " }),
     });
     expect(empty.status).toBe(400);
 
-    const big = await SELF.fetch("https://t.local/api/dm/send", {
+    const big = await SELF.fetch("https://t.local/api/v1/dm/send", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({ to: "dm-bob", body: "x".repeat(501) }),

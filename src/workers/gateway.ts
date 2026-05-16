@@ -9,9 +9,8 @@
 // from the prior commit is retired now that the split is in place — adding a
 // new endpoint is one route file + one dispatch line.                  // L3_架構含防禦觀測
 
-import { verifyJWT, JWTError, jwksFromPrivateEnv }     from "../utils/auth";
+import { verifyJWT, jwksFromPrivateEnv }               from "../utils/auth";
 import { takeToken, rateLimited, clientIp }            from "../utils/rateLimit";
-import { ErrorCode, errorResponse }                    from "../utils/errors";
 import { log }                                          from "../utils/log";
 import { bump, snapshotMetrics }                       from "../utils/metrics";
 import { checkAdmin }                                   from "../utils/adminAuth";
@@ -335,12 +334,6 @@ function jwksResponse(env: GatewayEnv): Response {
     },
   });
 }
-
-// Suppress unused-import warnings — JWTError is referenced via instanceof
-// inside the inline verify branches above; without an explicit touch tsc
-// may flag the type-only import when the file is read in isolation.
-const _kept: unknown = JWTError;
-void _kept;
 
 // ── CORS helpers ─────────────────────────────────────────────────────
 // Allowlist-driven. Echo the request's Origin only when it matches an

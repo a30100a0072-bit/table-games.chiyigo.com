@@ -25,9 +25,13 @@ describe("Worker (miniflare): /.well-known/jwks.json", () => {
     expect(r.status).toBe(404);
   });
 
-  it("CORS preflight on /api/match returns 204", async () => {
-    const r = await SELF.fetch("https://test.local/api/match", { method: "OPTIONS" });
-    expect(r.status).toBe(204);
-    expect(r.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  it("CORS preflight on /api/match returns 204 (allowlist-driven)", async () => {
+    // No Origin header → no Allow-Origin echoed (browser only sends Origin
+    // on cross-origin fetches; same-origin preflights are rare but valid).
+    const noOrigin = await SELF.fetch("https://test.local/api/match", { method: "OPTIONS" });
+    expect(noOrigin.status).toBe(204);
+    expect(noOrigin.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    // Vary: Origin set unconditionally for CDN safety.
+    expect(noOrigin.headers.get("Vary")).toBe("Origin");
   });
 });

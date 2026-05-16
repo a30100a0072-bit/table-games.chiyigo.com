@@ -23,7 +23,7 @@ describe("Worker (miniflare): full auth + wallet flow", () => {
     expect(typeof tokBody.token).toBe("string");
     expect(tokBody.dailyBonus).toBe(100);
 
-    const wallet = await SELF.fetch("https://t.local/api/me/wallet", {
+    const wallet = await SELF.fetch("https://t.local/api/v1/me/wallet", {
       headers: { Authorization: `Bearer ${tokBody.token}` },
     });
     expect(wallet.status).toBe(200);
@@ -33,7 +33,7 @@ describe("Worker (miniflare): full auth + wallet flow", () => {
   });
 
   it("rejects malformed JWT", async () => {
-    const r = await SELF.fetch("https://t.local/api/me/wallet", {
+    const r = await SELF.fetch("https://t.local/api/v1/me/wallet", {
       headers: { Authorization: "Bearer not.a.token" },
     });
     expect(r.status).toBe(401);
@@ -48,7 +48,7 @@ describe("Worker (miniflare): full auth + wallet flow", () => {
     });
     expect(tok.status).toBe(200);
 
-    const freeze = await SELF.fetch("https://t.local/api/admin/freeze", {
+    const freeze = await SELF.fetch("https://t.local/api/v1/admin/freeze", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

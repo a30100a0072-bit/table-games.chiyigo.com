@@ -49,7 +49,7 @@ describe("Worker (miniflare): replay share lifecycle", () => {
     const aliceTok = await tokFor("alice");
 
     // 1. mint
-    const mint = await SELF.fetch("https://t.local/api/replays/g-share/share", {
+    const mint = await SELF.fetch("https://t.local/api/v1/replays/g-share/share", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -61,7 +61,7 @@ describe("Worker (miniflare): replay share lifecycle", () => {
 
     // 2. resolve — no Authorization header at all (capability == token)
     const resolve = await SELF.fetch(
-      `https://t.local/api/replays/by-token/${encodeURIComponent(mintBody.token)}`,
+      `https://t.local/api/v1/replays/by-token/${encodeURIComponent(mintBody.token)}`,
     );
     expect(resolve.status).toBe(200);
     const rb = await resolve.json() as { gameId: string; sharedBy: string };
@@ -69,7 +69,7 @@ describe("Worker (miniflare): replay share lifecycle", () => {
     expect(rb.sharedBy).toBe("alice");
 
     // 3. list-mine surfaces the active token
-    const list = await SELF.fetch("https://t.local/api/me/shares", {
+    const list = await SELF.fetch("https://t.local/api/v1/me/shares", {
       headers: { "Authorization": `Bearer ${aliceTok}` },
     });
     expect(list.status).toBe(200);
@@ -78,14 +78,14 @@ describe("Worker (miniflare): replay share lifecycle", () => {
 
     // 4. revoke as owner
     const del = await SELF.fetch(
-      `https://t.local/api/replays/share/${encodeURIComponent(mintBody.token)}`,
+      `https://t.local/api/v1/replays/share/${encodeURIComponent(mintBody.token)}`,
       { method: "DELETE", headers: { "Authorization": `Bearer ${aliceTok}` } },
     );
     expect(del.status).toBe(200);
 
     // 5. resolve now 404 — the row is gone, capability dies with it
     const after = await SELF.fetch(
-      `https://t.local/api/replays/by-token/${encodeURIComponent(mintBody.token)}`,
+      `https://t.local/api/v1/replays/by-token/${encodeURIComponent(mintBody.token)}`,
     );
     expect(after.status).toBe(404);
   });
@@ -94,7 +94,7 @@ describe("Worker (miniflare): replay share lifecycle", () => {
     const aliceTok = await tokFor("alice");
     const malloryTok = await tokFor("mallory");
 
-    const mint = await SELF.fetch("https://t.local/api/replays/g-share/share", {
+    const mint = await SELF.fetch("https://t.local/api/v1/replays/g-share/share", {
       method: "POST",
       headers: { "Authorization": `Bearer ${aliceTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -102,27 +102,27 @@ describe("Worker (miniflare): replay share lifecycle", () => {
     const { token: shareTok } = await mint.json() as { token: string };
 
     const malloryDel = await SELF.fetch(
-      `https://t.local/api/replays/share/${encodeURIComponent(shareTok)}`,
+      `https://t.local/api/v1/replays/share/${encodeURIComponent(shareTok)}`,
       { method: "DELETE", headers: { "Authorization": `Bearer ${malloryTok}` } },
     );
     expect(malloryDel.status).toBe(404);
 
     // Row survives — alice can still resolve it
     const stillThere = await SELF.fetch(
-      `https://t.local/api/replays/by-token/${encodeURIComponent(shareTok)}`,
+      `https://t.local/api/v1/replays/by-token/${encodeURIComponent(shareTok)}`,
     );
     expect(stillThere.status).toBe(200);
 
     // Cleanup so the next test starts fresh-ish.
     await SELF.fetch(
-      `https://t.local/api/replays/share/${encodeURIComponent(shareTok)}`,
+      `https://t.local/api/v1/replays/share/${encodeURIComponent(shareTok)}`,
       { method: "DELETE", headers: { "Authorization": `Bearer ${aliceTok}` } },
     );
   });
 
   it("non-seated player can't mint a share (403)", async () => {
     const malloryTok = await tokFor("mallory");
-    const r = await SELF.fetch("https://t.local/api/replays/g-share/share", {
+    const r = await SELF.fetch("https://t.local/api/v1/replays/g-share/share", {
       method: "POST",
       headers: { "Authorization": `Bearer ${malloryTok}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),

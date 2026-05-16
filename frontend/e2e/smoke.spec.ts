@@ -20,23 +20,23 @@ async function stubBoot(page: import("@playwright/test").Page): Promise<void> {
     status: 200, contentType: "application/json",
     body: JSON.stringify({ token: "stub.jwt.token", playerId: "alice", dailyBonus: 0 }),
   }));
-  await page.route(`${STUB_BASE}/api/me/wallet*`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/me/wallet*`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       playerId: "alice", displayName: "alice", chipBalance: 1000,
       updatedAt: Date.now(), ledger: [], nextLedgerCursor: null,
     }),
   }));
-  await page.route(`${STUB_BASE}/api/friends/recommendations`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/friends/recommendations`, route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ recommendations: [] }),
   }));
-  await page.route(`${STUB_BASE}/api/rooms/invites`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/rooms/invites`, route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ invites: [] }),
   }));
-  await page.route(`${STUB_BASE}/api/rooms/live`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/rooms/live`, route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ rooms: [] }),
   }));
-  await page.route(`${STUB_BASE}/api/dm/unread`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/dm/unread`, route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ unread: 0 }),
   }));
 }
@@ -66,7 +66,7 @@ test("clicking a game card transitions to the lobby (matching) screen", async ({
   // appears, not the subsequent WS handoff. Returning a never-resolving
   // promise to fulfill() would hang the route handler, so we let the
   // request stay in-flight by handling it manually with a long delay.
-  await page.route(`${STUB_BASE}/api/match`, async route => {
+  await page.route(`${STUB_BASE}/api/v1/match`, async route => {
     // Don't reply — Playwright auto-aborts when the test ends. The frontend
     // shows "matching..." until the response, which is exactly what we
     // want to assert on.
@@ -98,7 +98,7 @@ test("mahjong hand selector forwards mahjongHands into the match request", async
   // Hold the route open (matchmaking promise unresolved) — we don't need
   // a successful match here, only the request side of the contract.
   let capturedBody: string | null = null;
-  await page.route(`${STUB_BASE}/api/match`, async route => {
+  await page.route(`${STUB_BASE}/api/v1/match`, async route => {
     capturedBody = route.request().postData();
     await new Promise(r => setTimeout(r, 30_000));
     await route.fulfill({ status: 200, body: "{}" });
@@ -128,7 +128,7 @@ test("mahjong hand selector forwards mahjongHands into the match request", async
 
 test("BigTwo full-hand happy path: lobby → state injected → play → settlement", async ({ page }) => {
   await stubBoot(page);
-  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/match`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       matched: true, roomId: "e2e-room-bigtwo", gameType: "bigTwo",
@@ -223,7 +223,7 @@ test("successful match transitions lobby → game screen (WS connecting state)",
   // which has nothing listening — GameSocket will fail to connect and
   // surface a "reconnecting" status. That's fine: we only need to
   // verify the GameScreen mounted.
-  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/match`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       matched: true,
@@ -256,7 +256,7 @@ test("successful match transitions lobby → game screen (WS connecting state)",
 
 test("Uno: lobby tap → GameScreen with discard pile + draw button", async ({ page }) => {
   await stubBoot(page);
-  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/match`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       matched: true, roomId: "e2e-room-uno", gameType: "uno",
@@ -307,7 +307,7 @@ test("Uno: lobby tap → GameScreen with discard pile + draw button", async ({ p
 
 test("Yahtzee: lobby tap → GameScreen with 5 dice + roll button", async ({ page }) => {
   await stubBoot(page);
-  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/match`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       matched: true, roomId: "e2e-room-yz", gameType: "yahtzee",
@@ -356,7 +356,7 @@ test("Yahtzee: lobby tap → GameScreen with 5 dice + roll button", async ({ pag
 
 test("Hearts: lobby tap → GameScreen with pass-3-cards prompt", async ({ page }) => {
   await stubBoot(page);
-  await page.route(`${STUB_BASE}/api/match`, route => route.fulfill({
+  await page.route(`${STUB_BASE}/api/v1/match`, route => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({
       matched: true, roomId: "e2e-room-hearts", gameType: "hearts",
