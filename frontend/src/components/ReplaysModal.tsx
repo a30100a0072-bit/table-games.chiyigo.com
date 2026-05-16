@@ -380,6 +380,8 @@ export default function ReplaysModal({ token, playerId, sharedReplayToken, onClo
     listMyReplaysApi(token)
       .then(d => setList(d.replays))
       .catch(e => setErr(formatApiError(e, t)));
+    // `t` is i18n fn (unstable) — error message snapshot is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, sharedReplayToken, isShared]);
 
   // Auto-advance while playing. Stops at the end (no infinite re-render).

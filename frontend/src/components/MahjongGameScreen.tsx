@@ -302,6 +302,8 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
 
     sock.connect();
     return () => sock.disconnect();
+    // Socket lifecycle: rebind only on identity change. `t` / `view` / `watching` snapshotted via closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, playerId, roomId, token, onSettled]);
 
   function send(action: PlayerAction) {
@@ -319,6 +321,8 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
     tick();
     const id = setInterval(tick, 100);
     return () => clearInterval(id);
+    // Deliberate: depend only on phase + deadline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.phase, view?.reactionDeadlineMs]);
 
   const chowOptions = useMemo(() => {
@@ -598,6 +602,8 @@ export default function MahjongGameScreen({ playerId, token, roomId, wsUrl, spec
         <ActionBar
           mode={inReact ? "react" : turnAction ? "turn" : "idle"}
           reactLeft={reactLeft}
+          // `send` closes over socketRef.current but only reads it on invocation, not during render.
+          // eslint-disable-next-line react-hooks/refs
           actions={buildActions({
             t, view, isMyTurn, inReact, turnAction,
             canDiscard, canPong, canKong, canChow, canHu, canPass,

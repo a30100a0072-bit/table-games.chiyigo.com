@@ -122,6 +122,8 @@ export default function YahtzeeGameScreen({ playerId, token, roomId, wsUrl, spec
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
+    // Deliberate: depend only on the deadline, not whole `view`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.turnDeadlineMs]);
 
   if (!view) {

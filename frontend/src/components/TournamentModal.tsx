@@ -56,6 +56,7 @@ export default function TournamentModal({ playerId, token, onClose, onJoinedRoom
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only fetch; refresh is render-local closure
   useEffect(() => { refresh(); }, []);
 
   // Poll detail every 3s if a tournament is selected (so users see the

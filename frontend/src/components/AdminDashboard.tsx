@@ -63,6 +63,8 @@ export default function AdminDashboard({ onClose }: Props) {
     } finally {
       setLoading(false);
     }
+    // `t` is i18n fn (unstable identity) — snapshotting current locale is fine here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secret]);
 
   // Initial load + 30s polling.

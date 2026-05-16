@@ -51,6 +51,8 @@ export default function StatsModal({ playerId, token, onClose }: Props) {
         .catch(e => { if (!cancelled) setError(formatApiError(e, t)); });
     }
     return () => { cancelled = true; };
+    // `t` is i18n fn (unstable) — error message snapshot is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, token, leaderboard, history]);
 
   const wins   = history?.filter(g => g.final_rank === 1).length ?? 0;

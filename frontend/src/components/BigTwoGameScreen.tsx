@@ -192,6 +192,9 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
 
     sock.connect();
     return () => sock.disconnect();
+    // Socket lifecycle: rebind only on identity change. `t` / `view` / `watching`
+    // are snapshotted via closure — listeners read fresh state from setView callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, playerId, roomId, token, onSettled]);
 
   // ── countdown ──────────────────────────────────────────────────────────── L2_鎖定
@@ -201,6 +204,8 @@ export default function BigTwoGameScreen({ playerId, token, roomId, wsUrl, spect
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
+    // Deliberate: depend only on the deadline, not whole `view` — interval restart on every state push would jitter the countdown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.turnDeadlineMs]);
 
   // ── 卡牌 toggle (L3_邏輯安防) ──────────────────────────────────────────────

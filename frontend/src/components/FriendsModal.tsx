@@ -36,6 +36,8 @@ function DmPanel({ token, peer, onBack }: { token: string; peer: string; onBack:
     void refresh();
     const id = setInterval(refresh, 5_000);
     return () => clearInterval(id);
+    // `refresh` declared in render — adding to deps would re-arm interval every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peer]);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -143,6 +145,7 @@ export default function FriendsModal({ token, onClose }: Props) {
     try { setData(await listFriendsApi(token)); }
     catch (e) { setErr(formatApiError(e, t)); }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only fetch; refresh fns are render-local closures
   useEffect(() => { void refresh(); void refreshBlocks(); void refreshRecs(); }, []);
 
   async function add() {

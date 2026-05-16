@@ -32,6 +32,7 @@ export default function InvitesModal({ token, onClose, onEnter }: Props) {
     try { setItems((await listInvitesApi(token)).invites); }
     catch (e) { setErr(formatApiError(e, t)); }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only fetch; refresh is render-local closure
   useEffect(() => { void refresh(); }, []);
 
   async function accept(inv: RoomInvite) {

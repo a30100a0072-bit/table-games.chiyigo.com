@@ -42,6 +42,8 @@ export default function WalletBadge({ token, refreshKey = 0, onAccountDeleted }:
       .then(w => { if (!cancelled) setWallet(w); })
       .catch(e => { if (!cancelled) setError(formatApiError(e, t)); });
     return () => { cancelled = true; };
+    // `t` is i18n fn (unstable) — error message snapshot is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, refreshKey, tick]);
 
   async function handleBailout() {

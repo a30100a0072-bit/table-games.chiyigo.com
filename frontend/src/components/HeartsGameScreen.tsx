@@ -177,12 +177,18 @@ export default function HeartsGameScreen({ playerId, token, roomId, wsUrl, spect
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
+    // Deliberate: depend only on the deadline, not whole `view`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.turnDeadlineMs]);
 
+  // Deliberate: re-sort only when hand identity changes, not on every `view` push.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const sortedHand = useMemo(() => view ? sortHand(view.self.hand) : [], [view?.self.hand]);
   const legalSet = useMemo(() => {
     if (!view) return new Set<string>();
     return new Set(view.legalCards.map(cardKey));
+    // Deliberate: depend only on legalCards array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.legalCards]);
   const passedCount = useMemo(() => {
     if (!view) return 0;

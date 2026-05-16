@@ -68,6 +68,8 @@ export default function TexasHoldemGameScreen({ playerId, token, roomId, wsUrl, 
 
     sock.connect();
     return () => sock.disconnect();
+    // Socket lifecycle: rebind only on identity change. `t` / `watching` snapshotted via closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl, playerId, roomId, token, onSettled]);
 
   function send(action: PlayerAction) {
