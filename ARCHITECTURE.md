@@ -2,13 +2,15 @@
 
 > Cloudflare Serverless 架構。所有狀態住在 Durable Object；D1 + Queue 負責持久化與結算。
 >
-> ## ⚠️ 紅燈規範（2026-05-16 加固，Production Engineering review）
+> ## 架構規範（2026-05-16 Production Engineering review 後生效）
 >
-> 1. **`src/workers/gateway.ts` 凍結**：不再新增 route handler 進來。新 endpoint 一律走 `src/routes/<area>.ts`（HTTP handler 殼）+ `src/domain/<area>.ts`（純商業邏輯，無 framework 依賴）。gateway.ts 只能加一行 dispatch（`cors(await foo(request, env))`）。
-> 2. **Controller 不直連 D1**：新 handler 不可在 route 檔案直接 `env.DB.prepare(...)`。把 SQL 集中到 `domain/` 或既有的 `api/` 模組。
-> 3. **Auth 入口唯一**：必 `requireAuth` / `withAuth`（`src/utils/authMw.ts`）；禁止再重新刻 `verifyJWT` boilerplate。
-> 4. **CORS**：`env.ALLOWED_ORIGINS`（逗號分隔）控制；無 origin 在白名單則回不帶 `Access-Control-Allow-Origin`。生產設定要把 Pages domain 寫上去。
+> 1. **Gateway 是 dispatch table**：`src/workers/gateway.ts` 只做路由 + CORS + JWKS shell；商業邏輯在 `src/routes/<area>.ts`（HTTP 殼）+ `src/domain/<area>.ts`（純邏輯，takes db 不 takes env）。已拆出：wallet / leaderboard / auth (issueToken) / admin / rooms。
+> 2. **Controller 不直連 D1**：新 handler 不可在 route 檔直接 `env.DB.prepare(...)`，集中到 `domain/`。共用 admin 認證入口 `utils/adminAuth.ts`，audit 寫入 `domain/audit.ts`。
+> 3. **Auth 入口唯一**：必 `requireAuth` / `withAuth`（`src/utils/authMw.ts`）；禁止再重新刻 `verifyJWT` boilerplate。3 處例外（OIDC refresh / logout / WS joinRoom）已 inline 註解原因。
+> 4. **CORS**：`env.ALLOWED_ORIGINS`（逗號分隔，支援 `*.host` 通配）控制；未設 → 只接受 localhost dev origins（fail-closed for prod misconfig）。
 > 5. **`/metrics`**：admin-gated（X-Admin-Secret）；不再對外。
+> 6. **經濟常數**：`src/domain/economy.ts` 唯一源（SIGNUP_GRANT / DAILY_BONUS_* / BAILOUT_*）。
+> 7. **Migration rollback**：每個 `000N_*.sql`（N >= 2）必須有對應 `.down.sql`；smoke test enforce。Rollback playbook 在 `migrations/README.md`。
 >
 > 最後更新：2026-05-11 — 第十七批 ship 完整 Hearts（紅心大戰）：**第六款遊戲全鏈路上線**。PR 2 backend（types + SM + engine adapter + bot heuristic + 200 場 arena fairness 通過 + post-review hardening：`forceSettle` 第二次呼叫 throw `HEARTS_ALREADY_SETTLED` 防 disconnect 撞 13th-trick 自然 matchOver 雙寫 ledger / `matchProgress` 鋪給 ReplaysModal / `finalRanking` 同分用本局較低分 tiebreak），ENGINE_VERSION **5→6** + SW cache **v5→v6**。PR 3 frontend：`hearts` 進 `GAME_TYPES`、GameSelectScreen 加 ♥️ 獨立 tile（不藏在 poker sub-picker，因 Hearts 非 betting 牌局）、`HeartsGameScreen.tsx` 含 passing-phase 3 張 picker / playing-phase trick 中央 / cumulative score 側欄 / ♥-broken + first-trick chip、ReplaysModal Hearts chips（3-card pass row + ♠Q/♥ tag 後綴）、tournament regression `it.each` 擴到 `["uno","yahtzee","hearts"]`、e2e smoke 覆蓋 lobby tap → pass prompt。**460+ tests 全程綠 / tsc 0**。設計決策固化在 memory `project_hearts_pr2_2026-05-11.md`。
 >
