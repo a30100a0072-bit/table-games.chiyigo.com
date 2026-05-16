@@ -426,7 +426,7 @@ export class MahjongStateMachine {
 
   /** Common settle epilogue: stamp matchOver + matchProgress, accumulate
    *  cumulativeScores, set phase to between_hands or settled.               // L2_實作 */
-  private finalizeSettlement(result: SettlementResult, _prevWinnerIdx: number | null, _isDraw: boolean): SettlementResult {
+  private finalizeSettlement(result: SettlementResult): SettlementResult {
     for (const ps of result.players) {
       this.s.cumulativeScores[ps.playerId] = (this.s.cumulativeScores[ps.playerId] ?? 0) + ps.scoreDelta;
     }
@@ -732,7 +732,7 @@ export class MahjongStateMachine {
       })),
     };
     void wasFinalHand;
-    return this.finalizeSettlement(result, offenderIdx >= 0 ? winnerIdx : null, offenderIdx < 0);
+    return this.finalizeSettlement(result);
   }
 
   /** 由外部 alarm 在 reactionDeadlineMs 觸發；對未回應者視為 pass */    // L3_架構
@@ -915,7 +915,7 @@ export class MahjongStateMachine {
       }),
       fanDetail: { fan, base: 1, detail: [kind] },
     };
-    return this.finalizeSettlement(result, winnerIdx, false);
+    return this.finalizeSettlement(result);
   }
 
   private drawExhaustion(): ProcessResult {
@@ -932,7 +932,7 @@ export class MahjongStateMachine {
       })),
       winnerId: this.s.players[0]!.playerId,
     };
-    return { ok: true, settlement: this.finalizeSettlement(result, null, true) };
+    return { ok: true, settlement: this.finalizeSettlement(result) };
   }
 
   /**
@@ -987,7 +987,7 @@ export class MahjongStateMachine {
       }),
       fanDetail: { fan: fan.fan, base: fan.base, detail: fan.detail },
     };
-    return this.finalizeSettlement(result, winnerIdx, false);
+    return this.finalizeSettlement(result);
   }
 }
 
