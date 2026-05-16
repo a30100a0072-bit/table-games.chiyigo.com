@@ -34,8 +34,11 @@ const ROOT     = join(__dirname, "..", "migrations");
 const FILENAME = /^\d{4}_[a-z0-9_]+\.sql$/;
 
 function listMigrations(): string[] {
+  // UP files only — `.down.sql` rollback files are sibling artifacts and
+  // are checked separately so they don't interfere with monotonic-numbering
+  // or naming-regex assertions.
   return readdirSync(ROOT)
-    .filter((n: string) => n.endsWith(".sql"))
+    .filter((n: string) => n.endsWith(".sql") && !n.endsWith(".down.sql"))
     .sort();
 }
 
@@ -70,6 +73,20 @@ describe("migrations/", () => {
       const code = sql.replace(/--[^\n]*/g, "");
       const matches = code.match(/DROP\s+TABLE\s+(?!IF\s+EXISTS)/gi) ?? [];
       expect(matches.length, `${f} has unguarded DROP TABLE`).toBe(0);
+    }
+  });
+
+  // wrangler's d1_migrations tracker is one-way; the rollback playbook in
+  // migrations/README.md runs a matching .down.sql by hand. The smoke test
+  // enforces presence so nobody can ship a forward-only delta migration
+  // without thinking about reversal. 0001 is exempt — rolling back the
+  // baseline equals wiping the DB and is intentionally out-of-band.    // L3_架構含防禦觀測
+  it("every migration >= 0002 ships with a matching .down.sql", () => {
+    const ups   = listMigrations().filter(f => Number(f.slice(0, 4)) >= 2);
+    const all   = readdirSync(ROOT);
+    for (const up of ups) {
+      const down = up.replace(/\.sql$/, ".down.sql");
+      expect(all.includes(down), `${up} missing rollback file ${down}`).toBe(true);
     }
   });
 });

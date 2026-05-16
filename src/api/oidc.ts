@@ -25,12 +25,12 @@ import { signJWT } from "../utils/auth";
 import { ErrorCode, errorResponse } from "../utils/errors";
 import { log } from "../utils/log";
 import { bump } from "../utils/metrics";
+import { SIGNUP_GRANT } from "../domain/economy";
 
 const STATE_TTL_S       = 5 * 60;
 const REFRESH_TTL_DAYS  = 30;          // soft cap for our stored row's expires_at fallback
 const SCOPE             = "openid profile email";
 const RESPONSE_MODE     = "fragment";
-const SIGNUP_GRANT      = 1000;        // matches gateway.ts
 const OIDC_SUB_PREFIX   = "oidc:";     // keeps OIDC users in their own player_id namespace
 
 // ── Env contract ────────────────────────────────────────────────────────

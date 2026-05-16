@@ -33,6 +33,11 @@ import { deleteAccount, exportAccount } from "../api/account";
 import { oauthStart, oauthExchange, oauthRefresh, oauthLogout } from "../api/oidc";
 import type { SettlementQueueMessage, GameType }  from "../types/game";
 import { isGameType } from "../types/game";
+import {
+  SIGNUP_GRANT,
+  DAILY_BONUS_AMOUNT, DAILY_BONUS_COOLDOWN_MS,
+  BAILOUT_THRESHOLD, BAILOUT_AMOUNT, BAILOUT_COOLDOWN_MS,
+} from "../domain/economy";
 
 export interface GatewayEnv extends LobbyEnv {
   GAME_ROOM:        DurableObjectNamespace;
@@ -357,9 +362,6 @@ async function issueToken(request: Request, env: GatewayEnv): Promise<Response> 
   return Response.json({ token, playerId, dailyBonus });
 }
 
-const DAILY_BONUS_AMOUNT   = 100;
-const DAILY_BONUS_COOLDOWN = 24 * 60 * 60 * 1000;
-
 /**
  * Grant a daily-login bonus iff last_login_at is older than the cooldown.
  * Conditional UPDATE acts as CAS so concurrent /auth/token calls in the same
@@ -367,7 +369,7 @@ const DAILY_BONUS_COOLDOWN = 24 * 60 * 60 * 1000;
  */
 async function maybeGrantDailyBonus(db: D1Database, playerId: string): Promise<number | null> {
   const now    = Date.now();
-  const cutoff = now - DAILY_BONUS_COOLDOWN;
+  const cutoff = now - DAILY_BONUS_COOLDOWN_MS;
   const upd = await db
     .prepare(
       "UPDATE users SET" +
@@ -391,8 +393,6 @@ async function maybeGrantDailyBonus(db: D1Database, playerId: string): Promise<n
   log("info", "daily_bonus_granted", { playerId, amount: DAILY_BONUS_AMOUNT });
   return DAILY_BONUS_AMOUNT;
 }
-
-const SIGNUP_GRANT = 1000;
 
 // ── GET /api/me/wallet — current balance + recent ledger ─────────────
 // Returns the authenticated player's chip balance and their last 20 ledger
@@ -455,10 +455,6 @@ async function getWallet(request: Request, env: GatewayEnv): Promise<Response> {
 // game_id 為 NULL，多次領取仍可能寫入），所以用 last_bailout_at 欄位
 // 作為防重領的真正鎖。寫入採 conditional UPDATE 確保原子性。           // L3_架構含防禦觀測
 
-const BAILOUT_THRESHOLD = 100;
-const BAILOUT_AMOUNT    = 500;
-const BAILOUT_COOLDOWN  = 24 * 60 * 60 * 1000;
-
 async function claimBailout(request: Request, env: GatewayEnv): Promise<Response> {
   const pidOr = await requireAuth(request, env);
   if (pidOr instanceof Response) return pidOr;
@@ -467,7 +463,7 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
   if (!takeToken(`bailout:${playerId}`, "bailout")) return rateLimited();
 
   const now    = Date.now();
-  const cutoff = now - BAILOUT_COOLDOWN;
+  const cutoff = now - BAILOUT_COOLDOWN_MS;
 
   // Single-statement UPDATE acts as a CAS: rows-affected tells us whether
   // the cooldown window let us through. If 0, we know the player is either
@@ -497,7 +493,7 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
     const reason = wallet.chip_balance >= BAILOUT_THRESHOLD
       ? "balance above threshold"
       : "cooldown active";
-    const nextEligibleAt = wallet.last_bailout_at + BAILOUT_COOLDOWN;
+    const nextEligibleAt = wallet.last_bailout_at + BAILOUT_COOLDOWN_MS;
     log("info", "bailout_blocked", { playerId, reason, balance: wallet.chip_balance });
     return errorResponse(
       ErrorCode.BAILOUT_INELIGIBLE, 409, reason,
@@ -526,7 +522,7 @@ async function claimBailout(request: Request, env: GatewayEnv): Promise<Response
   return Response.json({
     granted: BAILOUT_AMOUNT,
     chipBalance: after?.chip_balance ?? BAILOUT_AMOUNT,
-    nextEligibleAt: now + BAILOUT_COOLDOWN,
+    nextEligibleAt: now + BAILOUT_COOLDOWN_MS,
   });
 }
 
