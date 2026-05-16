@@ -6,6 +6,8 @@
     "lib": ["ES2022", "WebWorker"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "types": ["@cloudflare/workers-types"],
     "outDir": "dist",
     "rootDir": ".",

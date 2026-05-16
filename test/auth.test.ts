@@ -31,7 +31,7 @@ describe("ES256 JWT", () => {
   it("rejects tampered payload", async () => {
     const priv = await genKey();
     const token = await signJWT("alice", priv, 60);
-    const [h, p, s] = token.split(".");
+    const [h, , s] = token.split(".");
     const fakePayload = btoa(JSON.stringify({ sub: "evil", exp: 9999999999 }))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
     await expect(verifyJWT(`${h}.${fakePayload}.${s}`, jwksFromPrivateEnv(priv)))

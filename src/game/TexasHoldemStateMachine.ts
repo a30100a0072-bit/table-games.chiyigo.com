@@ -243,7 +243,7 @@ export class TexasHoldemStateMachine {
     if (smallBlind <= 0 || bigBlind < smallBlind * 2) throw new Error("INVALID_BLINDS");
 
     const deck = shuffleDeck(buildDeck());
-    const seats: Seat[] = players.map((p, i) => ({
+    const seats: Seat[] = players.map((p) => ({
       playerId: p.playerId,
       stack: p.stack,
       hole: [deck.pop()!, deck.pop()!] as [Card, Card],

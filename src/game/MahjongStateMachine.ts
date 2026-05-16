@@ -52,7 +52,6 @@ function tileIndex(t: MahjongTile): number {
   }
 }
 function isSuited(i: number): boolean { return i < 27; }
-function isFlower(t: MahjongTile): boolean { return t.suit === "f"; }
 
 function tilesToCounts(tiles: MahjongTile[]): Counts {
   const c = new Uint8Array(TILE_INDEX_COUNT);
@@ -427,7 +426,7 @@ export class MahjongStateMachine {
 
   /** Common settle epilogue: stamp matchOver + matchProgress, accumulate
    *  cumulativeScores, set phase to between_hands or settled.               // L2_實作 */
-  private finalizeSettlement(result: SettlementResult, prevWinnerIdx: number | null, isDraw: boolean): SettlementResult {
+  private finalizeSettlement(result: SettlementResult, _prevWinnerIdx: number | null, _isDraw: boolean): SettlementResult {
     for (const ps of result.players) {
       this.s.cumulativeScores[ps.playerId] = (this.s.cumulativeScores[ps.playerId] ?? 0) + ps.scoreDelta;
     }

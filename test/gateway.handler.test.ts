@@ -7,7 +7,7 @@
 
 import { describe, expect, it, beforeEach } from "vitest";
 import { handleRequest, GatewayEnv } from "../src/workers/gateway";
-import { signJWT, jwksFromPrivateEnv } from "../src/utils/auth";
+import { signJWT } from "../src/utils/auth";
 
 // ── In-memory D1 mock ─────────────────────────────────────────────────
 // Captures bound parameters, supports the small set of statements the

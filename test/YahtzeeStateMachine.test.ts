@@ -211,17 +211,8 @@ describe("settlement", () => {
       if (s !== "chance") cardP1[s] = 0;
       cardP2[s] = 0;
     }
-    const m = fromSnap({
-      rollsLeft: 2,
-      dice: [6, 6, 6, 6, 6],
-      turnNumber: 25,    // 0..25, 25 = last turn (p2's 13th)
-      totalTurns: 26,
-      scorecards: [["p1", cardP1], ["p2", cardP2]],
-    });
-    // p2 scoring last empty slot (chance) — but p2's chance is already 0.
-    // Pick a slot that p1 hasn't filled — chance. p1.chance is null.
-    // Actually turnNumber 25 → playerIds[25 % 2] = "p2", but p2's slots
-    // are all 0. We need a snapshot where p2 has an unfilled slot.
+    // turnNumber 25 → playerIds[25 % 2] = "p2", so build a snapshot
+    // where p2 has an unfilled slot (chance).
     const p2Card: Scorecard = emptyCard();
     for (const s of YAHTZEE_SLOTS) {
       if (s !== "chance") p2Card[s] = 0;

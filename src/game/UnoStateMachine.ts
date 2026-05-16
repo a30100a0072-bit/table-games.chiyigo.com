@@ -6,7 +6,7 @@
 import type {
   PlayerId, UnoCard, UnoColor, UnoValue,
   UnoPlayAction, UnoDrawAction, UnoPassAction,
-  UnoStateView, UnoLastPlay, UnoPhase,
+  UnoStateView, UnoPhase,
   SettlementResult, PlayerSettlement, SettlementReason,
   UnoSettlementDetail,
 } from "../types/game";

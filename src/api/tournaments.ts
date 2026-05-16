@@ -7,7 +7,6 @@ import { requireAuth }                              from "../utils/authMw";
 import { takeToken, rateLimited }                  from "../utils/rateLimit";
 import { ErrorCode, errorResponse }                 from "../utils/errors";
 import { log }                                      from "../utils/log";
-import type { GameType }                           from "../types/game";
 import { isGameType }                               from "../types/game";
 
 export interface TournamentEnv {

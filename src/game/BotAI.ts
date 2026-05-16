@@ -32,11 +32,6 @@ import type { MahjongSuit } from "../types/game";
 //  Big Two
 // ════════════════════════════════════════════════════════════════════════════
 
-const RANK_IDX_BT: Readonly<Record<Rank, number>> = {
-  "3":0,"4":1,"5":2,"6":3,"7":4,
-  "8":5,"9":6,"10":7,"J":8,"Q":9,"K":10,"A":11,"2":12,
-} as const;
-
 function sortAsc(cards: Card[]): Card[] {
   return [...cards].sort((a, b) => cardVal(a) - cardVal(b));
 }

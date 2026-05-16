@@ -26,7 +26,7 @@ export default {
    * HTTP / WebSocket entry point.
    * Stateless: no game state is held here; all state lives in Durable Objects.
    */
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     // withTrace generates a per-request traceId, stamps X-Request-Id on
     // the response, emits one structured request_complete log line, and
     // converts unhandled throws into traced 500s so support requests can
