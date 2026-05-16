@@ -118,12 +118,11 @@ function canFormMelds(counts: Counts, need: number): boolean {
 }
 
 // ──────────────────────────────────────────────
-//  台數計算 — 大眾規則 (engine_version 7)
+//  台數計算 — 大眾規則 (engine_version 8)
 //  涵蓋：平胡 / 自摸 / 門前清 / 清一色 / 字一色 / 混一色 / 大三元 / 大四喜 /
 //        小三元 / 小四喜 / 碰碰胡 / 三/四槓子 / 槓上開花 / 搶槓 /
-//        三/四/五暗刻 / 全求人 / 花牌 / 海底撈月 / 河底撈魚 / 莊家。      // L3_架構
+//        三/四/五暗刻 / 全求人 / 花牌 / 海底撈月 / 河底撈魚 / 莊家 / 連N。 // L3_架構
 //  終局型台（七搶一 / 八仙過海）由 checkFlowerTerminal 走獨立結算路徑。
-//  未實作（需多局上下文）：連莊 N。
 // ──────────────────────────────────────────────
 export interface FanResult {
   base: number;            // 底
@@ -142,6 +141,7 @@ export function calcFan(opts: {
   lastWallDraw?: boolean;   // 海底撈月：自摸取自牌牆最後一張
   lastRiverHu?: boolean;    // 河底撈魚：食胡的牌是牆空後最後一張被打出
   chiangKong?: boolean;     // 搶槓胡：食胡來自他家加槓的牌
+  bankerStreak?: number;    // 連N台：莊家連任次數（不含首莊），僅當 isBanker 時計分
 }): FanResult {
   const detail: string[] = ["平胡"];
   let fan = 0;
@@ -252,11 +252,17 @@ export function calcFan(opts: {
     fan += 1; detail.push("槓上開花");
   }
 
-  // ─ 自摸 / 門前清 / 門清自摸 / 莊家
+  // ─ 自摸 / 門前清 / 門清自摸 / 莊家 / 連N
   if (opts.selfDrawn) { fan += 1; detail.push("自摸"); }
   if (opts.menqing)   { fan += 1; detail.push("門前清"); }
   if (opts.menqing && opts.selfDrawn) { fan += 1; detail.push("門清自摸"); }
   if (opts.isBanker)  { fan += 1; detail.push("莊家"); }
+  // 連N拉N台：莊家連任 N 次 → +2N 台（大眾共識）。streak=0 時不計（首莊）。
+  if (opts.isBanker && (opts.bankerStreak ?? 0) >= 1) {
+    const n = opts.bankerStreak!;
+    fan += n * 2;
+    detail.push(`連${n}`);
+  }
 
   // ─ 花牌：每張 +1 台
   if (opts.flowerCount > 0) {
@@ -407,16 +413,17 @@ export class MahjongStateMachine {
 
   // ── 多局賽事：開新局 ────────────────────────────
   /** Reset board state for the next hand. Caller must check `phase === "between_hands"`. // L2_實作
-   *  Dealer rotation rule (Taiwan):
+   *  Dealer rotation rule (Taiwan, 大眾共識):
    *    - winnerIdx === dealerIdx (dealer hu)  → dealer 連莊 (stays, bankerStreak++)
-   *    - winnerIdx !== dealerIdx              → dealer rotates CCW (next seat)
-   *    - draw exhaustion / forfeit            → dealer rotates (simplification)
+   *    - winnerIdx !== dealerIdx              → dealer rotates CCW (next seat), streak=0
+   *    - draw exhaustion (流局/黃莊)          → dealer 連莊 (stays, bankerStreak++)
    *  After rotation, deal a fresh wall + hands; phase returns to "playing".              // L2_實作 */
   startNextHand(prevWinnerIdx: number | null, isDraw: boolean, nextGameId?: string, nextRoundId?: string): void {
     if (this.s.phase !== "between_hands") throw new Error("NOT_BETWEEN_HANDS");
     if (this.s.handNumber >= this.s.targetHands) throw new Error("MATCH_ALREADY_OVER");
 
-    const dealerStays = !isDraw && prevWinnerIdx === this.s.dealerIdx;
+    // 黃莊連莊：流局 → 莊不動且 streak++（與莊胡同樣的 rebanking 計次）        // L2_實作
+    const dealerStays = isDraw || prevWinnerIdx === this.s.dealerIdx;
     const newDealer = dealerStays ? this.s.dealerIdx : (this.s.dealerIdx + 1) % 4;
     const newStreak = dealerStays ? this.s.bankerStreak + 1 : 0;
 
@@ -990,6 +997,7 @@ export class MahjongStateMachine {
       lastWallDraw: this.s.drewLastWallTile,
       lastRiverHu: this.s.lastDiscardOnEmptyWall,
       chiangKong,
+      bankerStreak: this.s.bankerStreak,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
     const result: SettlementResult = {

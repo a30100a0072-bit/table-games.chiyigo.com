@@ -399,6 +399,29 @@ describe("calcFan 大眾規則", () => {
     expect(r.detail).not.toContain("四槓子");
   });
 
+  it("連1：莊家 + bankerStreak=1 → +2 台", () => {
+    const r = calcFan({ ...baseOpts, isBanker: true, bankerStreak: 1 });
+    expect(r.detail).toContain("連1");
+    // baseHand: 平胡 0 + 門前清 1 + 莊家 1 + 連1 2 = 4 台
+    expect(r.fan).toBe(4);
+  });
+
+  it("連3：莊家 + bankerStreak=3 → +6 台", () => {
+    const r = calcFan({ ...baseOpts, isBanker: true, bankerStreak: 3 });
+    expect(r.detail).toContain("連3");
+    expect(r.fan).toBe(1 + 1 + 6);   // 門前清 + 莊家 + 連3
+  });
+
+  it("非莊家不計連N", () => {
+    const r = calcFan({ ...baseOpts, isBanker: false, bankerStreak: 2 });
+    expect(r.detail.every(d => !d.startsWith("連"))).toBe(true);
+  });
+
+  it("莊家 streak=0 不算連N（首莊）", () => {
+    const r = calcFan({ ...baseOpts, isBanker: true, bankerStreak: 0 });
+    expect(r.detail.every(d => !d.startsWith("連"))).toBe(true);
+  });
+
   it("四槓子：4 個 kong meld + 1 刻 + 1 對", () => {
     // 4 槓佔 4 副，hand 內還要再 1 刻 + 1 對                                 // L2_測試
     const exposed: ExposedMeld[] = [
@@ -650,6 +673,21 @@ describe("多局賽事 / 連莊 N", () => {
     const m2 = MahjongStateMachine.restore(snap, seededRng(2));
     m2.startNextHand(2, false);   // winnerIdx=2 ≠ dealerIdx=0 → rotate to 1
     expect(m2.viewFor("p2").currentTurn).toBe("p2");
+  });
+
+  it("startNextHand 規則：流局 → 黃莊連莊（dealer 不變、bankerStreak++）", () => {
+    const sm = new MahjongStateMachine("g", "r", ["p1", "p2", "p3", "p4"], seededRng(1), 3);
+    const snap = sm.snapshot();
+    snap.phase = "between_hands";
+    snap.dealerIdx = 0;
+    snap.bankerStreak = 2;
+    snap.handNumber = 1;
+    const m2 = MahjongStateMachine.restore(snap, seededRng(2));
+    m2.startNextHand(null, true);                 // isDraw → 莊不動
+    const view = m2.viewFor("p1");
+    expect(view.currentTurn).toBe("p1");
+    const snap2 = m2.snapshot();
+    expect(snap2.bankerStreak).toBe(3);
   });
 
   it("startNextHand 在 phase ≠ between_hands 時拋錯", () => {
