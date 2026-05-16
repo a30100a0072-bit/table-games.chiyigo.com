@@ -31,8 +31,8 @@
 > **遊戲與經濟**
 >   - 籌碼錢包 + 流水帳本（cursor 分頁） + ANTE + bailout + daily bonus + forfeit + admin freeze
 >   - Tournament 後端 + 前端（Texas blind escalation 10/20 → 20/40 → 50/100）；**5 款遊戲全支援**（it.each(["uno","yahtzee"]) 回歸測試鎖定）
->   - Uno（108 卡標準局 / 無堆疊 / 無 UNO! shout）+ Yahtzee（13 槽計分 / 3 擲/回合 / 簡化 Joker bonus +100）；ENGINE_VERSION = 5（批 16：Uno forfeit 改固定 -200 對齊四款 fixed-pot 結算）
->   - Mahjong `ENGINE_VERSION = 3`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台）
+>   - Uno（108 卡標準局 / 無堆疊 / 無 UNO! shout）+ Yahtzee（13 槽計分 / 3 擲/回合 / 簡化 Joker bonus +100）；ENGINE_VERSION = 9（批 16 Uno forfeit 固定 -200 → 批 17 Hearts → mahjong PR A/B/C advanced tai 三段 bump 6→7→8→9）
+>   - Mahjong `ENGINE_VERSION = 9`（搶槓 / 七搶一 / 八仙過海 / 大眾 13 台 + advanced tai：混一色 / 碰碰胡 / 三+四槓子 / 連N + 黃莊連莊 / 天+地+人胡）
 >   - Bot AI：BigTwo endgame leads + opp-near-win 加壓；Mahjong don't-feed-kong + 自動 kong-instead-of-pong + shanten-based discard + shanten-based pong/chow + **outs tiebreak** + **soft-danger 對手 ≥3 副露之花色降級**；Texas OESD draw + 位置感知 Chen 門檻 + paired-board kicker awareness
 >   - **麻將自家聽牌指示**：MahjongSelfView 帶 `shanten` + `winningTiles`，前端 shanten==0 時亮燈 + 列出聽張縮圖
 >
@@ -43,7 +43,7 @@
 >   - Replay（token 分享、**手動撤銷**、**view_count + last_viewed_at**、JSON 下載、鍵盤快捷鍵、列表篩選）
 >
 > **可靠性與運維**
->   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass；CACHE 隨 ENGINE_VERSION 同步升版（目前 v5）
+>   - **PWA SW**：app shell SWR + replay cache-first-TTL（離線可看）+ 動態端點 bypass；CACHE 隨 ENGINE_VERSION 同步升版（目前 v9）
 >   - **WS keep-alive**：30s 週期 sync 防中介 proxy idle 斷線
 >   - **每日 cron retention sweep**（dms 7d / 過期 token / share / invite）+ `cron_runs` 稽核表
 >   - **`/api/admin/health` 儀表**（後端 + 前端 dashboard，session-stored secret，30s auto-refresh）
