@@ -114,6 +114,8 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
       log("warn", "rate_limited", { ip, route: "/auth/oauth/refresh" });
       return cors(rateLimited());
     }
+    // Inline verify (not requireAuth) so the IP rate-limit above fires
+    // BEFORE JWKS work — a bad-token flood must not burn signature ops.
     const auth  = request.headers.get("Authorization") ?? "";
     const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     let pid: string;
@@ -122,6 +124,9 @@ export async function handleRequest(request: Request, env: GatewayEnv): Promise<
     return cors(await oauthRefresh(pid, env));
   }
   if (request.method === "POST" && url.pathname === "/auth/oauth/logout") {
+    // Inline verify (not requireAuth): logout intentionally swallows
+    // JWTError so an expired/stolen token can still clear server-side
+    // state best-effort. requireAuth would 401 and block that path.
     const auth  = request.headers.get("Authorization") ?? "";
     const tok   = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     let pid = "";
@@ -901,11 +906,14 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
   if (request.headers.get("Upgrade") !== "websocket")
     return new Response("WebSocket upgrade required", { status: 426 });
 
+  // Inline verify (not requireAuth): the browser WebSocket API can't
+  // set custom headers, so we accept the token via ?token= query as a
+  // fallback. requireAuth only knows about the Authorization header.
   const url   = new URL(request.url);
   const auth  = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ")
     ? auth.slice(7)
-    : url.searchParams.get("token") ?? "";  // fallback for browser WS
+    : url.searchParams.get("token") ?? "";
 
   let playerId: string;
   try {
@@ -929,10 +937,19 @@ async function joinRoom(request: Request, env: GatewayEnv, gameId: string): Prom
 }
 
 // ── CORS helper ─────────────────────────��─────────────────────────────────
-// Allowlist-driven. We echo the request's Origin only when it appears
-// in env.ALLOWED_ORIGINS; unknown origins get no Allow-Origin header
-// (browser blocks; same-origin / native clients unaffected). Defaults
-// include localhost dev so missing config doesn't break local work.   // L3_架構含防禦觀測
+// Allowlist-driven. Echo the request's Origin only when it matches an
+// entry in env.ALLOWED_ORIGINS; otherwise omit Allow-Origin entirely
+// (browser blocks the response; same-origin / native clients unaffected).
+//
+// Allowlist entries can be either:
+//   • exact:    "https://big-two-frontend.pages.dev"
+//   • wildcard: "https://*.big-two-frontend.pages.dev"  (suffix match for
+//               Cloudflare Pages preview deployments: <sha>.<project>.pages.dev)
+//
+// Fail-closed in prod: when env.ALLOWED_ORIGINS is unset/empty we accept
+// ONLY localhost/127.0.0.1 origins (dev convenience). A prod deploy that
+// forgets the env var therefore can't echo any public origin — the worst
+// case is dev hitting prod, not a third-party site impersonating us.   // L3_架構含防禦觀測
 
 const DEV_FALLBACK_ORIGINS = [
   "http://localhost:5173",
@@ -941,20 +958,39 @@ const DEV_FALLBACK_ORIGINS = [
   "http://127.0.0.1:9999",
 ];
 
-export function pickCorsOrigin(request: Request, env: GatewayEnv): string | null {
+function originMatches(reqOrigin: string, pattern: string): boolean {
+  if (pattern === reqOrigin) return true;
+  // Wildcard form: "https://*.example.com" matches "https://foo.example.com"
+  // but NOT "https://example.com" (the dot is part of the suffix).
+  const star = pattern.indexOf("*.");
+  if (star < 0) return false;
+  const scheme = pattern.slice(0, star);          // "https://"
+  const suffix = pattern.slice(star + 1);          // ".example.com"
+  return reqOrigin.startsWith(scheme) && reqOrigin.endsWith(suffix)
+      && reqOrigin.length > scheme.length + suffix.length;
+}
+
+function pickCorsOrigin(request: Request, env: GatewayEnv): string | null {
   const reqOrigin = request.headers.get("Origin");
   if (!reqOrigin) return null;
   const configured = (env.ALLOWED_ORIGINS ?? "")
     .split(",").map(s => s.trim()).filter(Boolean);
-  const allowed = configured.length > 0 ? configured : DEV_FALLBACK_ORIGINS;
-  return allowed.includes(reqOrigin) ? reqOrigin : null;
+  // Configured: strict allowlist. Unconfigured: dev localhost only —
+  // fail-closed for any non-localhost origin even if env was forgotten.
+  if (configured.length > 0) {
+    return configured.some(p => originMatches(reqOrigin, p)) ? reqOrigin : null;
+  }
+  return DEV_FALLBACK_ORIGINS.includes(reqOrigin) ? reqOrigin : null;
 }
 
 function applyCors(res: Response, allowedOrigin: string | null): Response {
   const h = new Headers(res.headers);
+  // Vary: Origin ALWAYS — otherwise a cached 200 from one origin could
+  // be replayed by a CDN to a different origin. Independent of whether
+  // we ended up echoing Allow-Origin this time.                          // L3_架構含防禦觀測
+  h.append("Vary", "Origin");
   if (allowedOrigin) {
     h.set("Access-Control-Allow-Origin",  allowedOrigin);
-    h.set("Vary",                          "Origin");
     h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret, X-Confirm-Delete");
     h.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   }

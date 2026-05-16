@@ -412,20 +412,60 @@ describe("gateway routes", () => {
 
   it("OPTIONS preflight echoes Origin from the allowlist", async () => {
     // Unlisted origin → no Allow-Origin header (browser blocks the call).
+    env.ALLOWED_ORIGINS = "https://big-two-frontend.pages.dev";
     const blocked = await handleRequest(req("OPTIONS", "/api/match", {
       headers: { Origin: "https://evil.example" },
     }), env);
     expect(blocked.status).toBe(204);
     expect(blocked.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(blocked.headers.get("Vary")).toBe("Origin"); // always set
 
     // Allowed origin → echoed + Vary: Origin.
-    env.ALLOWED_ORIGINS = "https://big-two-frontend.pages.dev";
     const ok = await handleRequest(req("OPTIONS", "/api/match", {
       headers: { Origin: "https://big-two-frontend.pages.dev" },
     }), env);
     expect(ok.status).toBe(204);
     expect(ok.headers.get("Access-Control-Allow-Origin")).toBe("https://big-two-frontend.pages.dev");
     expect(ok.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("CORS wildcard pattern matches Pages preview deployments", async () => {
+    env.ALLOWED_ORIGINS = "https://big-two-frontend.pages.dev,https://*.big-two-frontend.pages.dev";
+    // Preview deploy subdomain → echoed
+    const preview = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "https://abc123.big-two-frontend.pages.dev" },
+    }), env);
+    expect(preview.headers.get("Access-Control-Allow-Origin"))
+      .toBe("https://abc123.big-two-frontend.pages.dev");
+    // Wildcard does NOT match the bare apex (apex is the exact entry)
+    // and does NOT match an unrelated host that just shares a suffix.
+    const fakeSuffix = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "https://evil.big-two-frontend.pages.dev.attacker.com" },
+    }), env);
+    expect(fakeSuffix.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("CORS fail-closed when ALLOWED_ORIGINS unset (only localhost dev fallback)", async () => {
+    delete env.ALLOWED_ORIGINS;
+    const prodish = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "https://big-two-frontend.pages.dev" },
+    }), env);
+    expect(prodish.headers.get("Access-Control-Allow-Origin")).toBeNull();
+
+    const dev = await handleRequest(req("OPTIONS", "/api/match", {
+      headers: { Origin: "http://localhost:5173" },
+    }), env);
+    expect(dev.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5173");
+  });
+
+  it("CORS on a real GET: unlisted Origin → body OK but no Allow-Origin", async () => {
+    env.ALLOWED_ORIGINS = "https://big-two-frontend.pages.dev";
+    const r = await handleRequest(req("GET", "/api/leaderboard", {
+      headers: { Origin: "https://evil.example" },
+    }), env);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(r.headers.get("Vary")).toBe("Origin");
   });
 });
 
