@@ -118,10 +118,11 @@ function canFormMelds(counts: Counts, need: number): boolean {
 }
 
 // ──────────────────────────────────────────────
-//  台數計算 — 大眾規則 (engine_version 8)
+//  台數計算 — 大眾規則 (engine_version 9)
 //  涵蓋：平胡 / 自摸 / 門前清 / 清一色 / 字一色 / 混一色 / 大三元 / 大四喜 /
 //        小三元 / 小四喜 / 碰碰胡 / 三/四槓子 / 槓上開花 / 搶槓 /
-//        三/四/五暗刻 / 全求人 / 花牌 / 海底撈月 / 河底撈魚 / 莊家 / 連N。 // L3_架構
+//        三/四/五暗刻 / 全求人 / 花牌 / 海底撈月 / 河底撈魚 / 莊家 / 連N /
+//        天胡 / 地胡 / 人胡。                                              // L3_架構
 //  終局型台（七搶一 / 八仙過海）由 checkFlowerTerminal 走獨立結算路徑。
 // ──────────────────────────────────────────────
 export interface FanResult {
@@ -142,6 +143,8 @@ export function calcFan(opts: {
   lastRiverHu?: boolean;    // 河底撈魚：食胡的牌是牆空後最後一張被打出
   chiangKong?: boolean;     // 搶槓胡：食胡來自他家加槓的牌
   bankerStreak?: number;    // 連N台：莊家連任次數（不含首莊），僅當 isBanker 時計分
+  turnsPlayed?: number;     // 首巡台：已完成的整輪打牌數（advanceToNextDraw 累加）
+  anyMeldCalled?: boolean;  // 首巡台：任何 chow/pong/明槓 已副露 → 首巡台失效
 }): FanResult {
   const detail: string[] = ["平胡"];
   let fan = 0;
@@ -264,6 +267,20 @@ export function calcFan(opts: {
     detail.push(`連${n}`);
   }
 
+  // ─ 天胡 / 地胡 / 人胡（大眾共識，互斥）                                   // L2_實作
+  // 天胡：莊家配牌即胡（turnsPlayed===0 + 莊 + 自摸）              → +24 台
+  // 地胡：閒家食胡莊家第一張棄牌（turnsPlayed===0 + 閒 + !副露）   → +16 台
+  // 人胡：首巡 hu（turnsPlayed<4 + !副露 + 非天/地）               → +8 台
+  const turns = opts.turnsPlayed ?? Infinity;        // 缺失視為「不在首巡」    // L2_隔離
+  const noMeld = !(opts.anyMeldCalled ?? false);
+  if (turns === 0 && opts.isBanker && opts.selfDrawn) {
+    fan += 24; detail.push("天胡");
+  } else if (turns === 0 && !opts.isBanker && !opts.selfDrawn && noMeld) {
+    fan += 16; detail.push("地胡");
+  } else if (turns < 4 && noMeld) {
+    fan += 8; detail.push("人胡");
+  }
+
   // ─ 花牌：每張 +1 台
   if (opts.flowerCount > 0) {
     fan += opts.flowerCount;
@@ -321,6 +338,10 @@ interface InternalState {
   bankerStreak: number;
   /** 整場累積分數（每局 settle 時加總），最終局結算可寫成 ledger 摘要。 */
   cumulativeScores: Record<PlayerId, number>;
+  /** 首巡台：已完成輪數（advanceToNextDraw 累加；hu 在反應視窗時仍是 0）。   // L2_實作 */
+  turnsPlayed: number;
+  /** 首巡台：本局已出現任一 chow/pong/明槓 副露。暗槓 / 加槓 不算。          // L2_實作 */
+  anyMeldCalled: boolean;
 }
 
 export type ProcessResult =
@@ -347,6 +368,9 @@ export class MahjongStateMachine {
       s.cumulativeScores = {};
       for (const p of s.players) s.cumulativeScores[p.playerId] = 0;
     }
+    // 首巡台欄位 backwards-compat：legacy snapshot 視為已過首巡（保守）。   // L2_隔離
+    if (s.turnsPlayed == null)    s.turnsPlayed = Infinity;
+    if (s.anyMeldCalled == null)  s.anyMeldCalled = true;
     (m as unknown as { s: InternalState }).s = s;
     (m as unknown as { rng: () => number }).rng = rng;
     return m;
@@ -387,6 +411,8 @@ export class MahjongStateMachine {
       handNumber: 1,
       bankerStreak: 0,
       cumulativeScores,
+      turnsPlayed: 0,
+      anyMeldCalled: false,
     };
   }
 
@@ -452,6 +478,8 @@ export class MahjongStateMachine {
     this.s.drewLastWallTile = dealt.wall.length === 0;
     this.s.lastDiscardOnEmptyWall = false;
     this.s.kongUpgradeContext = null;
+    this.s.turnsPlayed = 0;
+    this.s.anyMeldCalled = false;
     this.s.phase = "playing";
   }
 
@@ -831,6 +859,7 @@ export class MahjongStateMachine {
       const me = this.s.players[i]!;
       removeTilesFromHand(me.hand, ld.tile, 3);
       me.exposed.push({ kind: "kong_exposed", tiles: [ld.tile, ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
+      this.s.anyMeldCalled = true;           // 首巡台失效（明槓食牌）       // L2_實作
       this.s.lastDiscard = null;
       const replacement = drawNonFlower(this.s.wall, me.flowers);
       if (!replacement) return this.drawExhaustion();
@@ -851,6 +880,7 @@ export class MahjongStateMachine {
       const me = this.s.players[i]!;
       removeTilesFromHand(me.hand, ld.tile, 2);
       me.exposed.push({ kind: "pong", tiles: [ld.tile, ld.tile, ld.tile], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
+      this.s.anyMeldCalled = true;           // 首巡台失效（碰）             // L2_實作
       this.s.lastDiscard = null;
       this.s.turnIdx = i;
       this.s.phase = "playing";        // 碰後直接打牌，不再摸
@@ -873,6 +903,7 @@ export class MahjongStateMachine {
         me.hand.splice(idxH, 1);
       }
       me.exposed.push({ kind: "chow", tiles: [...tiles], fromPlayerId: this.s.players[ld.playerIdx]!.playerId });
+      this.s.anyMeldCalled = true;           // 首巡台失效（吃）             // L2_實作
       this.s.lastDiscard = null;
       this.s.turnIdx = i;
       this.s.phase = "playing";
@@ -891,6 +922,8 @@ export class MahjongStateMachine {
     this.s.lastDiscard = null;
     this.s.pendingReactions = [];
     this.s.lastDiscardOnEmptyWall = false;
+    // 首巡台計數：一名玩家的「摸-打-反應全 pass」完成 → 累加一輪。       // L2_實作
+    this.s.turnsPlayed += 1;
     this.s.turnIdx = (this.s.turnIdx + 1) % 4;
     const me = this.s.players[this.s.turnIdx]!;
     const tile = drawNonFlower(this.s.wall, me.flowers);
@@ -998,6 +1031,8 @@ export class MahjongStateMachine {
       lastRiverHu: this.s.lastDiscardOnEmptyWall,
       chiangKong,
       bankerStreak: this.s.bankerStreak,
+      turnsPlayed: this.s.turnsPlayed,
+      anyMeldCalled: this.s.anyMeldCalled,
     });
     const score = fan.base + fan.fan;                   // MVP 簡化
     const result: SettlementResult = {

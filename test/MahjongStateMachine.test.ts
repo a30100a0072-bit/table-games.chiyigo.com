@@ -422,6 +422,58 @@ describe("calcFan 大眾規則", () => {
     expect(r.detail.every(d => !d.startsWith("連"))).toBe(true);
   });
 
+  it("天胡：莊家配牌自摸（turnsPlayed=0）+24 台", () => {
+    const r = calcFan({
+      ...baseOpts, isBanker: true, selfDrawn: true,
+      turnsPlayed: 0, anyMeldCalled: false,
+    });
+    expect(r.detail).toContain("天胡");
+    expect(r.detail).not.toContain("地胡");
+    expect(r.detail).not.toContain("人胡");
+  });
+
+  it("地胡：閒家食胡莊家第一張（turnsPlayed=0 + 食胡 + 無副露）+16 台", () => {
+    const r = calcFan({
+      ...baseOpts, isBanker: false, selfDrawn: false,
+      turnsPlayed: 0, anyMeldCalled: false,
+    });
+    expect(r.detail).toContain("地胡");
+    expect(r.detail).not.toContain("天胡");
+    expect(r.detail).not.toContain("人胡");
+  });
+
+  it("人胡：首巡 hu（turnsPlayed=2 + 無副露）+8 台", () => {
+    const r = calcFan({
+      ...baseOpts, isBanker: false, selfDrawn: true,
+      turnsPlayed: 2, anyMeldCalled: false,
+    });
+    expect(r.detail).toContain("人胡");
+    expect(r.detail).not.toContain("天胡");
+    expect(r.detail).not.toContain("地胡");
+  });
+
+  it("首巡台：副露發生則失效", () => {
+    const r = calcFan({
+      ...baseOpts, isBanker: false, selfDrawn: true,
+      turnsPlayed: 1, anyMeldCalled: true,
+    });
+    expect(r.detail).not.toContain("人胡");
+    expect(r.detail).not.toContain("地胡");
+  });
+
+  it("首巡台：turnsPlayed 預設未提供 → 不觸發", () => {
+    const r = calcFan({ ...baseOpts, isBanker: true, selfDrawn: true });
+    expect(r.detail).not.toContain("天胡");
+  });
+
+  it("turnsPlayed>=4 後不算人胡", () => {
+    const r = calcFan({
+      ...baseOpts, isBanker: false, selfDrawn: true,
+      turnsPlayed: 4, anyMeldCalled: false,
+    });
+    expect(r.detail).not.toContain("人胡");
+  });
+
   it("四槓子：4 個 kong meld + 1 刻 + 1 對", () => {
     // 4 槓佔 4 副，hand 內還要再 1 刻 + 1 對                                 // L2_測試
     const exposed: ExposedMeld[] = [
