@@ -7,7 +7,7 @@
 //  - 所有吃/碰/槓/胡均回查手牌真實擁有，防封包偽造                  // L2_隔離
 //  - DO 50ms CPU 預算內必收斂                                          // L3_邏輯安防
 //
-// 範圍：台灣 16 張 — 平胡 / 自摸 / 門前清 / 花牌 / 清一色 / 字一色 / 大三元 / 大四喜 / 槓上開花 / 搶槓 / 七搶一 / 八仙過海 / 大眾 13 台。
+// 範圍：台灣 16 張 — 平胡 / 自摸 / 門前清 / 花牌 / 清一色 / 字一色 / 混一色 / 大三元 / 大四喜 / 碰碰胡 / 三/四槓子 / 槓上開花 / 搶槓 / 七搶一 / 八仙過海 / 大眾 13 台。
 
 import {
   PlayerId,
@@ -118,11 +118,12 @@ function canFormMelds(counts: Counts, need: number): boolean {
 }
 
 // ──────────────────────────────────────────────
-//  台數計算 — 大眾規則 (engine_version 2)
-//  涵蓋：平胡 / 自摸 / 門前清 / 清一色 / 字一色 / 大三元 / 大四喜 /
-//        小三元 / 小四喜 / 槓上開花 / 三/四/五暗刻 / 全求人 / 花牌 /
-//        海底撈月 / 河底撈魚 / 莊家。                                    // L3_架構
-//  未實作（需狀態機改動或多局上下文）：搶槓、連莊 N、七搶一、八仙過海。
+//  台數計算 — 大眾規則 (engine_version 7)
+//  涵蓋：平胡 / 自摸 / 門前清 / 清一色 / 字一色 / 混一色 / 大三元 / 大四喜 /
+//        小三元 / 小四喜 / 碰碰胡 / 三/四槓子 / 槓上開花 / 搶槓 /
+//        三/四/五暗刻 / 全求人 / 花牌 / 海底撈月 / 河底撈魚 / 莊家。      // L3_架構
+//  終局型台（七搶一 / 八仙過海）由 checkFlowerTerminal 走獨立結算路徑。
+//  未實作（需多局上下文）：連莊 N。
 // ──────────────────────────────────────────────
 export interface FanResult {
   base: number;            // 底
@@ -148,11 +149,14 @@ export function calcFan(opts: {
   // 完整牌組（手牌 + 對外副露）— 所有結構性台用得上                       // L2_實作
   const all: MahjongTile[] = [...opts.hand, ...opts.exposed.flatMap(m => m.tiles)];
 
-  // 清一色 / 字一色
+  // 清一色 / 字一色 / 混一色
   const suits = new Set(all.map(t => t.suit));
   if (suits.size === 1) {
     if (suits.has("z")) { fan += 16; detail.push("字一色"); }
     else                { fan += 8;  detail.push("清一色"); }
+  } else if (suits.size === 2 && suits.has("z")) {
+    // 一個花色 + 字牌                                                       // L2_實作
+    fan += 3; detail.push("混一色");
   }
 
   // ─ 三元台（大三元 / 小三元）
@@ -198,6 +202,31 @@ export function calcFan(opts: {
   if (concealedTriplets === 5)      { fan += 8; detail.push("五暗刻"); }
   else if (concealedTriplets === 4) { fan += 5; detail.push("四暗刻"); }
   else if (concealedTriplets === 3) { fan += 2; detail.push("三暗刻"); }
+
+  // ─ 碰碰胡：無順子（5 副全刻/槓 + 1 對）                                  // L2_實作
+  // 判定：exposed 無 chow，且所有 17 張 rank count ∈ {0,2,3,4}（恰一個 2 為對）
+  const hasChow = opts.exposed.some(m => m.kind === "chow");
+  if (!hasChow) {
+    const allCounts = new Map<string, number>();
+    for (const t of all) {
+      const k = `${t.suit}-${t.rank}`;
+      allCounts.set(k, (allCounts.get(k) ?? 0) + 1);
+    }
+    let pairs = 0;
+    let pongHuValid = true;
+    for (const n of allCounts.values()) {
+      if (n === 2) pairs++;
+      else if (n !== 3 && n !== 4) { pongHuValid = false; break; }
+    }
+    if (pongHuValid && pairs === 1) { fan += 4; detail.push("碰碰胡"); }
+  }
+
+  // ─ 三槓子 / 四槓子（取大者；與五暗刻互斥優先大）                          // L2_實作
+  const kongCount = opts.exposed.filter(
+    m => m.kind === "kong_concealed" || m.kind === "kong_exposed"
+  ).length;
+  if (kongCount === 4)      { fan += 8; detail.push("四槓子"); }
+  else if (kongCount === 3) { fan += 2; detail.push("三槓子"); }
 
   // ─ 全求人：所有 meld 都來自副露（無暗槓）+ 食胡 + 手牌僅剩對子+贏牌
   // 4 副露 + (2 對子 + 1 贏牌) = 12 + 3 = 15... 實際 16+1=17 含贏牌；

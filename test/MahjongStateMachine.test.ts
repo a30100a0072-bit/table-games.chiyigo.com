@@ -331,6 +331,93 @@ describe("calcFan 大眾規則", () => {
     const r = calcFan({ ...baseOpts, selfDrawn: false, chiangKong: true });
     expect(r.detail).toContain("搶槓");
   });
+
+  it("混一色：一花色 + 字牌（非清/字一色）", () => {
+    // m1-m9 順 + m 刻 + 中刻 + 中對（贏牌）；suits = {m, z}
+    const hand: MahjongTile[] = [
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      m(7), m(8), m(9),
+      m(2), m(2), m(2),
+      z(5), z(5), z(5),
+      z(6), z(6),
+    ];
+    const r = calcFan({ ...baseOpts, hand, winningTile: z(6) });
+    expect(r.detail).toContain("混一色");
+    expect(r.detail).not.toContain("清一色");
+    expect(r.detail).not.toContain("字一色");
+  });
+
+  it("清一色不另算混一色", () => {
+    const hand: MahjongTile[] = [
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      m(7), m(8), m(9),
+      m(1), m(2), m(3),
+      m(4), m(5), m(6),
+      m(7), m(7),
+    ];
+    const r = calcFan({ ...baseOpts, hand, winningTile: m(7) });
+    expect(r.detail).toContain("清一色");
+    expect(r.detail).not.toContain("混一色");
+  });
+
+  it("碰碰胡：5 副刻 + 1 對，無順子", () => {
+    const hand: MahjongTile[] = [
+      m(1), m(1), m(1),
+      m(5), m(5), m(5),
+      p(2), p(2), p(2),
+      s(7), s(7), s(7),
+      z(5), z(5), z(5),
+      z(6), z(6),
+    ];
+    const r = calcFan({ ...baseOpts, hand, winningTile: z(6) });
+    expect(r.detail).toContain("碰碰胡");
+  });
+
+  it("有順子不算碰碰胡", () => {
+    const r = calcFan(baseOpts);   // baseHand 含順子
+    expect(r.detail).not.toContain("碰碰胡");
+  });
+
+  it("三槓子：3 個 kong meld + 1 pong + 1 刻 + 1 對", () => {
+    const exposed: ExposedMeld[] = [
+      { kind: "kong_exposed", tiles: [m(1), m(1), m(1), m(1)] },
+      { kind: "kong_exposed", tiles: [p(5), p(5), p(5), p(5)] },
+      { kind: "kong_concealed", tiles: [s(7), s(7), s(7), s(7)] },
+      { kind: "pong", tiles: [z(5), z(5), z(5)] },
+    ];
+    const r = calcFan({
+      ...baseOpts,
+      hand: [z(6), z(6), z(6), z(3), z(3)],
+      winningTile: z(3),
+      exposed,
+      menqing: false,
+      selfDrawn: false,
+    });
+    expect(r.detail).toContain("三槓子");
+    expect(r.detail).not.toContain("四槓子");
+  });
+
+  it("四槓子：4 個 kong meld + 1 刻 + 1 對", () => {
+    // 4 槓佔 4 副，hand 內還要再 1 刻 + 1 對                                 // L2_測試
+    const exposed: ExposedMeld[] = [
+      { kind: "kong_exposed", tiles: [m(1), m(1), m(1), m(1)] },
+      { kind: "kong_exposed", tiles: [p(5), p(5), p(5), p(5)] },
+      { kind: "kong_concealed", tiles: [s(7), s(7), s(7), s(7)] },
+      { kind: "kong_exposed", tiles: [z(5), z(5), z(5), z(5)] },
+    ];
+    const r = calcFan({
+      ...baseOpts,
+      hand: [z(6), z(6), z(6), z(3), z(3)],
+      winningTile: z(3),
+      exposed,
+      menqing: false,
+      selfDrawn: false,
+    });
+    expect(r.detail).toContain("四槓子");
+    expect(r.detail).not.toContain("三槓子");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
