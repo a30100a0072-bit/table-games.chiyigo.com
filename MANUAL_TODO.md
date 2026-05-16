@@ -12,9 +12,9 @@
 
 ## D1 migrations framework（2026-05-11 首次部署後驗證）
 
-- [ ] CI deploy 跑完後，`npm run db:migrate:list:prod` 顯示 `0001_initial.sql` 在已套用清單
-- [ ] 同指令第二次跑顯示 `No migrations to apply!`（tracker 正確記錄）
-- [ ] prod 任一 SELECT 抽查（例：`wrangler d1 execute big-two-db --remote --command "SELECT COUNT(*) FROM users"`）不報「no such table」
+- [x] CI deploy 跑完後，`npm run db:migrate:list:prod` 顯示 `0001_initial.sql` 在已套用清單（2026-05-16：list 直接回「No migrations to apply!」表示 tracker 已含 0001）
+- [x] 同指令第二次跑顯示 `No migrations to apply!`（tracker 正確記錄）（2026-05-16：兩次跑同結果）
+- [x] prod 任一 SELECT 抽查（例：`wrangler d1 execute big-two-db --remote --command "SELECT COUNT(*) FROM users"`）不報「no such table」（2026-05-16：`SELECT COUNT(*) FROM users` 回 `rows_read=18`，table 存在且有資料）
 
 > 首次套用是 data-side no-op（全 IF NOT EXISTS / INSERT OR IGNORE），主要驗證 `d1_migrations` tracker 已就位。後續欄位/索引變更全部走 `migrations/000N_*.sql`，禁用 `wrangler d1 execute --file ...` 路徑。
 
