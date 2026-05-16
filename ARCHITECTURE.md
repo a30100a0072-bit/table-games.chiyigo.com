@@ -559,6 +559,14 @@ gateway.ts ──verifyJWT──► GameRoomDO
 這是 Cloudflare Serverless 三遊戲對戰專案（大老二 / 台灣 16 張麻將 / 德州撲克），
 請依下列順序進行，每階段做完先給我精簡報告再進下一階段：
 
+【全程 Review / Test Gate 規則】
+0. 這套規則是所有後續案子的預設工作法：每個案子都必須先分類為「小 PR」或「大 stage / 跨層改動」，用對應 gate 控制最終品質。
+1. 小 PR 範例：文件、設定、單一純邏輯或單模組改動，且不改 runtime 邊界 / production contract。預設走「靜態審查 + 自動測試」：typecheck / lint / build 等對應技術棧的靜態檢查、unit tests、必要的 workers integration / Playwright stub e2e；不強制每次都做真人或真 runtime 動態驗收。
+2. 大 stage 完成、準備 deploy、或跨層路徑有變更時，必須升級成「動態測試 gate」：證明系統真的跑得起來，不只證明程式碼合約正確。
+3. 觸發動態測試 gate 的改動包含：WS / matchmaking / GameRoomDO、auth / OIDC / session、D1 migration / ledger / settlement / replay persistence、frontend game flow / real player action path、Cloudflare bindings / wrangler.toml / deploy workflow。
+4. 動態測試至少要覆蓋一條真實玩家端到端路徑：frontend → Worker → WS/API → engine → settlement/replay。若受環境限制無法實跑，報告必須明確標示「未完成動態驗證」與剩餘風險，不能用 unit 綠燈替代。
+5. 動態測試分兩段：pre-merge / pre-commit 先跑 local 或 preview runtime smoke；production deploy 後再補 post-deploy endpoint smoke。
+
 【階段 1：全棧靜態審查（不改 code，先輸出評估）】
 1. 讀 ARCHITECTURE.md 全文、wrangler.toml、package.json、.github/workflows/cloudflare-deploy.yml
 2. 掃 src/ 全部 .ts、test/ 全部 .ts、frontend/src/ 全部 .ts/.tsx
@@ -566,7 +574,13 @@ gateway.ts ──verifyJWT──► GameRoomDO
    - L1 阻擋上線 / 會掉資料 / 安全漏洞（必修）
    - L2 影響可玩性 / 功能不完整（強烈建議）
    - L3 程式碼風格 / 死碼 / 未來才需要（暫緩）
-4. 不要動手改任何檔案；只交評估報告
+4. 判斷本次工作是「小 PR」還是「大 stage / 跨層改動」，並列出需要跑的測試 gate
+5. 不要動手改任何檔案；只交評估報告
+
+【階段 1.5：動態驗證計畫（只有觸發 gate 時才執行）】
+1. 若只是小 PR，說明靜態 / 自動測試矩陣即可，不必強制真人驗收。
+2. 若是大 stage 或跨層改動，先列出 runtime smoke 清單：local wrangler dev、frontend dev/preview、WS join + action frame、settlement ledger、replay persistence、prod/preview endpoint smoke。
+3. 動態測試完成前，不得把 stage 標成 ship-ready；若暫時不能跑，必須把缺口寫進 MANUAL_TODO.md 或最終報告。
 
 【階段 2：人機 AI 強化（這是核心目標）】
 目標 — 把三款遊戲的 Bot AI 強化到你能在「DO 50ms CPU 預算 / Cloudflare Workers 10 ms CPU 限制」內做到的最高強度，並在 api/lobby.ts 開啟麻將 / 德撲的 BOT_FILL，讓單人也能玩。
@@ -579,9 +593,10 @@ gateway.ts ──verifyJWT──► GameRoomDO
 - src tsc + test tsc + frontend tsc + npm test 全部要綠才 commit
 
 【階段 3：commit + push】
-1. 通過所有 typecheck + tests 後 commit
-2. push origin master 觸發 CI（會同時 deploy Worker + Pages）
-3. 等 CI 綠燈後告訴我結果
+1. 小 PR：通過 typecheck / lint / build 等靜態檢查 + unit / relevant integration tests 後才 commit。
+2. 大 stage / 跨層改動：完成階段 1.5 的 local / preview 動態測試 gate 後才 commit；若未完成，commit/report 必須標出剩餘 runtime 風險。
+3. push origin master 觸發 CI（會同時 deploy Worker + Pages）
+4. 等 CI 綠燈後告訴我結果；若有 production deploy，補跑 endpoint smoke 並回報。
 
 【背景資訊】
 - 線上端點：Worker https://big-two-game-production.a30100a0072.workers.dev

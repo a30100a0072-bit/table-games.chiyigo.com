@@ -2,6 +2,14 @@
 
 事項由系統 / Bot 都已自動驗證，但 UI 需要真人在瀏覽器跑過一輪才算驗收完成。
 
+這套節奏是所有後續案子的預設品質工作法：每個案子先分類為「小 PR」或「大 stage / 跨層改動」，小 PR 快速用靜態審查與自動測試把關，大 stage 則必須做一次真 runtime 動態驗證。
+
+本檔是「大 stage / 跨層改動」的動態測試 gate，不是每個小 PR 都必跑。小 PR 範例是文件、設定、單一純邏輯或單模組改動，且不改 runtime 邊界 / production contract；小 PR 預設用靜態審查、typecheck / lint / build 等對應技術棧的靜態檢查、unit tests、必要的 workers integration / Playwright stub e2e 把關。當 stage 完成、準備 deploy、或改到 WS / matchmaking / auth / D1 migration / ledger / settlement / replay / frontend 真玩家流程 / Cloudflare bindings 時，才必須回到本清單跑一次真 runtime 驗證。
+
+每次動態驗證至少要證明一條真實玩家端到端路徑可運作：frontend → Worker → WS/API → engine → settlement/replay。若環境暫時不能實跑，最終報告必須明確標示「未完成動態驗證」與剩餘風險，不能只用 unit tests 綠燈替代。
+
+動態測試分兩段：pre-merge / pre-commit 先跑 local 或 preview runtime smoke；production deploy 後再補 post-deploy endpoint smoke。
+
 ## D1 migrations framework（2026-05-11 首次部署後驗證）
 
 - [ ] CI deploy 跑完後，`npm run db:migrate:list:prod` 顯示 `0001_initial.sql` 在已套用清單
