@@ -76,6 +76,20 @@ describe("formatTrace", () => {
     expect(out).toContain("route=/api/match");
   });
 
+  it("forwards engine_version_mismatch warn from replay reads with stored/current fields", () => {
+    const t = trace({
+      logs: [logLine("warn", JSON.stringify({
+        level: "warn", event: "engine_version_mismatch",
+        gameId: "g_old", gameType: "mahjong", stored: 7, current: 9,
+      }))],
+    });
+    const out = formatTrace(t, "prod")!;
+    expect(out).toContain("⚠️ engine_version_mismatch");
+    expect(out).toContain("gameId=g_old");
+    expect(out).toContain("stored=7");
+    expect(out).toContain("current=9");
+  });
+
   it("falls back to raw text for non-JSON warn lines", () => {
     const t = trace({ logs: [logLine("warn", "something bad happened")] });
     const out = formatTrace(t, "prod")!;

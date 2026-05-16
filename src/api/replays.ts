@@ -85,6 +85,11 @@ export async function getReplay(request: Request, env: ReplaysEnv, gameId: strin
     return errorResponse(ErrorCode.REPLAY_FORBIDDEN, 403);
 
   const replayable = row.engine_version === ENGINE_VERSION;
+  if (!replayable) console.warn(JSON.stringify({
+    level: "warn", event: "engine_version_mismatch",
+    gameId: row.game_id, gameType: row.game_type,
+    stored: row.engine_version, current: ENGINE_VERSION,
+  }));
   const events = replayable ? JSON.parse(row.events) : [];
   const initialSnapshot = replayable ? JSON.parse(row.initial_snapshot) : null;
 
@@ -239,6 +244,12 @@ export async function resolveSharedReplay(env: ReplaysEnv, token: string): Promi
   if (!row) return errorResponse(ErrorCode.REPLAY_NOT_FOUND, 404, "replay vanished");
 
   const replayable      = row.engine_version === ENGINE_VERSION;
+  if (!replayable) console.warn(JSON.stringify({
+    level: "warn", event: "engine_version_mismatch",
+    gameId: row.game_id, gameType: row.game_type,
+    stored: row.engine_version, current: ENGINE_VERSION,
+    via: "shared_token",
+  }));
   const events          = replayable ? JSON.parse(row.events) : [];
   const initialSnapshot = replayable ? JSON.parse(row.initial_snapshot) : null;
 
